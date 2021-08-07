@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.16")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.17")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -42,6 +42,8 @@ namespace Oxide.Plugins
         private const string PREFAB_RIDABLEHORSE = "assets/rust.ai/nextai/testridablehorse.prefab";
         private const string PREFAB_WORKCART = "assets/content/vehicles/workcart/workcart.entity.prefab";
         private const string PREFAB_MAGNET_CRANE = "assets/content/vehicles/crane_magnet/magnetcrane.entity.prefab";
+        private const string PREFAB_SUBMARINE_DOUBLE = "assets/content/vehicles/submarine/submarineduo.entity.prefab";
+        private const string PREFAB_SUBMARINE_SOLO = "assets/content/vehicles/submarine/submarinesolo.entity.prefab";
 
         private const string PREFAB_CHASSIS_SMALL = "assets/content/vehicles/modularcar/car_chassis_2module.entity.prefab";
         private const string PREFAB_CHASSIS_MEDIUM = "assets/content/vehicles/modularcar/car_chassis_3module.entity.prefab";
@@ -68,6 +70,8 @@ namespace Oxide.Plugins
             RidableHorse,
             WorkCart,
             MagnetCrane,
+            SubmarineSolo,
+            SubmarineDouble,
         }
 
         public enum ChassisType
@@ -241,7 +245,10 @@ namespace Oxide.Plugins
             var vehicleParent = entity?.VehicleParent();
             if (vehicleParent == null || vehicleParent.IsDestroyed) return;
             Vehicle vehicle;
-            if (!vehiclesCache.TryGetValue(vehicleParent, out vehicle)) return;
+            if (!vehiclesCache.TryGetValue(vehicleParent, out vehicle))
+            {
+                return;
+            }
             vehicle.OnDismount();
         }
 
@@ -255,8 +262,10 @@ namespace Oxide.Plugins
             if (!vehiclesCache.TryGetValue(vehicleParent, out vehicle)) return null;
             if (AreFriends(vehicle.playerID, friend.userID)) return null;
             if (configData.globalS.preventDriverSeat && vehicleParent.HasMountPoints() &&
-                entity != vehicleParent.mountPoints[0].mountable) return null;
-
+                entity != vehicleParent.mountPoints[0].mountable)
+            {
+                return null;
+            }
             SendCantUseMessage(friend, vehicle);
             return False;
         }
@@ -526,6 +535,8 @@ namespace Oxide.Plugins
             var collect = Pool.GetList<Item>();
             if (Enum.TryParse(vehicle.vehicleType, out normalVehicleType))
             {
+                ItemContainer inventory = null;
+                EntityFuelSystem fuelSystem =null ;
                 switch (normalVehicleType)
                 {
                     case NormalVehicleType.Sedan:
@@ -537,23 +548,21 @@ namespace Oxide.Plugins
                         {
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                             {
-                                var fuelContainer = (entity as MiniCopter)?.GetFuelSystem()?.GetFuelContainer()?.inventory;
-                                if (fuelContainer != null) collect.AddRange(fuelContainer.itemList);
+                                fuelSystem = (entity as MiniCopter)?.GetFuelSystem() ; 
                             }
                         }
                         break;
 
                     case NormalVehicleType.HotAirBalloon:
                         {
+                            var hotAirBalloon = entity as HotAirBalloon;
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                             {
-                                var fuelContainer = (entity as HotAirBalloon)?.fuelSystem?.GetFuelContainer()?.inventory;
-                                if (fuelContainer != null) collect.AddRange(fuelContainer.itemList);
+                                fuelSystem = hotAirBalloon?.fuelSystem;
                             }
                             if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
                             {
-                                var itemContainer = ((entity as HotAirBalloon)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
-                                if (itemContainer != null) collect.AddRange(itemContainer.itemList);
+                                inventory = (hotAirBalloon?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
                             }
                         }
                         break;
@@ -561,16 +570,15 @@ namespace Oxide.Plugins
                     case NormalVehicleType.RHIB:
                     case NormalVehicleType.Rowboat:
                         {
+                            var motorRowboat = entity as MotorRowboat;
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                             {
-                                var fuelContainer = (entity as MotorRowboat)?.GetFuelSystem()?.GetFuelContainer()?.inventory;
-                                if (fuelContainer != null) collect.AddRange(fuelContainer.itemList);
+                                fuelSystem = motorRowboat?.GetFuelSystem( ); 
                             }
 
                             if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
                             {
-                                var itemContainer = ((entity as MotorRowboat)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
-                                if (itemContainer != null) collect.AddRange(itemContainer.itemList);
+                                inventory = (motorRowboat?.storageUnitInstance.Get(true) as StorageContainer)?.inventory ;
                             }
                         }
                         break;
@@ -579,8 +587,7 @@ namespace Oxide.Plugins
                         {
                             if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
                             {
-                                var itemContainer = (entity as RidableHorse)?.inventory;
-                                if (itemContainer != null) collect.AddRange(itemContainer.itemList);
+                                inventory = (entity as RidableHorse)?.inventory; 
                             }
                         }
                         break;
@@ -589,8 +596,7 @@ namespace Oxide.Plugins
                         {
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                             {
-                                var fuelContainer = (entity as TrainEngine)?.fuelSystem?.GetFuelContainer()?.inventory;
-                                if (fuelContainer != null) collect.AddRange(fuelContainer.itemList);
+                                fuelSystem = (entity as TrainEngine)?.GetFuelSystem();
                             }
                         }
                         break;
@@ -599,14 +605,39 @@ namespace Oxide.Plugins
                         {
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                             {
-                                var fuelContainer = (entity as BaseCrane)?.fuelSystem?.GetFuelContainer()?.inventory;
-                                if (fuelContainer != null) collect.AddRange(fuelContainer.itemList);
+                                fuelSystem = (entity as BaseCrane)?.GetFuelSystem();
+                            }
+                        }
+                        break;
+
+                    case NormalVehicleType.SubmarineSolo:
+                    case NormalVehicleType.SubmarineDouble:
+                        {
+                            var baseSubmarine = entity as BaseSubmarine;
+                            if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
+                            {
+                                fuelSystem = baseSubmarine?.GetFuelSystem();
+                            }
+                            if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
+                            {
+                                inventory = baseSubmarine?.GetTorpedoContainer()?.inventory; 
                             }
                         }
                         break;
 
                     default: return;
                 }
+
+               var fuelContainer = fuelSystem?.GetFuelContainer()?.inventory;
+               if (fuelContainer != null)
+               {
+                   collect.AddRange(fuelContainer.itemList);
+               }
+
+               if (inventory != null)
+               {
+                   collect.AddRange(inventory.itemList);
+               }
             }
             else
             {
@@ -711,6 +742,7 @@ namespace Oxide.Plugins
             NormalVehicleType normalVehicleType;
             if (Enum.TryParse(vehicleType, out normalVehicleType))
             {
+                EntityFuelSystem fuelSystem = null;
                 switch (normalVehicleType)
                 {
                     case NormalVehicleType.Sedan:
@@ -720,28 +752,35 @@ namespace Oxide.Plugins
 
                     case NormalVehicleType.MiniCopter:
                     case NormalVehicleType.TransportHelicopter:
-                        fuelContainer = (entity as MiniCopter)?.GetFuelSystem()?.GetFuelContainer()?.inventory;
+                        fuelSystem = (entity as MiniCopter)?.GetFuelSystem();
                         break;
 
                     case NormalVehicleType.HotAirBalloon:
-                        fuelContainer = (entity as HotAirBalloon)?.fuelSystem?.GetFuelContainer()?.inventory;
+                        fuelSystem = (entity as HotAirBalloon)?.fuelSystem;
                         break;
 
                     case NormalVehicleType.RHIB:
                     case NormalVehicleType.Rowboat:
-                        fuelContainer = (entity as MotorRowboat)?.GetFuelSystem()?.GetFuelContainer()?.inventory;
+                        fuelSystem = (entity as MotorRowboat)?.GetFuelSystem();
                         break;
 
                     case NormalVehicleType.WorkCart:
-                        fuelContainer = (entity as TrainEngine)?.fuelSystem?.GetFuelContainer()?.inventory;
+                        fuelSystem = (entity as TrainEngine)?.GetFuelSystem();
                         break;
 
                     case NormalVehicleType.MagnetCrane:
-                        fuelContainer = (entity as BaseCrane)?.fuelSystem?.GetFuelContainer()?.inventory;
+                        fuelSystem = (entity as BaseCrane)?.GetFuelSystem() ;
+                        break;
+
+                    case NormalVehicleType.SubmarineSolo:
+                    case NormalVehicleType.SubmarineDouble:
+                        fuelSystem = (entity as BaseSubmarine)?.GetFuelSystem() ;
                         break;
 
                     default: return;
                 }
+
+                fuelContainer = fuelSystem?.GetFuelContainer()?.inventory;
             }
             else
             {
@@ -821,6 +860,7 @@ namespace Oxide.Plugins
             NormalVehicleType normalVehicleType;
             if (Enum.TryParse(vehicleType, out normalVehicleType))
             {
+                ItemContainer itemContainer = null;
                 switch (normalVehicleType)
                 {
                     case NormalVehicleType.Sedan:
@@ -831,29 +871,36 @@ namespace Oxide.Plugins
                     case NormalVehicleType.MagnetCrane:
                         return;
 
-                    case NormalVehicleType.Rowboat:
                     case NormalVehicleType.RHIB:
+                    case NormalVehicleType.Rowboat:
                         {
-                            var storageContainer = (entity as MotorRowboat)?.storageUnitInstance.Get(true) as StorageContainer;
-                            droppedItemContainer = storageContainer?.inventory?.Drop(PREFAB_ITEM_DROP, entity.GetDropPosition(),
-                                entity.transform.rotation);
+                            itemContainer = ((entity as MotorRowboat)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
                         }
                         break;
 
                     case NormalVehicleType.HotAirBalloon:
                         {
-                            var storageContainer = (entity as HotAirBalloon)?.storageUnitInstance.Get(true) as StorageContainer;
-                            droppedItemContainer = storageContainer?.inventory?.Drop(PREFAB_ITEM_DROP, entity.GetDropPosition(),
-                                entity.transform.rotation);
+                            itemContainer = ((entity as HotAirBalloon)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
                         }
                         break;
 
                     case NormalVehicleType.RidableHorse:
                         {
-                            droppedItemContainer = (entity as RidableHorse)?.inventory?.Drop(PREFAB_ITEM_DROP, entity.GetDropPosition(),
-                                entity.transform.rotation);
+                            itemContainer = (entity as RidableHorse)?.inventory;
                         }
                         break;
+                         
+                    case NormalVehicleType.SubmarineSolo:
+                    case NormalVehicleType.SubmarineDouble:
+                        {
+                            itemContainer = (entity as BaseSubmarine)?.GetTorpedoContainer()?.inventory;
+                        }
+                        break;
+                }
+                if (itemContainer != null)
+                {
+                    droppedItemContainer = itemContainer.Drop(PREFAB_ITEM_DROP, entity.GetDropPosition(),
+                        entity.transform.rotation);
                 }
             }
             else
@@ -1077,6 +1124,8 @@ namespace Oxide.Plugins
                 case NormalVehicleType.RidableHorse: return configData.normalVehicleS.ridableHorseS;
                 case NormalVehicleType.WorkCart: return configData.normalVehicleS.workCartS;
                 case NormalVehicleType.MagnetCrane: return configData.normalVehicleS.magnetCraneS;
+                case NormalVehicleType.SubmarineSolo: return configData.normalVehicleS.submarineSoloS;
+                case NormalVehicleType.SubmarineDouble: return configData.normalVehicleS.submarineDoubleS;
                 default: return null;
             }
         }
@@ -1212,6 +1261,8 @@ namespace Oxide.Plugins
                     case NormalVehicleType.RidableHorse: return PREFAB_RIDABLEHORSE;
                     case NormalVehicleType.WorkCart: return PREFAB_WORKCART;
                     case NormalVehicleType.MagnetCrane: return PREFAB_MAGNET_CRANE;
+                    case NormalVehicleType.SubmarineSolo: return PREFAB_SUBMARINE_SOLO;
+                    case NormalVehicleType.SubmarineDouble: return PREFAB_SUBMARINE_DOUBLE;
                 }
             }
             else
@@ -1304,6 +1355,9 @@ namespace Oxide.Plugins
             //if (player.HasParent()) player.SetParent(null, true, true);
             player.SendNetworkUpdateImmediate();
         }
+
+        private static bool NeedCheckWater(string vehicleType) => vehicleType == nameof(NormalVehicleType.Rowboat) || vehicleType == nameof(NormalVehicleType.RHIB)
+        || vehicleType == nameof(NormalVehicleType.SubmarineDouble) || vehicleType == nameof(NormalVehicleType.SubmarineSolo);
 
         #endregion Helpers
 
@@ -2213,7 +2267,7 @@ namespace Oxide.Plugins
             }
             Vector3 lookingAt = Vector3.zero;
             var isWorkCart = vehicleType == nameof(NormalVehicleType.WorkCart);
-            var checkWater = vehicleType == nameof(NormalVehicleType.Rowboat) || vehicleType == nameof(NormalVehicleType.RHIB);
+            var checkWater = NeedCheckWater(vehicleType);
             if (!CheckPosition(player, baseVehicleS, checkWater, isWorkCart, out reason, ref lookingAt, entity))
             {
                 return false;
@@ -3095,6 +3149,58 @@ namespace Oxide.Plugins
                     ["vehiclelicence.vip"] = new CooldownPermissionS
                     {
                         spawnCooldown = 300,
+                        recallCooldown = 10,
+                    }
+                },
+            };
+
+            [JsonProperty(PropertyName = "Submarine Solo Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public InvFuelVehicleS submarineSoloS = new InvFuelVehicleS
+            {
+                purchasable = true,
+                displayName = "Submarine Solo",
+                distance = 5,
+                minDistanceForPlayers = 2,
+                usePermission = true,
+                permission = "vehiclelicence.submarinesolo",
+                commands = new List<string> { "subsolo", "solo" },
+                purchasePrices = new Dictionary<string, PriceInfo>
+                {
+                    ["scrap"] = new PriceInfo { amount = 600, displayName = "Scrap" }
+                },
+                spawnCooldown = 300,
+                recallCooldown = 30,
+                cooldownPermissions = new Dictionary<string, CooldownPermissionS>
+                {
+                    ["vehiclelicence.vip"] = new CooldownPermissionS
+                    {
+                        spawnCooldown = 150,
+                        recallCooldown = 10,
+                    }
+                },
+            };
+
+            [JsonProperty(PropertyName = "Submarine Double Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public InvFuelVehicleS submarineDoubleS = new InvFuelVehicleS
+            {
+                purchasable = true,
+                displayName = "Submarine Double",
+                distance = 5,
+                minDistanceForPlayers = 2,
+                usePermission = true,
+                permission = "vehiclelicence.submarinedouble",
+                commands = new List<string> { "subdou", "double" },
+                purchasePrices = new Dictionary<string, PriceInfo>
+                {
+                    ["scrap"] = new PriceInfo { amount = 1000, displayName = "Scrap" }
+                },
+                spawnCooldown = 300,
+                recallCooldown = 30,
+                cooldownPermissions = new Dictionary<string, CooldownPermissionS>
+                {
+                    ["vehiclelicence.vip"] = new CooldownPermissionS
+                    {
+                        spawnCooldown = 150,
                         recallCooldown = 10,
                     }
                 },
