@@ -4,6 +4,8 @@
     [Description("Makes weapons in barrels/crates spawn in good condition")]
     public class HealthyGuns : RustPlugin
     {
+        #region Oxide Hooks
+
         private void Init() => Unsubscribe(nameof(OnLootSpawn));
 
         private void OnServerInitialized()
@@ -23,6 +25,10 @@
                 NextTick(() => RepairContainerContents(lootContainer));
         }
 
+        #endregion Oxide Hooks
+
+        #region Methods
+
         private void RepairContainerContents(LootContainer lootContainer)
         {
             if (lootContainer?.inventory?.itemList?.Count > 0)
@@ -34,5 +40,7 @@
                 }
             }
         }
+
+        #endregion Methods
     }
 }

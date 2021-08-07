@@ -752,7 +752,7 @@ namespace Oxide.Plugins
             {
                 Button = { Color = "0.95 0.1 0.1 0.95", Close = UINAME_MAIN },
                 Text = { Text = "X", Align = TextAnchor.MiddleCenter, Color = "0 0 0 1", FontSize = 22 },
-                RectTransform = { AnchorMin = "0.885 0", AnchorMax = "1 0.99" } 
+                RectTransform = { AnchorMin = "0.885 0", AnchorMax = "1 0.99" }
             }, titlePanel);
             CuiHelper.DestroyUi(player, UINAME_MAIN);
             CuiHelper.AddUi(player, container);
@@ -779,15 +779,15 @@ namespace Oxide.Plugins
             var anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntryUI(ref container, $"AutoPickupUI Toggle",
                 instance.Lang("Status", player.UserIDString),
-                autoPickData.enabled   ? enabledMsg : disabledMsg, 
+                autoPickData.enabled ? enabledMsg : disabledMsg,
                 $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             foreach (PickupType pickupType in Enum.GetValues(typeof(PickupType)))
             {
                 if (pickupType == PickupType.None || !enabledPickupTypes.HasFlag(pickupType)) continue;
                 anchors = GetEntryAnchors(i++, entrySize, spacingY);
                 CreateEntryUI(ref container, $"AutoPickupUI {pickupType}",
-                    instance.Lang(pickupType.ToString(), player.UserIDString), 
-                    !autoPickData.blockPickupTypes.HasFlag(pickupType) ? enabledMsg : disabledMsg, 
+                    instance.Lang(pickupType.ToString(), player.UserIDString),
+                    !autoPickData.blockPickupTypes.HasFlag(pickupType) ? enabledMsg : disabledMsg,
                     $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
                 if (pickupType == PickupType.PlantEntity && !autoPickData.blockPickupTypes.HasFlag(pickupType))
@@ -795,7 +795,7 @@ namespace Oxide.Plugins
                     anchors = GetEntryAnchors(i++, entrySize, spacingY);
                     CreateEntryUI(ref container, $"AutoPickupUI Clone",
                         instance.Lang("AutoClonePlants", player.UserIDString),
-                        autoPickData.autoClone ? enabledMsg : disabledMsg, 
+                        autoPickData.autoClone ? enabledMsg : disabledMsg,
                         $"0 {anchors[0]}", $"0.995 {anchors[1]}");
                 }
             }
@@ -1085,11 +1085,11 @@ namespace Oxide.Plugins
             catch
             {
                 storedData = null;
-            } 
-                if (storedData == null)
-                {
-                    ClearData();
-                } 
+            }
+            if (storedData == null)
+            {
+                ClearData();
+            }
         }
 
         private void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
@@ -1116,6 +1116,7 @@ namespace Oxide.Plugins
         {
             Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -1128,6 +1129,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

@@ -9,7 +9,13 @@ namespace Oxide.Plugins
     [Description("Prevents anyone except the entity owner from rotating vending machine.")]
     public class VendorRotateProtection : RustPlugin
     {
+        #region Fields
+
         [PluginReference] private readonly Plugin Friends, Clans;
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private object OnRotateVendingMachine(VendingMachine machine, BasePlayer player)
         {
@@ -18,6 +24,10 @@ namespace Oxide.Plugins
             Print(player, Lang("CantRotateVendor", player.UserIDString));
             return false;
         }
+
+        #endregion Oxide Hooks
+
+        #region Methods
 
         private bool AreFriends(ulong playerID, ulong friendID)
         {
@@ -57,6 +67,8 @@ namespace Oxide.Plugins
             if (friendClan == null) return false;
             return (string)playerClan == (string)friendClan;
         }
+
+        #endregion Methods
 
         #region ConfigurationFile
 
@@ -111,7 +123,9 @@ namespace Oxide.Plugins
         #endregion ConfigurationFile
 
         #region LanguageFile
+
         private void Print(BasePlayer player, string message) => Player.Message(player, message, $"<color={configData.prefixColor}>{configData.prefix}</color>", configData.steamIDIcon);
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -124,6 +138,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             //English
@@ -162,8 +177,6 @@ namespace Oxide.Plugins
                 ["CantRotateVendor"] = "您不能旋转这个售货机。"
             }, this, "zh-CN");
         }
-
-         
 
         #endregion LanguageFile
     }

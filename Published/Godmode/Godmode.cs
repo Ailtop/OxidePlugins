@@ -527,12 +527,9 @@ namespace Oxide.Plugins
             {
                 storedData = null;
             }
-            finally
+            if (storedData == null)
             {
-                if (storedData == null)
-                {
-                    ClearData();
-                }
+                ClearData();
             }
         }
 
@@ -560,6 +557,7 @@ namespace Oxide.Plugins
         {
             Player.Message(player, message, string.IsNullOrEmpty(configData.prefix) ? string.Empty : $"<color={configData.prefixColor}>{configData.prefix}</color>", configData.steamIDIcon);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -572,6 +570,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

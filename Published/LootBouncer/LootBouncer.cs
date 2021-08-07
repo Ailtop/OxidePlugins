@@ -232,7 +232,7 @@ namespace Oxide.Plugins
             {
                 var lootContainer = GameManager.server.FindPrefab(prefab.ToLower())?.GetComponent<LootContainer>();
                 if (lootContainer == null || string.IsNullOrEmpty(lootContainer.ShortPrefabName)) continue;
-                if (!configData.lootContainerS.ContainsKey(lootContainer.ShortPrefabName)) 
+                if (!configData.lootContainerS.ContainsKey(lootContainer.ShortPrefabName))
                 {
                     configData.lootContainerS.Add(lootContainer.ShortPrefabName, !lootContainer.ShortPrefabName.Contains("stocking") && !lootContainer.ShortPrefabName.Contains("roadsign"));
                 }
@@ -369,6 +369,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

@@ -15,10 +15,14 @@ namespace Oxide.Plugins
     [Description("Plugin respawns player in random place")]
     internal class RandomRespawner : RustPlugin
     {
+        #region Fields
+
         private const string PERMISSION_USE = "randomrespawner.use";
         private Coroutine findSpawnPosCoroutine;
         private readonly List<Collider> colliders = new List<Collider>();
         private readonly List<Vector3> spawnPositionCache = new List<Vector3>();
+
+        #endregion Fields
 
         #region Oxide Hooks
 

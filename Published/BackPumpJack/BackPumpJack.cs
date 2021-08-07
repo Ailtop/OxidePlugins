@@ -13,6 +13,8 @@ namespace Oxide.Plugins
     [Description("Obtain oil crater using survey charge.")]
     internal class BackPumpJack : RustPlugin
     {
+        #region Fields
+
         [PluginReference] private readonly Plugin Friends, Clans;
         private const string PREFAB_CRATER_OIL = "assets/prefabs/tools/surveycharge/survey_crater_oil.prefab";
         private readonly List<QuarryData> activeCraters = new List<QuarryData>();
@@ -20,6 +22,8 @@ namespace Oxide.Plugins
         private readonly Dictionary<uint, ConfigData.PermissionS> activeSurveyCharges = new Dictionary<uint, ConfigData.PermissionS>();
         private readonly List<MiningQuarry> miningQuarries = new List<MiningQuarry>();
         private static object True = true, False = false;
+
+        #endregion Fields
 
         #region Oxide Hooks
 
@@ -623,11 +627,11 @@ namespace Oxide.Plugins
             catch
             {
                 storedData = null;
-            } 
-                if (storedData == null)
-                {
-                    ClearData();
-                } 
+            }
+            if (storedData == null)
+            {
+                ClearData();
+            }
         }
 
         private void ClearData()
@@ -648,6 +652,7 @@ namespace Oxide.Plugins
         {
             Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

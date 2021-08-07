@@ -290,6 +290,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

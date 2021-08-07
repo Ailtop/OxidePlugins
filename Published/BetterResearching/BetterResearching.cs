@@ -15,6 +15,8 @@ namespace Oxide.Plugins
     [Description("Modify research time, cost, chance")]
     public class BetterResearching : RustPlugin
     {
+        #region Fields
+
         [PluginReference] private readonly Plugin PopupNotifications, RustTranslationAPI;
 
         private static BetterResearching instance;
@@ -24,6 +26,10 @@ namespace Oxide.Plugins
         private ItemDefinition defaultResearchResource;
         private readonly Hash<ResearchTable, BasePlayer> researchers = new Hash<ResearchTable, BasePlayer>();
         private readonly Hash<ResearchTable, HashSet<BasePlayer>> lootingPlayers = new Hash<ResearchTable, HashSet<BasePlayer>>();
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init()
         {
@@ -91,41 +97,6 @@ namespace Oxide.Plugins
         }
 
         private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), SaveData);
-
-        private void UpdateConfig()
-        {
-            var researchTable = GameManager.server.FindPrefab(PREFAB_RESEARCH_TABLE)?.GetComponent<ResearchTable>();
-            if (researchTable == null) return;
-            var newResearchS = new Dictionary<string, ConfigData.ResearchSettings>();
-            foreach (var itemDefinition in ItemManager.GetItemDefinitions())
-            {
-                var item = ItemManager.CreateByItemID(itemDefinition.itemid);
-                if (researchTable.IsItemResearchable(item))
-                {
-                    ConfigData.ResearchSettings researchS;
-                    if (configData.researchS.TryGetValue(item.info.shortname, out researchS))
-                    {
-                        newResearchS.Add(itemDefinition.shortname, researchS);
-                    }
-                    else
-                    {
-                        newResearchS.Add(itemDefinition.shortname, new ConfigData.ResearchSettings
-                        {
-                            displayName = itemDefinition.displayName.english,
-                            scrapAmount = researchTable.ScrapForResearch(item),
-                            itemConsumedSettings = new Dictionary<int, ConfigData.ConsumeSettings>
-                            {
-                                [1] = new ConfigData.ConsumeSettings()
-                            }
-                        });
-                    }
-                }
-                item.Remove();
-            }
-            ItemManager.DoRemoves();
-            configData.researchS = newResearchS;
-            SaveConfig();
-        }
 
         private object CanResearchItem(BasePlayer player, Item targetItem)
         {
@@ -271,7 +242,44 @@ namespace Oxide.Plugins
 
         private void OnItemRemovedFromContainer(ItemContainer itemContainer, Item item) => NextTick(() => UpdateUI(itemContainer, item));
 
+        #endregion Oxide Hooks
+
         #region Methods
+
+        private void UpdateConfig()
+        {
+            var researchTable = GameManager.server.FindPrefab(PREFAB_RESEARCH_TABLE)?.GetComponent<ResearchTable>();
+            if (researchTable == null) return;
+            var newResearchS = new Dictionary<string, ConfigData.ResearchSettings>();
+            foreach (var itemDefinition in ItemManager.GetItemDefinitions())
+            {
+                var item = ItemManager.CreateByItemID(itemDefinition.itemid);
+                if (researchTable.IsItemResearchable(item))
+                {
+                    ConfigData.ResearchSettings researchS;
+                    if (configData.researchS.TryGetValue(item.info.shortname, out researchS))
+                    {
+                        newResearchS.Add(itemDefinition.shortname, researchS);
+                    }
+                    else
+                    {
+                        newResearchS.Add(itemDefinition.shortname, new ConfigData.ResearchSettings
+                        {
+                            displayName = itemDefinition.displayName.english,
+                            scrapAmount = researchTable.ScrapForResearch(item),
+                            itemConsumedSettings = new Dictionary<int, ConfigData.ConsumeSettings>
+                            {
+                                [1] = new ConfigData.ConsumeSettings()
+                            }
+                        });
+                    }
+                }
+                item.Remove();
+            }
+            ItemManager.DoRemoves();
+            configData.researchS = newResearchS;
+            SaveConfig();
+        }
 
         private void UpdateUI(ItemContainer itemContainer, Item item)
         {
@@ -892,6 +900,7 @@ namespace Oxide.Plugins
             if (player == null) Puts(message);
             else PrintToConsole(player, message);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

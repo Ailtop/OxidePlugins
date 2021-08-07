@@ -13,6 +13,8 @@ namespace Oxide.Plugins
     [Description("HUD on PVx name defined Zones")]
     public class ZonePVxInfo : RustPlugin
     {
+        #region Fields
+
         [PluginReference] private readonly Plugin ZoneManager, DynamicPVP, RaidableBases, AbandonedBases;
         private const string UINAME_MAIN = "ZonePVxInfoUI";
         private bool pvpAll;
@@ -24,6 +26,8 @@ namespace Oxide.Plugins
             PVP,
             PVPDelay,
         }
+
+        #endregion Fields
 
         #region Oxide Hooks
 

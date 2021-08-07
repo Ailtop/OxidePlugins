@@ -431,6 +431,7 @@ namespace Oxide.Plugins
         #region LanguageFile
 
         private void Print(BasePlayer player, string message) => Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

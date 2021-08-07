@@ -1005,6 +1005,7 @@ namespace Oxide.Plugins
         {
             Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

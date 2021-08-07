@@ -15,10 +15,15 @@ namespace Oxide.Plugins
     [Description("Automatic kits by permission")]
     public class CustomAutoKits : RustPlugin
     {
+        #region Fields
+
         [PluginReference] private readonly Plugin EventManager, Kits;
 
-        private readonly Dictionary<ulong, Hash<string, float>> kitCooldown =
-            new Dictionary<ulong, Hash<string, float>>();
+        private readonly Dictionary<ulong, Hash<string, float>> kitCooldown = new Dictionary<ulong, Hash<string, float>>();
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init()
         {
@@ -75,6 +80,8 @@ namespace Oxide.Plugins
             if (kitCooldown.TryGetValue(player.userID, out cooldowns)) cooldowns[kitName] = Time.realtimeSinceStartup;
             else kitCooldown.Add(player.userID, new Hash<string, float> { { kitName, Time.realtimeSinceStartup } });
         }
+
+        #endregion Oxide Hooks
 
         #region Methods
 
@@ -492,11 +499,11 @@ namespace Oxide.Plugins
             catch
             {
                 storedData = null;
-            } 
-                if (storedData == null)
-                {
-                    ClearData();
-                } 
+            }
+            if (storedData == null)
+            {
+                ClearData();
+            }
         }
 
         private void SaveData()
@@ -524,6 +531,7 @@ namespace Oxide.Plugins
         {
             Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

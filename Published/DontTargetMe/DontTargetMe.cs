@@ -10,7 +10,7 @@ namespace Oxide.Plugins
     [Description("Makes turrets, player npcs and normal npcs ignore you.")]
     public class DontTargetMe : RustPlugin
     {
-        #region Fileds
+        #region Fields
 
         private const string PERMISSION_ALL = "donttargetme.all";
         private const string PERMISSION_NPC = "donttargetme.npc";
@@ -35,7 +35,7 @@ namespace Oxide.Plugins
             Helicopter = 1 << 4,
         }
 
-        #endregion Fileds
+        #endregion Fields
 
         #region Oxide Hooks
 
@@ -366,6 +366,7 @@ namespace Oxide.Plugins
         #region LanguageFile
 
         private void Print(BasePlayer player, string message) => Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -378,6 +379,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

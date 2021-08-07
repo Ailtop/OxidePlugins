@@ -7,11 +7,26 @@ namespace Oxide.Plugins
     [Description("Changes the health value of quarries.")]
     public class QuarryHealth : RustPlugin
     {
-        private void Init() => Unsubscribe(nameof(OnEntitySpawned));
+        #region Oxide Hooks
 
-        private void OnServerInitialized() => Subscribe(nameof(OnEntitySpawned));
+        private void Init()
+        {
+            Unsubscribe(nameof(OnEntitySpawned));
+        }
 
-        private void OnEntitySpawned(MiningQuarry miningQuarry) => UpdateQuarry(miningQuarry);
+        private void OnServerInitialized()
+        {
+            Subscribe(nameof(OnEntitySpawned));
+        }
+
+        private void OnEntitySpawned(MiningQuarry miningQuarry)
+        {
+            UpdateQuarry(miningQuarry);
+        }
+
+        #endregion Oxide Hooks
+
+        #region Methods
 
         private void UpdateQuarry(MiningQuarry miningQuarry)
         {
@@ -27,6 +42,8 @@ namespace Oxide.Plugins
                 miningQuarry.SendNetworkUpdateImmediate();
             }
         }
+
+        #endregion Methods
 
         #region ConfigurationFile
 

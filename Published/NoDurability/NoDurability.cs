@@ -8,8 +8,14 @@ namespace Oxide.Plugins
     [Info("No Durability", "Wulf/lukespragg/Arainrr", "2.2.4", ResourceId = 1061)]
     public class NoDurability : RustPlugin
     {
+        #region Fields
+
         [PluginReference] private readonly Plugin ZoneManager, DynamicPVP;
         private const string PERMISSION_USE = "nodurability.allowed";
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init() => permission.RegisterPermission(PERMISSION_USE, this);
 
@@ -55,11 +61,17 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion Oxide Hooks
+
+        #region Methods
+
         private bool IsDynamicPVPZone(string zoneID) => (bool)DynamicPVP.Call("IsDynamicPVPZone", zoneID);
 
         private bool IsPlayerInZone(string zoneID, BasePlayer player) => (bool)ZoneManager.Call("IsPlayerInZone", zoneID, player);
 
         private string[] GetPlayerZoneIDs(BasePlayer player) => (string[])ZoneManager.Call("GetPlayerZoneIDs", player);
+
+        #endregion Methods
 
         #region ConfigurationFile
 

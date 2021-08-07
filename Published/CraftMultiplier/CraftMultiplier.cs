@@ -292,6 +292,7 @@ namespace Oxide.Plugins
         {
             Player.Message(player, message, configData.prefix, configData.steamIDIcon);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

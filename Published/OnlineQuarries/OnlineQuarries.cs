@@ -10,9 +10,15 @@ namespace Oxide.Plugins
     [Description("Automatically disable players' quarries when offline")]
     public class OnlineQuarries : RustPlugin
     {
+        #region Fields
+
         [PluginReference] private Plugin Friends, Clans;
         private Dictionary<ulong, Timer> stopEngineTimer = new Dictionary<ulong, Timer>();
         private HashSet<MiningQuarry> miningQuarries = new HashSet<MiningQuarry>();
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void OnServerInitialized()
         {
@@ -94,6 +100,10 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion Oxide Hooks
+
+        #region Methods
+
         private void CheckQuarries(BasePlayer player = null, bool isOn = false)
         {
             foreach (var miningQuarry in miningQuarries)
@@ -160,6 +170,8 @@ namespace Oxide.Plugins
             if (friendClan == null) return false;
             return (string)playerClan == (string)friendClan;
         }
+
+        #endregion Methods
 
         #region ConfigurationFile
 

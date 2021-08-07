@@ -291,7 +291,6 @@ namespace Oxide.Plugins
             public Dictionary<string, int> ingredients;
         }
 
-
         private string GetImageUrl(ItemDefinition itemDefinition, ulong skin = 0)
         {
             if (ImageLibrary == null) return null;
@@ -323,6 +322,7 @@ namespace Oxide.Plugins
         }
 
         #endregion RustTranslationAPI
+
         #endregion Methods
 
         #region API
@@ -393,7 +393,7 @@ namespace Oxide.Plugins
                     CreateDataFile(FileType.Ingredient, language);
                     return;
             }
-SyntaxError:
+            SyntaxError:
             SendReply(arg, "Syntax error, please type 'costfile <shop / reward / ingredients> [language]'");
         }
 

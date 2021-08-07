@@ -621,11 +621,11 @@ namespace Oxide.Plugins
             catch
             {
                 storedData = null;
-            } 
-                if (storedData == null)
-                {
-                    ClearData();
-                } 
+            }
+            if (storedData == null)
+            {
+                ClearData();
+            }
         }
 
         private void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
@@ -673,6 +673,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

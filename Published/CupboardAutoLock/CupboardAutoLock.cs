@@ -9,8 +9,14 @@ namespace Oxide.Plugins
     [Description("Automatically add a codelock on cupboards.")]
     public class CupboardAutoLock : RustPlugin
     {
+        #region Fields
+
         private const string PERMISSION_USE = "cupboardautolock.code";
         private const string PREFAB_CODE_LOCK = "assets/prefabs/locks/keypad/lock.code.prefab";
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init() => permission.RegisterPermission(PERMISSION_USE, this);
 
@@ -42,6 +48,8 @@ namespace Oxide.Plugins
                 if (player != null) player.ChatMessage(Lang("AutoLockMsg", player.UserIDString, codeLock.code));
             });
         }
+
+        #endregion Oxide Hooks
 
         #region ConfigurationFile
 
@@ -81,6 +89,7 @@ namespace Oxide.Plugins
         #endregion ConfigurationFile
 
         #region LanguageFile
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -93,6 +102,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>
@@ -104,7 +114,7 @@ namespace Oxide.Plugins
                 ["AutoLockMsg"] = "您的领地柜已自动上锁，密码为 {0}",
             }, this, "zh-CN");
         }
-         
+
         #endregion LanguageFile
     }
 }

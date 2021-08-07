@@ -12,6 +12,8 @@ namespace Oxide.Plugins
     [Description("Control all spawn populations on your server")]
     public class EntityReducer : RustPlugin
     {
+        #region Oxide Hooks
+
         private void OnServerInitialized()
         {
             if (SpawnHandler.Instance == null || SpawnHandler.Instance.AllSpawnPopulations == null)
@@ -26,6 +28,10 @@ namespace Oxide.Plugins
                 ApplySpawnHandler();
             }
         }
+
+        #endregion Oxide Hooks
+
+        #region Methods
 
         private void UpdateConfig()
         {
@@ -96,16 +102,6 @@ namespace Oxide.Plugins
 
         #endregion Enforce Limits
 
-        [ConsoleCommand("er.fillpopulations")]
-        private void CmdFillPopulations(ConsoleSystem.Arg arg)
-        {
-            SpawnHandler.Instance.FillPopulations();
-            SendReply(arg, "Successfully filled all populations");
-        }
-
-        [ConsoleCommand("er.getreport")]
-        private void CmdGetReport(ConsoleSystem.Arg arg) => SendReply(arg, GetReport());
-
         public string GetReport()
         {
             SpawnPopulation[] allSpawnPopulations = SpawnHandler.Instance.AllSpawnPopulations;
@@ -130,6 +126,22 @@ namespace Oxide.Plugins
             }
             return stringBuilder.ToString();
         }
+
+        #endregion Methods
+
+        #region Commands
+
+        [ConsoleCommand("er.fillpopulations")]
+        private void CmdFillPopulations(ConsoleSystem.Arg arg)
+        {
+            SpawnHandler.Instance.FillPopulations();
+            SendReply(arg, "Successfully filled all populations");
+        }
+
+        [ConsoleCommand("er.getreport")]
+        private void CmdGetReport(ConsoleSystem.Arg arg) => SendReply(arg, GetReport());
+
+        #endregion Commands
 
         #region ConfigurationFile
 

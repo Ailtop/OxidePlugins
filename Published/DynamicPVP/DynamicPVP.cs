@@ -2218,11 +2218,11 @@ namespace Oxide.Plugins
             catch
             {
                 storedData = null;
-            } 
-                if (storedData == null)
-                {
-                    ClearData();
-                } 
+            }
+            if (storedData == null)
+            {
+                ClearData();
+            }
         }
 
         private void ClearData()
@@ -2254,6 +2254,7 @@ namespace Oxide.Plugins
             if (string.IsNullOrEmpty(message)) return;
             Player.Message(player, message, string.IsNullOrEmpty(configData.chatS.prefix) ? null : $"<color={configData.chatS.prefixColor}>{configData.chatS.prefix}</color>", configData.chatS.steamIDIcon);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -2266,6 +2267,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

@@ -9,11 +9,17 @@ namespace Oxide.Plugins
     [Description("Control player's chainsaws")]
     public class ChainsawOptions : RustPlugin
     {
+        #region Fields
+
         private const string PREFAB_CHAINSAW = "assets/prefabs/weapons/chainsaw/chainsaw.entity.prefab";
 
         private int defaultMaxAmmo;
         private float defaultFuelPerSec;
         private float defaultEngineStartChance;
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init()
         {
@@ -61,6 +67,10 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion Oxide Hooks
+
+        #region Methods
+
         private ConfigData.PermissionS GetPermissionS(BasePlayer player)
         {
             ConfigData.PermissionS permissionS = null;
@@ -75,6 +85,8 @@ namespace Oxide.Plugins
             }
             return permissionS;
         }
+
+        #endregion Methods
 
         #region ConfigurationFile
 

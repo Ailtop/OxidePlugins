@@ -1097,6 +1097,7 @@ namespace Oxide.Plugins
             if (player == null) Puts(message);
             else PrintToConsole(player, message);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

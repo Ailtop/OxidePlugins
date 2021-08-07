@@ -1354,6 +1354,7 @@ namespace Oxide.Plugins
                     ? $"{configData.chatS.prefix}"
                     : $"<color={configData.chatS.prefixColor}>{configData.chatS.prefix}</color>");
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -1366,6 +1367,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

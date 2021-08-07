@@ -9,11 +9,17 @@ namespace Oxide.Plugins
     [Description("Mark all samsites in the map")]
     internal class SamSiteMap : RustPlugin
     {
+        #region Fields
+
         private const string PERMISSION_USE = "samsitemap.use";
         private const string PREFAB_MARKER = "assets/prefabs/tools/map/genericradiusmarker.prefab";
         private const string PREFAB_TEXT = "assets/prefabs/deployable/vendingmachine/vending_mapmarker.prefab";
         private readonly HashSet<MapMarker> mapMarkers = new HashSet<MapMarker>();
         private readonly Dictionary<SamSite, MapMarkerGenericRadius> samSiteMarkers = new Dictionary<SamSite, MapMarkerGenericRadius>();
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init()
         {
@@ -96,6 +102,10 @@ namespace Oxide.Plugins
                 KillMapMarker(entry.Value);
             }
         }
+
+        #endregion Oxide Hooks
+
+        #region Methods
 
         private void KillMapMarker(MapMarkerGenericRadius mapMarker)
         {
@@ -191,6 +201,8 @@ namespace Oxide.Plugins
 
             samSiteMarkers.Add(samSite, mapMarker);
         }
+
+        #endregion Methods
 
         #region ConfigurationFile
 

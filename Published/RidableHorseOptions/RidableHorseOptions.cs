@@ -9,7 +9,13 @@ namespace Oxide.Plugins
     [Description("Controls all rideable horses on your server")]
     public class RidableHorseOptions : RustPlugin
     {
+        #region Fields
+
         private const string PREFAB_RIDABLE_HORSE = "assets/rust.ai/nextai/testridablehorse.prefab";
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init() => Unsubscribe(nameof(OnEntitySpawned));
 
@@ -28,6 +34,10 @@ namespace Oxide.Plugins
             if (ridableHorse == null) return;
             ApplyHorseSettings(ridableHorse);
         }
+
+        #endregion Oxide Hooks
+
+        #region Methods
 
         private void UpdateConfig()
         {
@@ -112,6 +122,8 @@ namespace Oxide.Plugins
 
             ridableHorse.SendNetworkUpdate();
         }
+
+        #endregion Methods
 
         #region ConfigurationFile
 

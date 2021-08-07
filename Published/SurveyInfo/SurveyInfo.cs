@@ -12,11 +12,15 @@ namespace Oxide.Plugins
     [Description("Displays loot from survey charges")]
     internal class SurveyInfo : RustPlugin
     {
+        #region Fields
+
         [PluginReference] private Plugin RustTranslationAPI;
         private static SurveyInfo instance;
         private const string PERMISSION_USE = "surveyinfo.use";
         private const string PERMISSION_CHECK = "surveyinfo.check";
         private readonly HashSet<uint> checkedCraters = new HashSet<uint>();
+
+        #endregion Fields
 
         #region Oxide Hooks
 
@@ -310,6 +314,7 @@ namespace Oxide.Plugins
         #region LanguageFile
 
         private void Print(BasePlayer player, string message) => Player.Message(player, message, configData.prefix, configData.steamIDIcon);
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

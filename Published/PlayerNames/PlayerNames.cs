@@ -10,8 +10,14 @@ namespace Oxide.Plugins
     [Description("Logs and stores all names used by players.")]
     public class PlayerNames : CovalencePlugin
     {
+        #region Fields
+
         private const string PERMISSION_USE = "playernames.use";
         private bool changed = false;
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init()
         {
@@ -47,6 +53,10 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion Oxide Hooks
+
+        #region Methods
+
         private string GetPlayerNames(string playerID)
         {
             if (playerData.ContainsKey(playerID))
@@ -59,6 +69,8 @@ namespace Oxide.Plugins
             }
             return string.Empty;
         }
+
+        #endregion Methods
 
         #region Command
 
@@ -104,6 +116,7 @@ namespace Oxide.Plugins
         #endregion DataFile
 
         #region LanguageFile
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -116,6 +129,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>
@@ -135,6 +149,7 @@ namespace Oxide.Plugins
                 ["PlayerNotFound"] = "玩家 '{0}' 没有找到"
             }, this, "zh-CN");
         }
-         #endregion LanguageFile
+
+        #endregion LanguageFile
     }
 }

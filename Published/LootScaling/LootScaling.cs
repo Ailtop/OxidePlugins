@@ -19,6 +19,8 @@ namespace Oxide.Plugins
         //
         //I have NOT tested changing these, but setting min_rate/density to 0 is probably NOT a good idea so don't do it!
 
+        #region Oxide Hooks
+
         private void OnServerInitialized()
         {
             Dictionary<string, bool> newConfig = new Dictionary<string, bool>();
@@ -36,6 +38,8 @@ namespace Oxide.Plugins
             configData.populationScaling = newConfig.OrderBy(x => x.Key).ToDictionary(p => p.Key, o => o.Value);
             SaveConfig();
         }
+
+        #endregion Oxide Hooks
 
         #region ConfigurationFile
 

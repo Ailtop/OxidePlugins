@@ -536,7 +536,7 @@ namespace Oxide.Plugins
             if (Enum.TryParse(vehicle.vehicleType, out normalVehicleType))
             {
                 ItemContainer inventory = null;
-                EntityFuelSystem fuelSystem =null ;
+                EntityFuelSystem fuelSystem = null;
                 switch (normalVehicleType)
                 {
                     case NormalVehicleType.Sedan:
@@ -548,7 +548,7 @@ namespace Oxide.Plugins
                         {
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                             {
-                                fuelSystem = (entity as MiniCopter)?.GetFuelSystem() ; 
+                                fuelSystem = (entity as MiniCopter)?.GetFuelSystem();
                             }
                         }
                         break;
@@ -573,12 +573,12 @@ namespace Oxide.Plugins
                             var motorRowboat = entity as MotorRowboat;
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                             {
-                                fuelSystem = motorRowboat?.GetFuelSystem( ); 
+                                fuelSystem = motorRowboat?.GetFuelSystem();
                             }
 
                             if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
                             {
-                                inventory = (motorRowboat?.storageUnitInstance.Get(true) as StorageContainer)?.inventory ;
+                                inventory = (motorRowboat?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
                             }
                         }
                         break;
@@ -587,7 +587,7 @@ namespace Oxide.Plugins
                         {
                             if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
                             {
-                                inventory = (entity as RidableHorse)?.inventory; 
+                                inventory = (entity as RidableHorse)?.inventory;
                             }
                         }
                         break;
@@ -620,7 +620,7 @@ namespace Oxide.Plugins
                             }
                             if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
                             {
-                                inventory = baseSubmarine?.GetTorpedoContainer()?.inventory; 
+                                inventory = baseSubmarine?.GetTorpedoContainer()?.inventory;
                             }
                         }
                         break;
@@ -628,16 +628,16 @@ namespace Oxide.Plugins
                     default: return;
                 }
 
-               var fuelContainer = fuelSystem?.GetFuelContainer()?.inventory;
-               if (fuelContainer != null)
-               {
-                   collect.AddRange(fuelContainer.itemList);
-               }
+                var fuelContainer = fuelSystem?.GetFuelContainer()?.inventory;
+                if (fuelContainer != null)
+                {
+                    collect.AddRange(fuelContainer.itemList);
+                }
 
-               if (inventory != null)
-               {
-                   collect.AddRange(inventory.itemList);
-               }
+                if (inventory != null)
+                {
+                    collect.AddRange(inventory.itemList);
+                }
             }
             else
             {
@@ -769,12 +769,12 @@ namespace Oxide.Plugins
                         break;
 
                     case NormalVehicleType.MagnetCrane:
-                        fuelSystem = (entity as BaseCrane)?.GetFuelSystem() ;
+                        fuelSystem = (entity as BaseCrane)?.GetFuelSystem();
                         break;
 
                     case NormalVehicleType.SubmarineSolo:
                     case NormalVehicleType.SubmarineDouble:
-                        fuelSystem = (entity as BaseSubmarine)?.GetFuelSystem() ;
+                        fuelSystem = (entity as BaseSubmarine)?.GetFuelSystem();
                         break;
 
                     default: return;
@@ -889,7 +889,7 @@ namespace Oxide.Plugins
                             itemContainer = (entity as RidableHorse)?.inventory;
                         }
                         break;
-                         
+
                     case NormalVehicleType.SubmarineSolo:
                     case NormalVehicleType.SubmarineDouble:
                         {
@@ -3760,12 +3760,9 @@ namespace Oxide.Plugins
             {
                 storedData = null;
             }
-            finally
+            if (storedData == null)
             {
-                if (storedData == null)
-                {
-                    ClearData();
-                }
+                ClearData();
             }
         }
 
@@ -3805,6 +3802,7 @@ namespace Oxide.Plugins
             if (player == null) Puts(message);
             else PrintToConsole(player, message);
         }
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

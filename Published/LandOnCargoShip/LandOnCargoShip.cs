@@ -6,6 +6,8 @@ namespace Oxide.Plugins
     [Description("Allow the mini copter to land on the cargo ship")]
     public class LandOnCargoShip : RustPlugin
     {
+        #region Oxide Hooks
+
         private void Init()
         {
             Unsubscribe(nameof(OnEntitySpawned));
@@ -72,5 +74,7 @@ namespace Oxide.Plugins
                 }
             }
         }
+
+        #endregion Oxide Hooks
     }
 }

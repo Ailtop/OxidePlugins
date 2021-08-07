@@ -11,8 +11,14 @@ namespace Oxide.Plugins
     [Description("Teleport to recyclers via command.")]
     public class RecyclerTeleport : RustPlugin
     {
+        #region Fields
+
         private const string PERMISSION_USE = "recyclerteleport.use";
         private readonly List<Vector3> recyclerPositions = new List<Vector3>();
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init()
         {
@@ -21,6 +27,10 @@ namespace Oxide.Plugins
         }
 
         private void OnServerInitialized() => Findrecycler();
+
+        #endregion Oxide Hooks
+
+        #region Methods
 
         private void Findrecycler()
         {
@@ -95,6 +105,8 @@ namespace Oxide.Plugins
             TeleportToRecycler(player);
         }
 
+        #endregion Methods
+
         #region ConfigurationFile
 
         private ConfigData configData;
@@ -150,6 +162,7 @@ namespace Oxide.Plugins
         #region LanguageFile
 
         private void Print(BasePlayer player, string message) => Player.Message(player, message, $"<color={configData.prefixColor}>{configData.prefix}</color>", configData.steamIDIcon);
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try

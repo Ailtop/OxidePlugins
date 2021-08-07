@@ -266,6 +266,7 @@ namespace Oxide.Plugins
         #region LanguageFile
 
         private void Print(BasePlayer player, string message) => Player.Message(player, message, $"<color={configData.chatS.prefixColor}>{configData.chatS.prefix}</color>", configData.chatS.steamIDIcon);
+
         private string Lang(string key, string id = null, params object[] args)
         {
             try
@@ -278,6 +279,7 @@ namespace Oxide.Plugins
                 throw;
             }
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>

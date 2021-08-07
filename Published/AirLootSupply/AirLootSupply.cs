@@ -6,7 +6,6 @@
     {
         #region Oxide Hooks
 
-        
         private void Init()
         {
             Unsubscribe(nameof(OnEntitySpawned));
@@ -31,6 +30,6 @@
             supplyDrop.MakeLootable();
         }
 
-        #endregion
+        #endregion Oxide Hooks
     }
 }
