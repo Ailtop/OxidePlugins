@@ -1,4 +1,9 @@
-﻿using Facepunch;
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
@@ -7,11 +12,6 @@ using Oxide.Core.Configuration;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust.Cui;
 using Rust;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -21,7 +21,8 @@ namespace Oxide.Plugins
     public class ZoneManager : RustPlugin
     {
         #region Fields
-        [PluginReference] Plugin Backpacks, PopupNotifications, Spawns;
+
+        [PluginReference] private Plugin Backpacks, PopupNotifications, Spawns;
 
         private StoredData storedData;
 
@@ -35,11 +36,9 @@ namespace Oxide.Plugins
 
         private Dictionary<ulong, string> lastPlayerZone = new Dictionary<ulong, string>();
 
-
         private ZoneFlags globalFlags;
 
         private bool zonesInitialized = false;
-
 
         private static ZoneManager Instance { get; set; }
 
@@ -50,9 +49,11 @@ namespace Oxide.Plugins
         private const int PLAYER_MASK = 131072;
 
         private const int TARGET_LAYERS = ~(1 << 10 | 1 << 18 | 1 << 28 | 1 << 29);
-        #endregion
+
+        #endregion Fields
 
         #region Oxide Hooks
+
         private void Loaded()
         {
             lang.RegisterMessages(Messages, this);
@@ -111,9 +112,11 @@ namespace Oxide.Plugins
 
             Instance = null;
         }
-        #endregion
 
-        #region UpdateQueue  
+        #endregion Oxide Hooks
+
+        #region UpdateQueue
+
         private UpdateBehaviour updateBehaviour;
 
         private void InitializeUpdateBehaviour()
@@ -174,9 +177,11 @@ namespace Oxide.Plugins
                 }
             }
         }
-        #endregion
+
+        #endregion UpdateQueue
 
         #region Flag Hooks
+
         private void OnEntityBuilt(Planner planner, GameObject gObject)
         {
             BasePlayer player = planner?.GetOwnerPlayer();
@@ -540,6 +545,7 @@ namespace Oxide.Plugins
         }
 
         #region Looting Hooks
+
         private object CanLootPlayer(BasePlayer target, BasePlayer looter) => OnLootPlayerInternal(looter, target);
 
         private void OnLootPlayer(BasePlayer looter, BasePlayer target) => OnLootPlayerInternal(looter, target);
@@ -623,9 +629,11 @@ namespace Oxide.Plugins
                 NextTick(player.EndLooting);
             }
         }
-        #endregion
+
+        #endregion Looting Hooks
 
         #region Pickup Hooks
+
         private object CanPickupEntity(BasePlayer player, BaseCombatEntity entity) => CanPickupInternal(player, ZoneFlags.NoEntityPickup);
 
         private object CanPickupLock(BasePlayer player, BaseLock baseLock) => CanPickupInternal(player, ZoneFlags.NoEntityPickup);
@@ -641,9 +649,11 @@ namespace Oxide.Plugins
             }
             return null;
         }
-        #endregion
 
-        #region Gather Hooks        
+        #endregion Pickup Hooks
+
+        #region Gather Hooks
+
         private object CanLootEntity(ResourceContainer container, BasePlayer player) => OnGatherInternal(player);
 
         private object OnCollectiblePickup(Item item, BasePlayer player) => OnGatherInternal(player);
@@ -664,9 +674,11 @@ namespace Oxide.Plugins
             }
             return null;
         }
-        #endregion
+
+        #endregion Gather Hooks
 
         #region Targeting Hooks
+
         private object OnTurretTarget(AutoTurret turret, BaseCombatEntity entity) => OnTargetPlayerInternal(entity?.ToPlayer(), ZoneFlags.NoTurretTargeting);
 
         private object CanBradleyApcTarget(BradleyAPC apc, BaseEntity entity)
@@ -706,15 +718,17 @@ namespace Oxide.Plugins
             }
             return null;
         }
-        #endregion
+
+        #endregion Targeting Hooks
 
         #region Additional KillSleeper Checks
+
         private void OnPlayerSleep(BasePlayer player)
         {
             if (player == null)
                 return;
 
-            //player.Invoke(()=> UpdatePlayerZones(player), 1f); // Manually update the zones a player is in. Sleeping players don't trigger OnTriggerEnter or OnTriggerExit            
+            //player.Invoke(()=> UpdatePlayerZones(player), 1f); // Manually update the zones a player is in. Sleeping players don't trigger OnTriggerEnter or OnTriggerExit
 
             timer.In(2f, () =>
             {
@@ -825,10 +839,13 @@ namespace Oxide.Plugins
         }
 
         private bool IsInsideBounds(Zone zone, Vector3 worldPos) => zone?.collider?.ClosestPoint(worldPos) == worldPos;
-        #endregion
-        #endregion
+
+        #endregion Additional KillSleeper Checks
+
+        #endregion Flag Hooks
 
         #region Zone Functions
+
         private void InitializeZones()
         {
             if (zonesInitialized)
@@ -939,7 +956,7 @@ namespace Oxide.Plugins
 
         private void ShowZone(BasePlayer player, string zoneId, float time = 30)
         {
-            Zone zone = GetZoneByID(zoneId); 
+            Zone zone = GetZoneByID(zoneId);
             if (zone == null)
             {
                 return;
@@ -978,9 +995,10 @@ namespace Oxide.Plugins
 
         private Vector3 RotatePointAroundPivot(Vector3 point, Vector3 pivot, Quaternion rotation) => rotation * (point - pivot) + pivot;
 
-        #endregion
+        #endregion Zone Functions
 
         #region Component
+
         public class Zone : MonoBehaviour
         {
             internal Definition definition;
@@ -1047,6 +1065,7 @@ namespace Oxide.Plugins
             }
 
             #region Zone Initialization
+
             public void InitializeZone(Definition definition)
             {
                 this.definition = definition;
@@ -1073,13 +1092,13 @@ namespace Oxide.Plugins
 
                     RemoveAllPlayers();
                     AddAllPlayers();
-                    InvokeHandler.InvokeRepeating(this,() =>
-                    { 
-                        foreach (var player in BasePlayer.activePlayerList)
-                        {
-                            Instance.ShowZone(player,definition.Id);
-                        }
-                    },0,2);
+                    InvokeHandler.InvokeRepeating(this, () =>
+                     {
+                         foreach (var player in BasePlayer.activePlayerList)
+                         {
+                             Instance.ShowZone(player, definition.Id);
+                         }
+                     }, 0, 2);
                 }
                 else
                 {
@@ -1172,9 +1191,11 @@ namespace Oxide.Plugins
                     collider = sphereCollider;
                 }
             }
-            #endregion
+
+            #endregion Zone Initialization
 
             #region Triggers
+
             private void InitializeRadiation()
             {
                 radiation = gameObject.GetComponent<TriggerRadiation>();
@@ -1324,9 +1345,11 @@ namespace Oxide.Plugins
                     RemoveFromTrigger(temperature, player);
                 }
             }
-            #endregion
+
+            #endregion Triggers
 
             #region Autolights
+
             private bool isLightsOn = false;
 
             private void InitializeAutoLights()
@@ -1422,9 +1445,11 @@ namespace Oxide.Plugins
 
                 return false;
             }
-            #endregion
 
-            #region Entity Detection            
+            #endregion Autolights
+
+            #region Entity Detection
+
             private void OnTriggerEnter(Collider col)
             {
                 if (!definition.Enabled)
@@ -1559,9 +1584,11 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            #endregion
+
+            #endregion Entity Detection
 
             #region Helpers
+
             public bool HasPermission(BasePlayer player) => string.IsNullOrEmpty(definition.Permission) ? true : Instance.permission.UserHasPermission(player.UserIDString, definition.Permission);
 
             public bool CanLeaveZone(BasePlayer player) => !keepInList.Contains(player.userID);
@@ -1569,9 +1596,11 @@ namespace Oxide.Plugins
             public bool CanEnterZone(BasePlayer player) => HasPermission(player) || !CanLeaveZone(player) || whitelist.Contains(player.userID);
 
             private bool HasFlag(ZoneFlags flags) => (definition.Flags & ~disabledFlags & flags) == flags;
-            #endregion
+
+            #endregion Helpers
 
             #region Zone Definition
+
             public class Definition
             {
                 public string Name { get; set; }
@@ -1592,7 +1621,9 @@ namespace Oxide.Plugins
                 public bool Enabled { get; set; } = true;
                 public ZoneFlags Flags { get; set; }
 
-                public Definition() { }
+                public Definition()
+                {
+                }
 
                 public Definition(Vector3 position)
                 {
@@ -1600,11 +1631,14 @@ namespace Oxide.Plugins
                     Location = position;
                 }
             }
-            #endregion
+
+            #endregion Zone Definition
         }
-        #endregion
+
+        #endregion Component
 
         #region Entity Management
+
         private void OnPlayerEnterZone(BasePlayer player, Zone zone)
         {
             if (player == null || player.IsNpc)
@@ -1769,9 +1803,11 @@ namespace Oxide.Plugins
 
             Interface.CallHook("OnEntityExitZone", zone.definition.Id, baseEntity);
         }
-        #endregion
+
+        #endregion Entity Management
 
         #region Helpers
+
         private bool IsAdmin(BasePlayer player) => player?.net?.connection?.authLevel > 0;
 
         private bool HasPermission(BasePlayer player, string permname) => IsAdmin(player) || permission.UserHasPermission(player.UserIDString, permname);
@@ -1841,11 +1877,12 @@ namespace Oxide.Plugins
 
             return entityZones.HasFlag(flag);
         }
-        #endregion
 
-        #region API 
+        #endregion Helpers
 
-        #region Zone Management       
+        #region API
+
+        #region Zone Management
 
         private void SetZoneStatus(string zoneId, bool active)
         {
@@ -2064,7 +2101,6 @@ namespace Oxide.Plugins
             return true;
         }
 
-
         private List<string> ZoneFieldListRaw()
         {
             List<string> list = new List<string> { "name", "ID", "radius", "rotation", "size", "Location", "enter_message", "leave_message", "radiation", "comfort", "temperature" };
@@ -2101,9 +2137,11 @@ namespace Oxide.Plugins
 
             return fields;
         }
-        #endregion
 
-        #region Entity Management        
+        #endregion Zone Management
+
+        #region Entity Management
+
         private bool AddPlayerToZoneKeepinlist(string zoneId, BasePlayer player)
         {
             Zone zone = GetZoneByID(zoneId);
@@ -2177,9 +2215,11 @@ namespace Oxide.Plugins
                 return false;
             }
         }
-        #endregion
+
+        #endregion Entity Management
 
         #region Third Party Plugin Integration
+
         private object CanRedeemKit(BasePlayer player) => HasPlayerFlag(player, ZoneFlags.NoKits, false) ? "You may not redeem a kit inside this area" : null;
 
         private object CanTeleport(BasePlayer player) => HasPlayerFlag(player, ZoneFlags.NoTp, false) ? "You may not teleport in this area" : null;
@@ -2195,11 +2235,13 @@ namespace Oxide.Plugins
         private object canShop(BasePlayer player) => CanShop(player);
 
         private object CanShop(BasePlayer player) => HasPlayerFlag(player, ZoneFlags.NoShop, false) ? "You may not use the store in this area" : null;
-        #endregion
 
-        #endregion
+        #endregion Third Party Plugin Integration
+
+        #endregion API
 
         #region Flags
+
         [Flags]
         public enum ZoneFlags : ulong
         {
@@ -2326,9 +2368,11 @@ namespace Oxide.Plugins
                 }
             }
         }
-        #endregion
+
+        #endregion Flags
 
         #region Hook Subscriptions
+
         private bool HasGlobalFlag(ZoneFlags flags) => (globalFlags & flags) != 0;
 
         private void UpdateGlobalFlags()
@@ -2496,9 +2540,11 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(OnNpcTarget));
             Unsubscribe(nameof(OnPlayerVoice));
         }
-        #endregion
+
+        #endregion Hook Subscriptions
 
         #region Zone Creation
+
         private void UpdateZoneDefinition(Zone zone, string[] args, BasePlayer player = null)
         {
             for (var i = 0; i < args.Length; i = i + 2)
@@ -2648,9 +2694,11 @@ namespace Oxide.Plugins
                     SendMessage(player, $"{args[i]} set to {editvalue}");
             }
         }
-        #endregion
+
+        #endregion Zone Creation
 
         #region Commands
+
         [ChatCommand("zone_add")]
         private void cmdChatZoneAdd(BasePlayer player, string command, string[] args)
         {
@@ -2935,11 +2983,15 @@ namespace Oxide.Plugins
             zone.Reset();
             SaveData();
         }
-        #endregion
+
+        #endregion Commands
 
         #region UI
-        const string ZMUI = "zmui.editor";
+
+        private const string ZMUI = "zmui.editor";
+
         #region Helper
+
         public static class UI
         {
             static public CuiElementContainer Container(string panel, string color, string min, string max, bool useCursor = false, string parent = "Overlay")
@@ -2959,6 +3011,7 @@ namespace Oxide.Plugins
                 };
                 return container;
             }
+
             static public void Panel(ref CuiElementContainer container, string panel, string color, string min, string max, bool cursor = false)
             {
                 container.Add(new CuiPanel
@@ -2969,6 +3022,7 @@ namespace Oxide.Plugins
                 },
                 panel);
             }
+
             static public void Label(ref CuiElementContainer container, string panel, string text, int size, string min, string max, TextAnchor align = TextAnchor.MiddleCenter)
             {
                 container.Add(new CuiLabel
@@ -2977,8 +3031,8 @@ namespace Oxide.Plugins
                     RectTransform = { AnchorMin = min, AnchorMax = max }
                 },
                 panel);
-
             }
+
             static public void Button(ref CuiElementContainer container, string panel, string color, string text, int size, string min, string max, string command, TextAnchor align = TextAnchor.MiddleCenter)
             {
                 container.Add(new CuiButton
@@ -2989,6 +3043,7 @@ namespace Oxide.Plugins
                 },
                 panel);
             }
+
             public static string Color(string hexColor, float alpha)
             {
                 if (hexColor.StartsWith("#"))
@@ -2999,9 +3054,11 @@ namespace Oxide.Plugins
                 return $"{(double)red / 255} {(double)green / 255} {(double)blue / 255} {alpha}";
             }
         }
-        #endregion
+
+        #endregion Helper
 
         #region Creation
+
         private void OpenFlagEditor(BasePlayer player, string zoneId)
         {
             Zone zone = GetZoneByID(zoneId);
@@ -3054,9 +3111,11 @@ namespace Oxide.Plugins
         }
 
         private int ColumnNumber(int max, int count) => Mathf.FloorToInt(count / max);
-        #endregion
+
+        #endregion Creation
 
         #region Commands
+
         [ConsoleCommand("zmui.editflag")]
         private void ccmdEditFlag(ConsoleSystem.Arg arg)
         {
@@ -3088,10 +3147,13 @@ namespace Oxide.Plugins
                 OpenFlagEditor(player, zoneId);
             }
         }
-        #endregion
-        #endregion
 
-        #region Config        
+        #endregion Commands
+
+        #endregion UI
+
+        #region Config
+
         private ConfigData configData;
 
         private class ConfigData
@@ -3184,9 +3246,11 @@ namespace Oxide.Plugins
             configData.Version = Version;
             PrintWarning("Config update completed!");
         }
-        #endregion
+
+        #endregion Config
 
         #region Data Management
+
         private void SaveData()
         {
             storedData.definitions = new HashSet<Zone.Definition>();
@@ -3313,9 +3377,11 @@ namespace Oxide.Plugins
                 return objectType == typeof(Vector3);
             }
         }
-        #endregion
+
+        #endregion Data Management
 
         #region Localization
+
         private string Message(string key, string playerId = null) => lang.GetMessage(key, this, playerId);
 
         private Dictionary<string, string> Messages = new Dictionary<string, string>
@@ -3341,6 +3407,8 @@ namespace Oxide.Plugins
             ["novehiclesenter"] = "Vehicles are not allowed in this area!",
             ["novehiclesleave"] = "Vehicles are not allowed to leave this area!"
         };
-        #endregion                
+
+        #endregion Localization
+
     }
 }

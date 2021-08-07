@@ -38,9 +38,9 @@ namespace Oxide.Plugins
         {
             Subscribe(nameof(OnEntitySpawned));
             UpdateConfig(configData.entityS.Count <= 0);
-            foreach (var baseNetworkable in BaseNetworkable.serverEntities)
+            foreach (var serverEntity in BaseNetworkable.serverEntities)
             {
-                var baseCombatEntity = baseNetworkable as BaseCombatEntity;
+                var baseCombatEntity = serverEntity as BaseCombatEntity;
                 if (baseCombatEntity != null)
                 {
                     CreateDecayController(baseCombatEntity);
@@ -626,13 +626,10 @@ namespace Oxide.Plugins
             {
                 storedData = null;
             }
-            finally
+            if (storedData == null)
             {
-                if (storedData == null)
-                {
-                    storedData = new StoredData();
-                    UpdateData();
-                }
+                storedData = new StoredData();
+                UpdateData();
             }
         }
 
@@ -647,7 +644,18 @@ namespace Oxide.Plugins
             Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
         }
 
-        private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
+        private string Lang(string key, string id = null, params object[] args)
+        {
+            try
+            {
+                return string.Format(lang.GetMessage(key, this, id), args);
+            }
+            catch (Exception)
+            {
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                throw;
+            }
+        }
 
         protected override void LoadDefaultMessages()
         {

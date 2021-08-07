@@ -292,10 +292,17 @@ namespace Oxide.Plugins
         {
             Player.Message(player, message, configData.prefix, configData.steamIDIcon);
         }
-
         private string Lang(string key, string id = null, params object[] args)
         {
-            return string.Format(lang.GetMessage(key, this, id), args);
+            try
+            {
+                return string.Format(lang.GetMessage(key, this, id), args);
+            }
+            catch (Exception)
+            {
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                throw;
+            }
         }
 
         protected override void LoadDefaultMessages()

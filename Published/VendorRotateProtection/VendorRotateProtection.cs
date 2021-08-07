@@ -111,7 +111,19 @@ namespace Oxide.Plugins
         #endregion ConfigurationFile
 
         #region LanguageFile
-
+        private void Print(BasePlayer player, string message) => Player.Message(player, message, $"<color={configData.prefixColor}>{configData.prefix}</color>", configData.steamIDIcon);
+        private string Lang(string key, string id = null, params object[] args)
+        {
+            try
+            {
+                return string.Format(lang.GetMessage(key, this, id), args);
+            }
+            catch (Exception)
+            {
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                throw;
+            }
+        }
         protected override void LoadDefaultMessages()
         {
             //English
@@ -151,9 +163,7 @@ namespace Oxide.Plugins
             }, this, "zh-CN");
         }
 
-        private void Print(BasePlayer player, string message) => Player.Message(player, message, $"<color={configData.prefixColor}>{configData.prefix}</color>", configData.steamIDIcon);
-
-        private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
+         
 
         #endregion LanguageFile
     }

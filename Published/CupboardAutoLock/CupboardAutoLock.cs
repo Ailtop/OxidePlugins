@@ -81,7 +81,18 @@ namespace Oxide.Plugins
         #endregion ConfigurationFile
 
         #region LanguageFile
-
+        private string Lang(string key, string id = null, params object[] args)
+        {
+            try
+            {
+                return string.Format(lang.GetMessage(key, this, id), args);
+            }
+            catch (Exception)
+            {
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                throw;
+            }
+        }
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>
@@ -93,9 +104,7 @@ namespace Oxide.Plugins
                 ["AutoLockMsg"] = "您的领地柜已自动上锁，密码为 {0}",
             }, this, "zh-CN");
         }
-
-        private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
-
+         
         #endregion LanguageFile
     }
 }

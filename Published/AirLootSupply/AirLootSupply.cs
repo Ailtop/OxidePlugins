@@ -4,6 +4,9 @@
     [Description("Allow supply to be loot when it's dropping")]
     public class AirLootSupply : RustPlugin
     {
+        #region Oxide Hooks
+
+        
         private void Init()
         {
             Unsubscribe(nameof(OnEntitySpawned));
@@ -27,5 +30,7 @@
             if (supplyDrop == null) return;
             supplyDrop.MakeLootable();
         }
+
+        #endregion
     }
 }

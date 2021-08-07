@@ -861,6 +861,11 @@ namespace Oxide.Plugins
             }
             catch
             {
+                storedData = null;
+            }
+
+            if (storedData == null)
+            {
                 ClearData();
             }
         }
@@ -887,8 +892,18 @@ namespace Oxide.Plugins
             if (player == null) Puts(message);
             else PrintToConsole(player, message);
         }
-
-        private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
+        private string Lang(string key, string id = null, params object[] args)
+        {
+            try
+            {
+                return string.Format(lang.GetMessage(key, this, id), args);
+            }
+            catch (Exception)
+            {
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                throw;
+            }
+        }
 
         protected override void LoadDefaultMessages()
         {

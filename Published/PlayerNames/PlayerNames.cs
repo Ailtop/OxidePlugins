@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Text;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
@@ -103,7 +104,18 @@ namespace Oxide.Plugins
         #endregion DataFile
 
         #region LanguageFile
-
+        private string Lang(string key, string id = null, params object[] args)
+        {
+            try
+            {
+                return string.Format(lang.GetMessage(key, this, id), args);
+            }
+            catch (Exception)
+            {
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                throw;
+            }
+        }
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>
@@ -123,9 +135,6 @@ namespace Oxide.Plugins
                 ["PlayerNotFound"] = "玩家 '{0}' 没有找到"
             }, this, "zh-CN");
         }
-
-        private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
-
-        #endregion LanguageFile
+         #endregion LanguageFile
     }
 }

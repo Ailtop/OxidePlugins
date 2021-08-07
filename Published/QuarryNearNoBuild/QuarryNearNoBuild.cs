@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using Newtonsoft.Json;
 using UnityEngine;
 
@@ -10,30 +9,10 @@ namespace Oxide.Plugins
     [Description("Prevent building near automatically spawned quarries.")]
     internal class QuarryNearNoBuild : RustPlugin
     {
+        #region Fields
+
         private const string PERMISSION_IGNORE = "quarrynearnobuild.ignore";
         private readonly List<QuarryInfo> quarryInfos = new List<QuarryInfo>();
-
-        private void Init()
-        {
-            Unsubscribe(nameof(OnEntitySpawned));
-            permission.RegisterPermission(PERMISSION_IGNORE, this);
-        }
-
-        private void OnServerInitialized()
-        {
-            FindMiningQuarry();
-            Subscribe(nameof(OnEntitySpawned));
-            foreach (var miningQuarry in BaseNetworkable.serverEntities.OfType<MiningQuarry>())
-            {
-                PrintError($"{miningQuarry.name} ");
-                OnEntitySpawned(miningQuarry);
-            }
-        }
-
-        private void OnEntitySpawned(MiningQuarry miningQuarry)
-        {
-            if (miningQuarry == null) return;
-        }
 
         private class QuarryInfo
         {
@@ -47,6 +26,41 @@ namespace Oxide.Plugins
             StoneQuarry,
             HQMQuarry,
         }
+
+        #endregion Fields
+
+        #region Oxide Hooks
+
+        private void Init()
+        {
+            permission.RegisterPermission(PERMISSION_IGNORE, this);
+        }
+
+        private void OnServerInitialized()
+        {
+            FindMiningQuarry();
+        }
+
+        private object CanBuild(Planner planner, Construction prefab, Construction.Target target)
+        {
+            var player = planner?.GetOwnerPlayer();
+            if (player == null) return null;
+            if (permission.UserHasPermission(player.UserIDString, PERMISSION_IGNORE)) return null;
+            Vector3 position = target.entity?.CenterPoint() ?? target.position;
+            foreach (var quarryInfo in quarryInfos)
+            {
+                if (quarryInfo.radius >= Vector3.Distance(quarryInfo.position, position))
+                {
+                    Print(player, Lang("CantBuildOnStatic", player.UserIDString));
+                    return false;
+                }
+            }
+            return null;
+        }
+
+        #endregion Oxide Hooks
+
+        #region Methods
 
         private void FindMiningQuarry()
         {
@@ -74,22 +88,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private object CanBuild(Planner planner, Construction prefab, Construction.Target target)
-        {
-            var player = planner?.GetOwnerPlayer();
-            if (player == null) return null;
-            if (permission.UserHasPermission(player.UserIDString, PERMISSION_IGNORE)) return null;
-            Vector3 position = target.entity?.CenterPoint() ?? target.position;
-            foreach (var quarryInfo in quarryInfos)
-            {
-                if (quarryInfo.radius >= Vector3.Distance(quarryInfo.position, position))
-                {
-                    Print(player, Lang("CantBuildOnStatic", player.UserIDString));
-                    return false;
-                }
-            }
-            return null;
-        }
+        #endregion Methods
 
         #region ConfigurationFile
 
@@ -124,9 +123,9 @@ namespace Oxide.Plugins
                 if (configData == null)
                     LoadDefaultConfig();
             }
-            catch (Exception ex)
+            catch
             {
-                PrintError($"The configuration file is corrupted. \n{ex}");
+                PrintError("The configuration file is corrupted");
                 LoadDefaultConfig();
             }
             SaveConfig();
@@ -146,7 +145,18 @@ namespace Oxide.Plugins
 
         private void Print(BasePlayer player, string message) => Player.Message(player, message, $"<color={configData.prefixColor}>{configData.prefix}</color>", configData.steamIDIcon);
 
-        private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
+        private string Lang(string key, string id = null, params object[] args)
+        {
+            try
+            {
+                return string.Format(lang.GetMessage(key, this, id), args);
+            }
+            catch (Exception)
+            {
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                throw;
+            }
+        }
 
         protected override void LoadDefaultMessages()
         {

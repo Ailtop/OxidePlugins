@@ -8,23 +8,38 @@ namespace Oxide.Plugins
     [Description("Modifies SAM site range.")]
     internal class SAMSiteRange : RustPlugin
     {
+        #region Oxide Hooks
+
         private void Init()
         {
             Unsubscribe(nameof(OnEntitySpawned));
             foreach (var permissionRange in configData.permissionList)
+            {
                 if (!permission.PermissionExists(permissionRange.permission))
+                {
                     permission.RegisterPermission(permissionRange.permission, this);
+                }
+            }
         }
 
         private void OnServerInitialized()
         {
             Subscribe(nameof(OnEntitySpawned));
-            foreach (var baseNetworkable in BaseNetworkable.serverEntities)
-                if (baseNetworkable is SamSite)
-                    OnEntitySpawned(baseNetworkable as SamSite);
+            foreach (var serverEntity in BaseNetworkable.serverEntities)
+            {
+                var samSite = serverEntity as SamSite;
+                if (!ReferenceEquals(samSite, null))
+                {
+                    OnEntitySpawned(samSite);
+                }
+            }
         }
 
         private void OnEntitySpawned(SamSite samSite) => ApplySettings(samSite);
+
+        #endregion Oxide Hooks
+
+        #region Methods
 
         private void ApplySettings(SamSite samSite)
         {
@@ -40,10 +55,14 @@ namespace Oxide.Plugins
             foreach (var permissionRange in configData.permissionList)
             {
                 if (permission.UserHasPermission(ownerID, permissionRange.permission) && permissionRange.range > range)
+                {
                     range = permissionRange.range;
+                }
             }
             return range == 0f ? 150f : range;
         }
+
+        #endregion Methods
 
         #region ConfigurationFile
 
