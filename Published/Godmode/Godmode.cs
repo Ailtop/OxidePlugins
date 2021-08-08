@@ -26,6 +26,8 @@ namespace Oxide.Plugins
         private const string PermUntiring = "godmode.untiring";
         private const string PermAutoEnable = "godmode.autoenable";
 
+        private static object False, True;
+
         private Dictionary<ulong, float> informHistory;
 
         #endregion Fields
@@ -35,6 +37,8 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
+            False = false;
+            True = true;
             permission.RegisterPermission(PermAdmin, this);
             permission.RegisterPermission(PermInvulerable, this);
             permission.RegisterPermission(PermLootPlayers, this);
@@ -87,9 +91,10 @@ namespace Oxide.Plugins
                 DisableGodmode(god, true);
             }
             SaveData();
+            False = True = null;
         }
 
-        private object CanBeWounded(BasePlayer player) => IsGod(player) ? false : (object)null;
+        private object CanBeWounded(BasePlayer player) => IsGod(player) ? False : null;
 
         private object CanLootPlayer(BasePlayer target, BasePlayer looter)
         {
@@ -97,7 +102,7 @@ namespace Oxide.Plugins
             if (IsGod(target) && permission.UserHasPermission(target.UserIDString, PermLootProtection) && !permission.UserHasPermission(looter.UserIDString, PermLootPlayers))
             {
                 Print(looter, Lang("NoLooting", looter.UserIDString));
-                return false;
+                return False;
             }
             return null;
         }
@@ -110,13 +115,13 @@ namespace Oxide.Plugins
             {
                 InformPlayers(player, attacker);
                 NullifyDamage(ref info);
-                return true;
+                return True;
             }
             if (IsGod(attacker) && permission.UserHasPermission(attacker.UserIDString, PermNoAttacking))
             {
                 InformPlayers(player, attacker);
                 NullifyDamage(ref info);
-                return true;
+                return True;
             }
             return null;
         }
@@ -131,7 +136,7 @@ namespace Oxide.Plugins
             player.SetPlayerFlag(BasePlayer.PlayerFlags.Workbench2, currentCraftLevel == 2f);
             player.SetPlayerFlag(BasePlayer.PlayerFlags.Workbench3, currentCraftLevel == 3f);
             player.SetPlayerFlag(BasePlayer.PlayerFlags.SafeZone, player.InSafeZone());
-            return false;
+            return False;
         }
 
         #endregion Oxide Hook
@@ -200,7 +205,7 @@ namespace Oxide.Plugins
 
         #region Godmode Toggle
 
-        private object ToggleGodmode(BasePlayer target, BasePlayer player)
+        private bool? ToggleGodmode(BasePlayer target, BasePlayer player)
         {
             bool isGod = IsGod(target);
             if (Interface.CallHook("OnGodmodeToggle", target.UserIDString, !isGod) != null) return null;
@@ -409,10 +414,10 @@ namespace Oxide.Plugins
                 Print(iPlayer, Lang("PlayerNotFound", iPlayer.Id, args[0]));
                 return;
             }
-            object obj = ToggleGodmode(target, iPlayer.Object as BasePlayer);
-            if (obj is bool && iPlayer.Id == "server_console" && args.Length > 0)
+            var obj = ToggleGodmode(target, iPlayer.Object as BasePlayer);
+            if (obj.HasValue && iPlayer.Id == "server_console" && args.Length > 0)
             {
-                if ((bool)obj) Print(iPlayer, $"'{target?.displayName}' have enabled godmode");
+                if (obj.Value) Print(iPlayer, $"'{target?.displayName}' have enabled godmode");
                 else Print(iPlayer, $"'{target?.displayName}' have disabled godmode");
             }
         }
