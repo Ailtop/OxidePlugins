@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.18")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.19")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -42,7 +42,7 @@ namespace Oxide.Plugins
         private const string PREFAB_RIDABLEHORSE = "assets/rust.ai/nextai/testridablehorse.prefab";
         private const string PREFAB_WORKCART = "assets/content/vehicles/workcart/workcart.entity.prefab";
         private const string PREFAB_MAGNET_CRANE = "assets/content/vehicles/crane_magnet/magnetcrane.entity.prefab";
-        private const string PREFAB_SUBMARINE_DOUBLE = "assets/content/vehicles/submarine/submarineduo.entity.prefab";
+        private const string PREFAB_SUBMARINE_DUO = "assets/content/vehicles/submarine/submarineduo.entity.prefab";
         private const string PREFAB_SUBMARINE_SOLO = "assets/content/vehicles/submarine/submarinesolo.entity.prefab";
 
         private const string PREFAB_CHASSIS_SMALL = "assets/content/vehicles/modularcar/car_chassis_2module.entity.prefab";
@@ -71,7 +71,7 @@ namespace Oxide.Plugins
             WorkCart,
             MagnetCrane,
             SubmarineSolo,
-            SubmarineDouble,
+            SubmarineDuo,
         }
 
         public enum ChassisType
@@ -612,7 +612,7 @@ namespace Oxide.Plugins
                         break;
 
                     case NormalVehicleType.SubmarineSolo:
-                    case NormalVehicleType.SubmarineDouble:
+                    case NormalVehicleType.SubmarineDuo:
                         {
                             var baseSubmarine = entity as BaseSubmarine;
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
@@ -774,7 +774,7 @@ namespace Oxide.Plugins
                         break;
 
                     case NormalVehicleType.SubmarineSolo:
-                    case NormalVehicleType.SubmarineDouble:
+                    case NormalVehicleType.SubmarineDuo:
                         fuelSystem = (entity as BaseSubmarine)?.GetFuelSystem();
                         break;
 
@@ -892,7 +892,7 @@ namespace Oxide.Plugins
                         break;
 
                     case NormalVehicleType.SubmarineSolo:
-                    case NormalVehicleType.SubmarineDouble:
+                    case NormalVehicleType.SubmarineDuo:
                         {
                             itemContainer = (entity as BaseSubmarine)?.GetTorpedoContainer()?.inventory;
                         }
@@ -1126,7 +1126,7 @@ namespace Oxide.Plugins
                 case NormalVehicleType.WorkCart: return configData.normalVehicleS.workCartS;
                 case NormalVehicleType.MagnetCrane: return configData.normalVehicleS.magnetCraneS;
                 case NormalVehicleType.SubmarineSolo: return configData.normalVehicleS.submarineSoloS;
-                case NormalVehicleType.SubmarineDouble: return configData.normalVehicleS.submarineDoubleS;
+                case NormalVehicleType.SubmarineDuo: return configData.normalVehicleS.submarineDuoS;
                 default: return null;
             }
         }
@@ -1263,7 +1263,7 @@ namespace Oxide.Plugins
                     case NormalVehicleType.WorkCart: return PREFAB_WORKCART;
                     case NormalVehicleType.MagnetCrane: return PREFAB_MAGNET_CRANE;
                     case NormalVehicleType.SubmarineSolo: return PREFAB_SUBMARINE_SOLO;
-                    case NormalVehicleType.SubmarineDouble: return PREFAB_SUBMARINE_DOUBLE;
+                    case NormalVehicleType.SubmarineDuo: return PREFAB_SUBMARINE_DUO;
                 }
             }
             else
@@ -1345,8 +1345,11 @@ namespace Oxide.Plugins
             Vis.Colliders(position, 0.5f, colliders);
             var flag = colliders.Any(x => x.gameObject.layer == (int)Rust.Layer.Water);
             Pool.FreeList(ref colliders);
-            return flag;
-            //return WaterLevel.Test(lookingAt);
+            if (flag)
+            {
+                return true;
+            }
+            return WaterLevel.Test(position);
         }
 
         private static void MoveToPosition(BasePlayer player, Vector3 position)
@@ -1358,7 +1361,7 @@ namespace Oxide.Plugins
         }
 
         private static bool NeedCheckWater(string vehicleType) => vehicleType == nameof(NormalVehicleType.Rowboat) || vehicleType == nameof(NormalVehicleType.RHIB)
-        || vehicleType == nameof(NormalVehicleType.SubmarineDouble) || vehicleType == nameof(NormalVehicleType.SubmarineSolo);
+        || vehicleType == nameof(NormalVehicleType.SubmarineDuo) || vehicleType == nameof(NormalVehicleType.SubmarineSolo);
 
         #endregion Helpers
 
@@ -3181,16 +3184,16 @@ namespace Oxide.Plugins
                 },
             };
 
-            [JsonProperty(PropertyName = "Submarine Double Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public InvFuelVehicleS submarineDoubleS = new InvFuelVehicleS
+            [JsonProperty(PropertyName = "Submarine Duo Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public InvFuelVehicleS submarineDuoS = new InvFuelVehicleS
             {
                 purchasable = true,
-                displayName = "Submarine Double",
+                displayName = "Submarine Duo",
                 distance = 5,
                 minDistanceForPlayers = 2,
                 usePermission = true,
-                permission = "vehiclelicence.submarinedouble",
-                commands = new List<string> { "subdou", "double" },
+                permission = "vehiclelicence.submarineduo",
+                commands = new List<string> { "subduo", "duo" },
                 purchasePrices = new Dictionary<string, PriceInfo>
                 {
                     ["scrap"] = new PriceInfo { amount = 1000, displayName = "Scrap" }
@@ -3535,6 +3538,21 @@ namespace Oxide.Plugins
                         }
                     }
                 }
+                if (configData.version >= new VersionNumber(1, 7, 17)
+                    && configData.version <= new VersionNumber(1, 7, 18))
+                {
+                    LoadData();
+                    foreach (var data in storedData.playerData)
+                    {
+                        Vehicle vehicle;
+                        if (data.Value.TryGetValue("SubmarineDouble", out vehicle))
+                        {
+                            data.Value.Remove("SubmarineDouble");
+                            data.Value.Add(nameof(NormalVehicleType.SubmarineDuo), vehicle);
+                        }
+                    }
+                    SaveData();
+                }
                 configData.version = Version;
             }
         }
@@ -3542,13 +3560,26 @@ namespace Oxide.Plugins
         private bool GetConfigValue<T>(out T value, params string[] path)
         {
             var configValue = Config.Get(path);
-            if (configValue == null)
+            if (configValue != null)
             {
-                value = default(T);
-                return false;
+                if (configValue is T)
+                {
+                    value = (T)configValue;
+                    return true;
+                }
+                try
+                {
+                    value = Config.ConvertValue<T>(configValue);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    PrintError($"GetConfigValue ERROR: path: {string.Join("\\", path)}\n{ex}");
+                }
             }
-            value = Config.ConvertValue<T>(configValue);
-            return true;
+
+            value = default(T);
+            return false;
         }
 
         #endregion ConfigurationFile
