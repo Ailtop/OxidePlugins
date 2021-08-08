@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Don't Target Me", "Quantum/Arainrr", "1.1.3")]
+    [Info("Don't Target Me", "Quantum/Arainrr", "1.1.4")]
     [Description("Makes turrets, player npcs and normal npcs ignore you.")]
     public class DontTargetMe : RustPlugin
     {
@@ -220,6 +220,7 @@ namespace Oxide.Plugins
                 Unsubscribe(nameof(CanBradleyApcTarget));
                 Unsubscribe(nameof(CanHelicopterTarget));
                 Unsubscribe(nameof(CanHelicopterStrafeTarget));
+                Unsubscribe(nameof(OnSensorDetect));
                 return;
             }
 
