@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Don't Target Me", "Quantum/Arainrr", "1.1.2")]
+    [Info("Don't Target Me", "Quantum/Arainrr", "1.1.3")]
     [Description("Makes turrets, player npcs and normal npcs ignore you.")]
     public class DontTargetMe : RustPlugin
     {
@@ -18,7 +18,10 @@ namespace Oxide.Plugins
         private const string PERMISSION_SAM = "donttargetme.sam";
         private const string PERMISSION_HELI = "donttargetme.heli";
         private const string PERMISSION_TURRETS = "donttargetme.turrets";
-         
+        private const string PERMISSION_HBHF = "donttargetme.hbhf";
+
+        //Reduce boxing
+        private static object True, False;
 
         private readonly Dictionary<ulong, TargetFlags> playerFlags = new Dictionary<ulong, TargetFlags>();
 
@@ -31,6 +34,7 @@ namespace Oxide.Plugins
             Turret = 1 << 2,
             Bradley = 1 << 3,
             Helicopter = 1 << 4,
+            HBHF = 1 << 5,
         }
 
         #endregion Fields
@@ -38,29 +42,41 @@ namespace Oxide.Plugins
         #region Oxide Hooks
 
         private void Init()
-        { 
+        {
+            True = true;
+            False = false;
             permission.RegisterPermission(PERMISSION_ALL, this);
             permission.RegisterPermission(PERMISSION_NPC, this);
             permission.RegisterPermission(PERMISSION_APC, this);
             permission.RegisterPermission(PERMISSION_SAM, this);
             permission.RegisterPermission(PERMISSION_HELI, this);
             permission.RegisterPermission(PERMISSION_TURRETS, this);
+            permission.RegisterPermission(PERMISSION_HBHF, this);
 
             cmd.AddChatCommand(configData.chatS.command, this, nameof(CmdToggle));
         }
 
         private void OnServerInitialized()
         {
-            if (!configData.disableWhenDis) Unsubscribe(nameof(OnPlayerDisconnected));
-            if (!configData.enableWhenCon) Unsubscribe(nameof(OnPlayerConnected));
-            else
+            if (!configData.disableWhenDis)
             {
-                foreach (var player in BasePlayer.activePlayerList)
-                    PlayerFlagsInit(player);
+                Unsubscribe(nameof(OnPlayerDisconnected));
+            }
+            if (!configData.enableWhenCon)
+            {
+                Unsubscribe(nameof(OnPlayerConnected));
+            }
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                PlayerFlagsInit(player);
             }
             CheckHooks();
         }
-         
+
+        private void Unload()
+        {
+            True = False = null;
+        }
 
         private void OnPlayerConnected(BasePlayer player)
         {
@@ -80,17 +96,19 @@ namespace Oxide.Plugins
             }
         }
 
-        private object CanBeTargeted(BasePlayer player, MonoBehaviour behaviour) => HasTargetFlags(player, TargetFlags.Turret) ? (object)false : null;
+        private object CanBeTargeted(BasePlayer player, MonoBehaviour behaviour) => HasTargetFlags(player, TargetFlags.Turret) ? False : null;
 
-        private object OnNpcTarget(BaseEntity npc, BasePlayer player) => HasTargetFlags(player, TargetFlags.Npc) ? (object)true : null;
+        private object OnNpcTarget(BaseEntity npc, BasePlayer player) => HasTargetFlags(player, TargetFlags.Npc) ? True : null;
 
-        private object CanBradleyApcTarget(BradleyAPC apc, BasePlayer player) => HasTargetFlags(player, TargetFlags.Bradley) ? (object)false : null;
+        private object CanBradleyApcTarget(BradleyAPC apc, BasePlayer player) => HasTargetFlags(player, TargetFlags.Bradley) ? False : null;
 
-        private object CanHelicopterTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? (object)false : null;
+        private object CanHelicopterTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? False : null;
 
-        private object CanHelicopterStrafeTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? (object)false : null;
+        private object CanHelicopterStrafeTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? False : null;
 
-        private object OnSamSiteTarget(SamSite samSite, BaseCombatEntity baseCombatEntity) => AnyHasTargetFlags(baseCombatEntity, TargetFlags.Sam) ? (object)false : null;
+        private object OnSamSiteTarget(SamSite samSite, BaseCombatEntity baseCombatEntity) => AnyHasTargetFlags(baseCombatEntity, TargetFlags.Sam) ? False : null;
+
+        private object OnSensorDetect(HBHFSensor hbhf, BasePlayer player) => HasTargetFlags(player, TargetFlags.HBHF) ? False : null;
 
         #endregion Oxide Hooks
 
@@ -181,6 +199,8 @@ namespace Oxide.Plugins
                     flags |= TargetFlags.Sam;
                 if (permission.UserHasPermission(player.UserIDString, PERMISSION_HELI))
                     flags |= TargetFlags.Helicopter;
+                if (permission.UserHasPermission(player.UserIDString, PERMISSION_HBHF))
+                    flags |= TargetFlags.HBHF;
             }
             if (flags != TargetFlags.None)
             {
@@ -202,7 +222,8 @@ namespace Oxide.Plugins
                 Unsubscribe(nameof(CanHelicopterStrafeTarget));
                 return;
             }
-            bool turret = false, npc = false, apc = false, heli = false, sam = false;
+
+            bool turret = false, npc = false, apc = false, heli = false, sam = false, hbhf = false;
             foreach (var flags in playerFlags.Values)
             {
                 if (flags.HasFlag(TargetFlags.Turret)) turret = true;
@@ -210,6 +231,7 @@ namespace Oxide.Plugins
                 if (flags.HasFlag(TargetFlags.Bradley)) apc = true;
                 if (flags.HasFlag(TargetFlags.Helicopter)) heli = true;
                 if (flags.HasFlag(TargetFlags.Sam)) sam = true;
+                if (flags.HasFlag(TargetFlags.HBHF)) hbhf = true;
             }
 
             if (!turret) Unsubscribe(nameof(CanBeTargeted));
@@ -233,6 +255,15 @@ namespace Oxide.Plugins
             {
                 Subscribe(nameof(CanHelicopterTarget));
                 Subscribe(nameof(CanHelicopterStrafeTarget));
+            }
+
+            if (!hbhf)
+            {
+                Unsubscribe(nameof(OnSensorDetect));
+            }
+            else
+            {
+                Subscribe(nameof(OnSensorDetect));
             }
         }
 
