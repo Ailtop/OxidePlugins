@@ -18,9 +18,7 @@ namespace Oxide.Plugins
         private const string PERMISSION_SAM = "donttargetme.sam";
         private const string PERMISSION_HELI = "donttargetme.heli";
         private const string PERMISSION_TURRETS = "donttargetme.turrets";
-
-        //Reduce boxing
-        private static object True = true, False = false;
+         
 
         private readonly Dictionary<ulong, TargetFlags> playerFlags = new Dictionary<ulong, TargetFlags>();
 
@@ -40,7 +38,7 @@ namespace Oxide.Plugins
         #region Oxide Hooks
 
         private void Init()
-        {
+        { 
             permission.RegisterPermission(PERMISSION_ALL, this);
             permission.RegisterPermission(PERMISSION_NPC, this);
             permission.RegisterPermission(PERMISSION_APC, this);
@@ -62,11 +60,7 @@ namespace Oxide.Plugins
             }
             CheckHooks();
         }
-
-        private void Unload()
-        {
-            True = False = null;
-        }
+         
 
         private void OnPlayerConnected(BasePlayer player)
         {
@@ -86,17 +80,17 @@ namespace Oxide.Plugins
             }
         }
 
-        private object CanBeTargeted(BasePlayer player, MonoBehaviour behaviour) => HasTargetFlags(player, TargetFlags.Turret) ? False : null;
+        private object CanBeTargeted(BasePlayer player, MonoBehaviour behaviour) => HasTargetFlags(player, TargetFlags.Turret) ? (object)false : null;
 
-        private object OnNpcTarget(BaseEntity npc, BasePlayer player) => HasTargetFlags(player, TargetFlags.Npc) ? True : null;
+        private object OnNpcTarget(BaseEntity npc, BasePlayer player) => HasTargetFlags(player, TargetFlags.Npc) ? (object)true : null;
 
-        private object CanBradleyApcTarget(BradleyAPC apc, BasePlayer player) => HasTargetFlags(player, TargetFlags.Bradley) ? False : null;
+        private object CanBradleyApcTarget(BradleyAPC apc, BasePlayer player) => HasTargetFlags(player, TargetFlags.Bradley) ? (object)false : null;
 
-        private object CanHelicopterTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? False : null;
+        private object CanHelicopterTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? (object)false : null;
 
-        private object CanHelicopterStrafeTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? False : null;
+        private object CanHelicopterStrafeTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? (object)false : null;
 
-        private object OnSamSiteTarget(SamSite samSite, BaseCombatEntity baseCombatEntity) => AnyHasTargetFlags(baseCombatEntity, TargetFlags.Sam) ? False : null;
+        private object OnSamSiteTarget(SamSite samSite, BaseCombatEntity baseCombatEntity) => AnyHasTargetFlags(baseCombatEntity, TargetFlags.Sam) ? (object)false : null;
 
         #endregion Oxide Hooks
 

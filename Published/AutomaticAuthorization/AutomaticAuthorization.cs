@@ -23,7 +23,7 @@ namespace Oxide.Plugins
         [PluginReference] private readonly Plugin Clans, Friends;
         private const string PERMISSION_USE = "automaticauthorization.use";
 
-        private static object True = true;
+        private static object True;
 
         private readonly Dictionary<ulong, EntityCache> playerEntities = new Dictionary<ulong, EntityCache>();
 
@@ -55,6 +55,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
+            True = true;
             UpdateData();
             Unsubscribe(nameof(OnEntitySpawned));
             permission.RegisterPermission(PERMISSION_USE, this);

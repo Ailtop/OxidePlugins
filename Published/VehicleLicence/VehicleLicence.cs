@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.17")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.18")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -52,7 +52,7 @@ namespace Oxide.Plugins
         private const int LAYER_GROUND = Rust.Layers.Solid | Rust.Layers.Mask.Water;
 
         private Timer checkVehiclesTimer;
-        private static object False = false;
+        private static object False;
         public static VehicleLicence Instance { get; private set; }
         public readonly Dictionary<BaseEntity, Vehicle> vehiclesCache = new Dictionary<BaseEntity, Vehicle>();
         public readonly Dictionary<string, BaseVehicleS> allBaseVehicleSettings = new Dictionary<string, BaseVehicleS>();
@@ -88,6 +88,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
+            False = false;
             Instance = this;
             permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_ALL, this);

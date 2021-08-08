@@ -21,7 +21,7 @@ namespace Oxide.Plugins
 
         private static AutoPickup instance;
         private static PickupType enabledPickupTypes;
-        private static object False = false;
+        private static object False;
         private const string PERMISSION_USE = "autopickup.use";
 
         [Flags]
@@ -48,6 +48,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
+            False = false;
             instance = this;
             enabledPickupTypes = PickupType.None;
             Unsubscribe(nameof(CanLootEntity));

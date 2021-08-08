@@ -38,7 +38,7 @@ namespace Oxide.Plugins
         private static RemoverTool rt;
         private static BUTTON removeButton;
         private static RemoveMode removeMode;
-        private static object False = false;
+        private static object False;
         private bool removeOverride;
         private Coroutine removeAllCoroutine;
         private Coroutine removeStructureCoroutine;
@@ -82,6 +82,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             rt = this;
+            False = false;
             LoadDefaultMessages();
             permission.RegisterPermission(PERMISSION_ALL, this);
             permission.RegisterPermission(PERMISSION_ADMIN, this);

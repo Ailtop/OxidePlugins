@@ -28,7 +28,7 @@ namespace Oxide.Plugins
         private const string PERMISSION_ADMIN = "dynamicpvp.admin";
         private const string PREFAB_SPHERE = "assets/prefabs/visualization/sphere.prefab";
         private const string ZONE_NAME = "DynamicPVP";
-        private static object True = true, False = false;
+        private static object True, False;
 
         private readonly Dictionary<string, Timer> eventTimers = new Dictionary<string, Timer>();
         private readonly Dictionary<ulong, LeftZone> pvpDelays = new Dictionary<ulong, LeftZone>();
@@ -84,6 +84,8 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
+            True = true;
+            False = false;
             permission.RegisterPermission(PERMISSION_ADMIN, this);
             AddCovalenceCommand(configData.chatS.command, nameof(CmdDynamicPVP));
             Unsubscribe(nameof(OnEntitySpawned));

@@ -21,7 +21,7 @@ namespace Oxide.Plugins
         private readonly HashSet<SurveyCrater> checkedCraters = new HashSet<SurveyCrater>();
         private readonly Dictionary<uint, ConfigData.PermissionS> activeSurveyCharges = new Dictionary<uint, ConfigData.PermissionS>();
         private readonly List<MiningQuarry> miningQuarries = new List<MiningQuarry>();
-        private static object True = true, False = false;
+        private static object True, False;
 
         #endregion Fields
 
@@ -30,6 +30,8 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
+            True = true;
+            False = false;
             foreach (var permissionS in configData.permissionList)
             {
                 if (!permission.PermissionExists(permissionS.permission, this))
