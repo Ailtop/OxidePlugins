@@ -45,30 +45,27 @@ namespace Oxide.Plugins
             }
         }
 
-        private object OnPlayerRespawn(BasePlayer player)
+        private void OnPlayerRespawn(BasePlayer player, BasePlayer.SpawnPoint spawnPoint)
         {
-            if (player == null || !player.userID.IsSteamId()) return null;
+            if (player == null || !player.userID.IsSteamId()) return;
             if (!permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
             {
-                return null;
+                return;
             }
 
             var spawnPos = GetRandomSpawnPos();
             if (!spawnPos.HasValue)
             {
                 PrintWarning("Unable to generate random respawn position, try limit exceed, spawn as default");
-                return null;
+                return;
             }
 
             if (Interface.CallHook("OnRandomRespawn", player, spawnPos.Value) != null)
             {
-                return null;
+                return;
             }
 
-            return new BasePlayer.SpawnPoint
-            {
-                pos = spawnPos.Value,
-            };
+            spawnPoint.pos = spawnPos.Value;
         }
 
         #endregion Oxide Hooks
