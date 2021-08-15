@@ -35,21 +35,21 @@ namespace Oxide.Plugins
         private const int LAYER_ALL = 1 << 0 | 1 << 8 | 1 << 21;
         private const int LAYER_TARGET = ~(1 << 2 | 1 << 3 | 1 << 4 | 1 << 10 | 1 << 18 | 1 << 28 | 1 << 29);
 
-        private static RemoverTool rt;
-        private static BUTTON removeButton;
-        private static RemoveMode removeMode;
+        private static RemoverTool _rt;
+        private static BUTTON _removeButton;
+        private static RemoveMode _removeMode;
         private static object False;
-        private bool removeOverride;
-        private Coroutine removeAllCoroutine;
-        private Coroutine removeStructureCoroutine;
-        private Coroutine removeExternalCoroutine;
-        private Coroutine removePlayerEntityCoroutine;
 
-        private Hash<uint, float> entitySpawnedTimes;
-        private Hash<ulong, float> lastBlockedPlayers;
-        private Hash<uint, float> lastAttackedBuildings;
-        private readonly Hash<ulong, float> cooldownTimes = new Hash<ulong, float>();
+        private bool _removeOverride;
+        private Coroutine _removeAllCoroutine;
+        private Coroutine _removeStructureCoroutine;
+        private Coroutine _removeExternalCoroutine;
+        private Coroutine _removePlayerEntityCoroutine;
 
+        private Hash<uint, float> _entitySpawnedTimes;
+        private Hash<ulong, float> _lastBlockedPlayers;
+        private Hash<uint, float> _lastAttackedBuildings;
+        private readonly Hash<ulong, float> _cooldownTimes = new Hash<ulong, float>();
         private enum RemoveMode
         {
             None,
@@ -68,7 +68,7 @@ namespace Oxide.Plugins
             Structure
         }
 
-        private enum RemovePlayerEntityType
+        private enum PlayerEntityRemoveType
         {
             All,
             Cupboard,
@@ -81,7 +81,7 @@ namespace Oxide.Plugins
 
         private void Init()
         {
-            rt = this;
+            _rt = this;
             False = false;
             LoadDefaultMessages();
             permission.RegisterPermission(PERMISSION_ALL, this);
@@ -110,11 +110,11 @@ namespace Oxide.Plugins
         {
             Initialize();
             UpdateConfig();
-            removeMode = RemoveMode.None;
-            if (configData.removerModeS.noHeldMode) removeMode = RemoveMode.NoHeld;
-            if (configData.removerModeS.meleeHitMode) removeMode = RemoveMode.MeleeHit;
-            if (configData.removerModeS.specificToolMode) removeMode = RemoveMode.SpecificTool;
-            if (removeMode == RemoveMode.MeleeHit)
+            _removeMode = RemoveMode.None;
+            if (configData.removerModeS.noHeldMode) _removeMode = RemoveMode.NoHeld;
+            if (configData.removerModeS.meleeHitMode) _removeMode = RemoveMode.MeleeHit;
+            if (configData.removerModeS.specificToolMode) _removeMode = RemoveMode.SpecificTool;
+            if (_removeMode == RemoveMode.MeleeHit)
             {
                 BaseMelee beseMelee;
                 ItemDefinition itemDefinition;
@@ -123,7 +123,7 @@ namespace Oxide.Plugins
                     (beseMelee = itemDefinition.GetComponent<ItemModEntity>()?.entityPrefab.Get()?.GetComponent<BaseMelee>()) == null)
                 {
                     PrintError($"{configData.removerModeS.meleeHitItemShortname} is not an item shortname for a melee tool");
-                    removeMode = RemoveMode.None;
+                    _removeMode = RemoveMode.None;
                 }
                 else
                 {
@@ -138,28 +138,28 @@ namespace Oxide.Plugins
             }
             if (configData.raidS.enabled)
             {
-                lastBlockedPlayers = new Hash<ulong, float>();
-                lastAttackedBuildings = new Hash<uint, float>();
+                _lastBlockedPlayers = new Hash<ulong, float>();
+                _lastAttackedBuildings = new Hash<uint, float>();
                 Subscribe(nameof(OnEntityDeath));
             }
             if (configData.globalS.entityTimeLimit)
             {
-                entitySpawnedTimes = new Hash<uint, float>();
+                _entitySpawnedTimes = new Hash<uint, float>();
                 Subscribe(nameof(OnEntitySpawned));
                 Subscribe(nameof(OnEntityKill));
             }
 
-            if (removeMode == RemoveMode.MeleeHit && configData.removerModeS.meleeHitEnableInHand ||
-                removeMode == RemoveMode.SpecificTool && configData.removerModeS.specificToolEnableInHand)
+            if (_removeMode == RemoveMode.MeleeHit && configData.removerModeS.meleeHitEnableInHand ||
+                _removeMode == RemoveMode.SpecificTool && configData.removerModeS.specificToolEnableInHand)
             {
                 Subscribe(nameof(OnActiveItemChanged));
             }
 
-            if (!Enum.TryParse(configData.globalS.removeButton, true, out removeButton))
+            if (!Enum.TryParse(configData.globalS.removeButton, true, out _removeButton))
             {
                 PrintError($"{configData.globalS.removeButton} is an invalid button. The remove button has been changed to 'FIRE_PRIMARY'.");
-                removeButton = BUTTON.FIRE_PRIMARY;
-                configData.globalS.removeButton = removeButton.ToString();
+                _removeButton = BUTTON.FIRE_PRIMARY;
+                configData.globalS.removeButton = _removeButton.ToString();
                 SaveConfig();
             }
             if (ImageLibrary != null)
@@ -177,10 +177,10 @@ namespace Oxide.Plugins
 
         private void Unload()
         {
-            if (removeAllCoroutine != null) ServerMgr.Instance.StopCoroutine(removeAllCoroutine);
-            if (removeStructureCoroutine != null) ServerMgr.Instance.StopCoroutine(removeStructureCoroutine);
-            if (removeExternalCoroutine != null) ServerMgr.Instance.StopCoroutine(removeExternalCoroutine);
-            if (removePlayerEntityCoroutine != null) ServerMgr.Instance.StopCoroutine(removePlayerEntityCoroutine);
+            if (_removeAllCoroutine != null) ServerMgr.Instance.StopCoroutine(_removeAllCoroutine);
+            if (_removeStructureCoroutine != null) ServerMgr.Instance.StopCoroutine(_removeStructureCoroutine);
+            if (_removeExternalCoroutine != null) ServerMgr.Instance.StopCoroutine(_removeExternalCoroutine);
+            if (_removePlayerEntityCoroutine != null) ServerMgr.Instance.StopCoroutine(_removePlayerEntityCoroutine);
             foreach (var player in BasePlayer.activePlayerList)
             {
                 player.GetComponent<ToolRemover>()?.DisableTool();
@@ -188,7 +188,7 @@ namespace Oxide.Plugins
 
             SaveDebug();
             configData = null;
-            False = rt = null;
+            False = _rt = null;
         }
 
         private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), SaveDebug);
@@ -205,13 +205,13 @@ namespace Oxide.Plugins
         {
             if (entity == null || entity.net == null) return;
             if (!CanEntityBeSaved(entity)) return;
-            entitySpawnedTimes[entity.net.ID] = Time.realtimeSinceStartup;
+            _entitySpawnedTimes[entity.net.ID] = Time.realtimeSinceStartup;
         }
 
         private void OnEntityKill(BaseEntity entity)
         {
             if (entity == null || entity.net == null) return;
-            entitySpawnedTimes.Remove(entity.net.ID);
+            _entitySpawnedTimes.Remove(entity.net.ID);
         }
 
         private object OnPlayerAttack(BasePlayer player, HitInfo info) => OnHammerHit(player, info);
@@ -231,12 +231,12 @@ namespace Oxide.Plugins
             if (newItem == null) return;
             if (player == null || !player.userID.IsSteamId()) return;
             if (IsToolRemover(player)) return;
-            if (removeMode == RemoveMode.MeleeHit && IsMeleeTool(newItem))
+            if (_removeMode == RemoveMode.MeleeHit && IsMeleeTool(newItem))
             {
                 ToggleRemove(player, RemoveType.Normal);
                 return;
             }
-            if (removeMode == RemoveMode.SpecificTool && IsSpecificTool(newItem))
+            if (_removeMode == RemoveMode.SpecificTool && IsSpecificTool(newItem))
             {
                 ToggleRemove(player, RemoveType.Normal);
                 return;
@@ -290,8 +290,6 @@ namespace Oxide.Plugins
 
         private static bool IsExternalWall(StabilityEntity stabilityEntity) => stabilityEntity.ShortPrefabName.Contains("external");
 
-        private static bool IsRemovableEntity(BaseEntity entity) => rt.shortPrefabNameToDeployable.ContainsKey(entity.ShortPrefabName) || rt.prefabNameToStructure.ContainsKey(entity.PrefabName) || configData.removeS.entityS.ContainsKey(entity.ShortPrefabName);
-
         private static bool CanEntityBeDisplayed(BaseEntity entity, BasePlayer player)
         {
             if (entity == null) return false;
@@ -303,16 +301,58 @@ namespace Oxide.Plugins
         {
             if (entity is BuildingBlock) return true;
             EntitySettings entitySettings;
-            return configData.removeS.entityS.TryGetValue(entity.ShortPrefabName, out entitySettings) && entitySettings.enabled;
+            if (configData.removeS.entityS.TryGetValue(entity.ShortPrefabName, out entitySettings) && entitySettings.enabled)
+            {
+                return true;
+            }
+            return false;
         }
 
         private static bool HasEntityEnabled(BaseEntity entity)
         {
             bool valid;
             var buildingBlock = entity as BuildingBlock;
-            if (buildingBlock != null && configData.removeS.validConstruction.TryGetValue(buildingBlock.grade, out valid) && valid) return true;
+            if (buildingBlock != null && configData.removeS.validConstruction.TryGetValue(buildingBlock.grade, out valid) && valid)
+            {
+                return true;
+            }
             EntitySettings entitySettings;
-            return configData.removeS.entityS.TryGetValue(entity.ShortPrefabName, out entitySettings) && entitySettings.enabled;
+            if (configData.removeS.entityS.TryGetValue(entity.ShortPrefabName, out entitySettings) && entitySettings.enabled)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private static bool IsRemovableEntity(RemoveType removeType, BaseEntity entity)
+        {
+            if (_rt.shortPrefabNameToDeployable.ContainsKey(entity.ShortPrefabName)
+                || _rt.prefabNameToStructure.ContainsKey(entity.PrefabName)
+                || configData.removeS.entityS.ContainsKey(entity.ShortPrefabName))
+            {
+                return true;
+            }
+            if (removeType == RemoveType.Normal)
+            {
+                var baseCombatEntity = entity as BaseCombatEntity;
+                if (baseCombatEntity != null)
+                {
+                    if (baseCombatEntity.IsDead())
+                    {
+                        return false;
+                    }
+                    if (baseCombatEntity.pickup.itemTarget != null)
+                    {
+                        return true;
+                    }
+                }
+                var result = Interface.CallHook("IsRemovableEntity", entity);
+                if (result is bool)
+                {
+                    return (bool)result;
+                }
+            }
+            return false;
         }
 
         private static string GetEntityImage(string name)
@@ -321,7 +361,7 @@ namespace Oxide.Plugins
             {
                 return GetImageFromLibrary(name);
             }
-            if (rt.itemShortNameToItemID.ContainsKey(name))
+            if (_rt.itemShortNameToItemID.ContainsKey(name))
             {
                 return GetImageFromLibrary(name);
             }
@@ -347,26 +387,22 @@ namespace Oxide.Plugins
                 displayName = $"{target.displayName} ({GetOtherDisplayName(target.ShortPrefabName)})";
                 return;
             }
-            //string itemShortName;
-            //if (rt.shortPrefabNameToDeployable.TryGetValue(entity.ShortPrefabName, out itemShortName))
-            //{
             EntitySettings entitySettings;
             if (configData.removeS.entityS.TryGetValue(entity.ShortPrefabName, out entitySettings))
             {
                 imageName = entity.ShortPrefabName;
-                displayName = rt.GetDeployableDisplayName(player, entity.ShortPrefabName, entitySettings.displayName);
+                displayName = _rt.GetDeployableDisplayName(player, entity.ShortPrefabName, entitySettings.displayName);
                 return;
             }
-            //}
 
             string structureName;
-            if (rt.prefabNameToStructure.TryGetValue(entity.PrefabName, out structureName))
+            if (_rt.prefabNameToStructure.TryGetValue(entity.PrefabName, out structureName))
             {
                 BuildingBlocksSettings buildingBlockSettings;
                 if (configData.removeS.buildingBlockS.TryGetValue(structureName, out buildingBlockSettings))
                 {
                     imageName = structureName;
-                    displayName = rt.GetConstructionDisplayName(player, entity.PrefabName, buildingBlockSettings.displayName);
+                    displayName = _rt.GetConstructionDisplayName(player, entity.PrefabName, buildingBlockSettings.displayName);
                     return;
                 }
             }
@@ -380,7 +416,7 @@ namespace Oxide.Plugins
             var itemDefinition = ItemManager.FindItemDefinition(priceName);
             if (itemDefinition != null)
             {
-                var displayName = rt.GetItemDisplayName(language, itemDefinition.shortname);
+                var displayName = _rt.GetItemDisplayName(language, itemDefinition.shortname);
                 if (!string.IsNullOrEmpty(displayName))
                 {
                     return displayName;
@@ -399,7 +435,7 @@ namespace Oxide.Plugins
                 return displayName;
             }
             configData.displayNames.Add(name, name);
-            rt.SaveConfig();
+            _rt.SaveConfig();
             return name;
         }
 
@@ -409,7 +445,7 @@ namespace Oxide.Plugins
             PermissionSettings permissionSettings = null;
             foreach (var entry in configData.permS)
             {
-                if (entry.Value.priority >= priority && rt.permission.UserHasPermission(player.UserIDString, entry.Key))
+                if (entry.Value.priority >= priority && _rt.permission.UserHasPermission(player.UserIDString, entry.Key))
                 {
                     priority = entry.Value.priority;
                     permissionSettings = entry.Value;
@@ -424,11 +460,50 @@ namespace Oxide.Plugins
             return new Vector2(float.Parse(array[0]), float.Parse(array[1]));
         }
 
-        private static bool AddImageToLibrary(string url, string shortname, ulong skin = 0) => (bool)rt.ImageLibrary.Call("AddImage", url, shortname.ToLower(), skin);
+        private static bool AddImageToLibrary(string url, string shortname, ulong skin = 0) => (bool)_rt.ImageLibrary.Call("AddImage", url, shortname.ToLower(), skin);
 
-        private static string GetImageFromLibrary(string shortname, ulong skin = 0, bool returnUrl = false) => string.IsNullOrEmpty(shortname) ? null : (string)rt.ImageLibrary.Call("GetImage", shortname.ToLower(), skin, returnUrl);
+        private static string GetImageFromLibrary(string shortname, ulong skin = 0, bool returnUrl = false) => string.IsNullOrEmpty(shortname) ? null : (string)_rt.ImageLibrary.Call("GetImage", shortname.ToLower(), skin, returnUrl);
 
         #endregion Methods
+
+        #region API
+
+        private readonly Hash<string, EntitySettings> _registerEntitySettings = new Hash<string, EntitySettings>();
+        
+        //
+        private void UnregisterEntitySettings(string shortPrefabName)
+        {
+            _registerEntitySettings.Remove(shortPrefabName);
+        }
+        //
+        private void RegisterEntitySettings(string shortPrefabName, string displayName, bool enabled = true, Dictionary<string, int> price = null, Dictionary<string, int> refund = null)
+        {
+            EntitySettings entitySettings;
+            if (!_registerEntitySettings.TryGetValue(shortPrefabName, out entitySettings))
+            {
+                entitySettings = new EntitySettings();
+                _registerEntitySettings .Add(shortPrefabName, entitySettings);
+            }
+            
+            entitySettings.enabled = enabled;
+            entitySettings.displayName = displayName;
+            entitySettings.price = price ?? new Dictionary<string, int>();
+            entitySettings.refund = refund ?? new Dictionary<string, int>();
+
+            // EntitySettings entitySettings;
+            // if (!configData.removeS.entityS.TryGetValue(shortPrefabName, out entitySettings))
+            // {
+            //     entitySettings = new EntitySettings();
+            //     configData.removeS.entityS.Add(shortPrefabName, entitySettings);
+            // }
+            //
+            // entitySettings.enabled = enabled;
+            // entitySettings.displayName = displayName;
+            // entitySettings.price = price ?? new Dictionary<string, int>();
+            // entitySettings.refund = refund ?? new Dictionary<string, int>();
+        }
+
+        #endregion API
 
         #region UI
 
@@ -493,7 +568,7 @@ namespace Oxide.Plugins
 
         private static void CreateCrosshairUI(BasePlayer player)
         {
-            if (rt.ImageLibrary == null) return;
+            if (_rt.ImageLibrary == null) return;
             var image = GetImageFromLibrary(UINAME_CROSSHAIR);
             if (string.IsNullOrEmpty(image)) return;
             var container = UI.CreateElementContainer("Hud", UINAME_CROSSHAIR, "0 0 0 0", configData.uiS.crosshairAnchorMin, configData.uiS.crosshairAnchorMax, configData.uiS.crosshairOffsetMin, configData.uiS.crosshairOffsetMax);
@@ -506,7 +581,7 @@ namespace Oxide.Plugins
         {
             var container = UI.CreateElementContainer("Hud", UINAME_MAIN, configData.uiS.removerToolBackgroundColor, configData.uiS.removerToolAnchorMin, configData.uiS.removerToolAnchorMax, configData.uiS.removerToolOffsetMin, configData.uiS.removerToolOffsetMax);
             UI.CreatePanel(ref container, UINAME_MAIN, configData.uiS.removeBackgroundColor, configData.uiS.removeAnchorMin, configData.uiS.removeAnchorMax);
-            UI.CreateLabel(ref container, UINAME_MAIN, configData.uiS.removeTextColor, rt.Lang("RemoverToolType", player.UserIDString, GetRemoveTypeName(removeType)), configData.uiS.removeTextSize, configData.uiS.removeTextAnchorMin, configData.uiS.removeTextAnchorMax, TextAnchor.MiddleLeft);
+            UI.CreateLabel(ref container, UINAME_MAIN, configData.uiS.removeTextColor, _rt.Lang("RemoverToolType", player.UserIDString, GetRemoveTypeName(removeType)), configData.uiS.removeTextSize, configData.uiS.removeTextAnchorMin, configData.uiS.removeTextAnchorMax, TextAnchor.MiddleLeft);
             CuiHelper.DestroyUi(player, UINAME_MAIN);
             CuiHelper.AddUi(player, container);
         }
@@ -514,7 +589,7 @@ namespace Oxide.Plugins
         private static void UpdateTimeLeftUI(BasePlayer player, RemoveType removeType, int timeLeft, int currentRemoved, int maxRemovable)
         {
             var container = UI.CreateElementContainer(UINAME_MAIN, UINAME_TIMELEFT, configData.uiS.timeLeftBackgroundColor, configData.uiS.timeLeftAnchorMin, configData.uiS.timeLeftAnchorMax);
-            UI.CreateLabel(ref container, UINAME_TIMELEFT, configData.uiS.timeLeftTextColor, rt.Lang("TimeLeft", player.UserIDString, timeLeft, removeType == RemoveType.Normal || removeType == RemoveType.Admin ? maxRemovable == 0 ? $"{currentRemoved} / {rt.Lang("Unlimit", player.UserIDString)}" : $"{currentRemoved} / {maxRemovable}" : currentRemoved.ToString()), configData.uiS.timeLeftTextSize, configData.uiS.timeLeftTextAnchorMin, configData.uiS.timeLeftTextAnchorMax, TextAnchor.MiddleLeft);
+            UI.CreateLabel(ref container, UINAME_TIMELEFT, configData.uiS.timeLeftTextColor, _rt.Lang("TimeLeft", player.UserIDString, timeLeft, removeType == RemoveType.Normal || removeType == RemoveType.Admin ? maxRemovable == 0 ? $"{currentRemoved} / {_rt.Lang("Unlimit", player.UserIDString)}" : $"{currentRemoved} / {maxRemovable}" : currentRemoved.ToString()), configData.uiS.timeLeftTextSize, configData.uiS.timeLeftTextAnchorMin, configData.uiS.timeLeftTextAnchorMax, TextAnchor.MiddleLeft);
             CuiHelper.DestroyUi(player, UINAME_TIMELEFT);
             CuiHelper.AddUi(player, container);
         }
@@ -527,7 +602,7 @@ namespace Oxide.Plugins
             string displayName, imageName;
             TryFindEntityName(player, targetEntity, out displayName, out imageName);
             UI.CreateLabel(ref container, UINAME_ENTITY, configData.uiS.entityTextColor, displayName, configData.uiS.entityTextSize, configData.uiS.entityTextAnchorMin, configData.uiS.entityTextAnchorMax, TextAnchor.MiddleLeft);
-            if (configData.uiS.entityImageEnabled && !string.IsNullOrEmpty(imageName) && rt.ImageLibrary != null)
+            if (configData.uiS.entityImageEnabled && !string.IsNullOrEmpty(imageName) && _rt.ImageLibrary != null)
             {
                 var image = GetEntityImage(imageName);
                 if (!string.IsNullOrEmpty(image))
@@ -543,10 +618,10 @@ namespace Oxide.Plugins
             CuiHelper.DestroyUi(player, UINAME_PRICE);
             if (!CanEntityBeDisplayed(targetEntity, player) || !HasEntityEnabled(targetEntity)) return;
             Dictionary<string, int> price = null;
-            if (usePrice) price = rt.GetPrice(targetEntity);
+            if (usePrice) price = _rt.GetPrice(targetEntity);
             var container = UI.CreateElementContainer(UINAME_MAIN, UINAME_PRICE, configData.uiS.priceBackgroundColor, configData.uiS.priceAnchorMin, configData.uiS.priceAnchorMax);
-            UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.priceTextColor, rt.Lang("Price", player.UserIDString), configData.uiS.priceTextSize, configData.uiS.priceTextAnchorMin, configData.uiS.priceTextAnchorMax, TextAnchor.MiddleLeft);
-            if (price == null || price.Count == 0) UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.price2TextColor, rt.Lang("Free", player.UserIDString), configData.uiS.price2TextSize, configData.uiS.price2TextAnchorMin, configData.uiS.price2TextAnchorMax, TextAnchor.MiddleLeft);
+            UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.priceTextColor, _rt.Lang("Price", player.UserIDString), configData.uiS.priceTextSize, configData.uiS.priceTextAnchorMin, configData.uiS.priceTextAnchorMax, TextAnchor.MiddleLeft);
+            if (price == null || price.Count == 0) UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.price2TextColor, _rt.Lang("Free", player.UserIDString), configData.uiS.price2TextSize, configData.uiS.price2TextAnchorMin, configData.uiS.price2TextAnchorMax, TextAnchor.MiddleLeft);
             else
             {
                 var anchorMin = configData.uiS.Price2TextAnchorMin;
@@ -554,11 +629,11 @@ namespace Oxide.Plugins
                 float x = (anchorMax.y - anchorMin.y) / price.Count;
                 int textSize = configData.uiS.price2TextSize - price.Count;
                 int i = 0;
-                var language = rt.lang.GetLanguage(player.UserIDString);
+                var language = _rt.lang.GetLanguage(player.UserIDString);
                 foreach (var p in price)
                 {
                     UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.price2TextColor, $"{GetDisplayNameByItemShortName(language, p.Key)} x{p.Value}", textSize, $"{anchorMin.x} {anchorMin.y + i * x}", $"{anchorMax.x} {anchorMin.y + (i + 1) * x}", TextAnchor.MiddleLeft);
-                    if (configData.uiS.imageEnabled && rt.ImageLibrary != null)
+                    if (configData.uiS.imageEnabled && _rt.ImageLibrary != null)
                     {
                         var image = GetItemImage(p.Key);
                         if (!string.IsNullOrEmpty(image))
@@ -575,13 +650,13 @@ namespace Oxide.Plugins
             CuiHelper.DestroyUi(player, UINAME_REFUND);
             if (!CanEntityBeDisplayed(targetEntity, player) || !HasEntityEnabled(targetEntity)) return;
             Dictionary<string, int> refund = null;
-            if (useRefund) refund = rt.GetRefund(targetEntity);
+            if (useRefund) refund = _rt.GetRefund(targetEntity);
             var container = UI.CreateElementContainer(UINAME_MAIN, UINAME_REFUND, configData.uiS.refundBackgroundColor, configData.uiS.refundAnchorMin, configData.uiS.refundAnchorMax);
-            UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refundTextColor, rt.Lang("Refund", player.UserIDString), configData.uiS.refundTextSize, configData.uiS.refundTextAnchorMin, configData.uiS.refundTextAnchorMax, TextAnchor.MiddleLeft);
+            UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refundTextColor, _rt.Lang("Refund", player.UserIDString), configData.uiS.refundTextSize, configData.uiS.refundTextAnchorMin, configData.uiS.refundTextAnchorMax, TextAnchor.MiddleLeft);
 
             if (refund == null || refund.Count == 0)
             {
-                UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refund2TextColor, rt.Lang("Nothing", player.UserIDString), configData.uiS.refund2TextSize, configData.uiS.refund2TextAnchorMin, configData.uiS.refund2TextAnchorMax, TextAnchor.MiddleLeft);
+                UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refund2TextColor, _rt.Lang("Nothing", player.UserIDString), configData.uiS.refund2TextSize, configData.uiS.refund2TextAnchorMin, configData.uiS.refund2TextAnchorMax, TextAnchor.MiddleLeft);
             }
             else
             {
@@ -590,11 +665,11 @@ namespace Oxide.Plugins
                 float x = (anchorMax.y - anchorMin.y) / refund.Count;
                 int textSize = configData.uiS.refund2TextSize - refund.Count;
                 int i = 0;
-                var language = rt.lang.GetLanguage(player.UserIDString);
+                var language = _rt.lang.GetLanguage(player.UserIDString);
                 foreach (var p in refund)
                 {
                     UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refund2TextColor, $"{GetDisplayNameByItemShortName(language, p.Key)} x{p.Value}", textSize, $"{anchorMin.x} {anchorMin.y + i * x}", $"{anchorMax.x} {anchorMin.y + (i + 1) * x}", TextAnchor.MiddleLeft);
-                    if (configData.uiS.imageEnabled && rt.ImageLibrary != null)
+                    if (configData.uiS.imageEnabled && _rt.ImageLibrary != null)
                     {
                         var image = GetItemImage(p.Key);
                         if (!string.IsNullOrEmpty(image))
@@ -611,7 +686,7 @@ namespace Oxide.Plugins
             CuiHelper.DestroyUi(player, UINAME_AUTH);
             if (!CanEntityBeDisplayed(targetEntity, player)) return;
             string reason;
-            string color = rt.CanRemoveEntity(player, removeType, targetEntity, shouldPay, out reason) ? configData.uiS.allowedBackgroundColor : configData.uiS.refusedBackgroundColor;
+            string color = _rt.CanRemoveEntity(player, removeType, targetEntity, shouldPay, out reason) ? configData.uiS.allowedBackgroundColor : configData.uiS.refusedBackgroundColor;
             var container = UI.CreateElementContainer(UINAME_MAIN, UINAME_AUTH, color, configData.uiS.authorizationsAnchorMin, configData.uiS.authorizationsAnchorMax);
             UI.CreateLabel(ref container, UINAME_AUTH, configData.uiS.authorizationsTextColor, reason, configData.uiS.authorizationsTextSize, configData.uiS.authorizationsTextAnchorMin, configData.uiS.authorizationsTextAnchorMax, TextAnchor.MiddleLeft);
             CuiHelper.AddUi(player, container);
@@ -691,13 +766,13 @@ namespace Oxide.Plugins
             {
                 player = GetComponent<BasePlayer>();
                 currentItemID = player.svActiveItemID;
-                checkHeldItem = removeMode == RemoveMode.MeleeHit && configData.removerModeS.meleeHitDisableInHand ||
-                                removeMode == RemoveMode.SpecificTool && configData.removerModeS.specificToolDisableInHand;
+                checkHeldItem = _removeMode == RemoveMode.MeleeHit && configData.removerModeS.meleeHitDisableInHand ||
+                                _removeMode == RemoveMode.SpecificTool && configData.removerModeS.specificToolDisableInHand;
                 if (checkHeldItem)
                 {
                     lastHeldItem = player.GetActiveItem();
                 }
-                if (removeMode == RemoveMode.NoHeld)
+                if (_removeMode == RemoveMode.NoHeld)
                 {
                     UnEquip();
                 }
@@ -716,7 +791,7 @@ namespace Oxide.Plugins
                     maxRemovable = max;
                     pay = p && configData.removeS.priceEnabled;
                     refund = r && configData.removeS.refundEnabled;
-                    rt.PrintDebug($"{player.displayName}({player.userID}) have Enabled the remover tool.");
+                    _rt.PrintDebug($"{player.displayName}({player.userID}) have Enabled the remover tool.");
                 }
                 else
                 {
@@ -776,15 +851,15 @@ namespace Oxide.Plugins
                     if (checkHeldItem)
                     {
                         var heldItem = player.GetActiveItem();
-                        if (removeMode == RemoveMode.MeleeHit && IsMeleeTool(lastHeldItem) && !IsMeleeTool(heldItem) ||
-                            removeMode == RemoveMode.SpecificTool && IsSpecificTool(lastHeldItem) && !IsSpecificTool(heldItem))
+                        if (_removeMode == RemoveMode.MeleeHit && IsMeleeTool(lastHeldItem) && !IsMeleeTool(heldItem) ||
+                            _removeMode == RemoveMode.SpecificTool && IsSpecificTool(lastHeldItem) && !IsSpecificTool(heldItem))
                         {
                             DisableTool();
                             return;
                         }
                         lastHeldItem = heldItem;
                     }
-                    if (removeMode == RemoveMode.NoHeld)
+                    if (_removeMode == RemoveMode.NoHeld)
                     {
                         if (player.svActiveItemID != 0)
                         {
@@ -800,7 +875,7 @@ namespace Oxide.Plugins
                 }
                 if (Time.realtimeSinceStartup - lastRemove >= removeInterval)
                 {
-                    if (removeMode == RemoveMode.MeleeHit)
+                    if (_removeMode == RemoveMode.MeleeHit)
                     {
                         if (hitEntity == null) return;
                         targetEntity = hitEntity;
@@ -808,32 +883,32 @@ namespace Oxide.Plugins
                     }
                     else
                     {
-                        if (!player.serverInput.IsDown(removeButton))
+                        if (!player.serverInput.IsDown(_removeButton))
                         {
                             return;
                         }
-                        if (removeMode == RemoveMode.SpecificTool && !IsSpecificTool(player))
+                        if (_removeMode == RemoveMode.SpecificTool && !IsSpecificTool(player))
                         {
                             //rt.Print(player,rt.Lang("UsageOfRemove",player.UserIDString));
                             return;
                         }
                         GetTargetEntity();
                     }
-                    if (rt.TryRemove(player, targetEntity, removeType, pay, refund))
+                    if (_rt.TryRemove(player, targetEntity, removeType, pay, refund))
                     {
                         if (resetTime) timeLeft = removeTime;
                         if (removeType == RemoveType.Normal || removeType == RemoveType.Admin)
                             currentRemoved++;
                         if (configData.globalS.startCooldownOnRemoved && removeType == RemoveType.Normal)
                         {
-                            rt.cooldownTimes[player.userID] = Time.realtimeSinceStartup;
+                            _rt._cooldownTimes[player.userID] = Time.realtimeSinceStartup;
                         }
                     }
                     lastRemove = Time.realtimeSinceStartup;
                 }
                 if (removeType == RemoveType.Normal && maxRemovable > 0 && currentRemoved >= maxRemovable)
                 {
-                    rt.Print(player, rt.Lang("EntityLimit", player.UserIDString, maxRemovable));
+                    _rt.Print(player, _rt.Lang("EntityLimit", player.UserIDString, maxRemovable));
                     DisableTool(false);
                 };
             }
@@ -863,17 +938,17 @@ namespace Oxide.Plugins
             {
                 if (showMessage)
                 {
-                    if (rt != null && player != null && player.IsConnected)
+                    if (_rt != null && player != null && player.IsConnected)
                     {
-                        rt.Print(player, rt.Lang("ToolDisabled", player.UserIDString));
+                        _rt.Print(player, _rt.Lang("ToolDisabled", player.UserIDString));
                     }
                 }
 
                 if (removeType == RemoveType.Normal)
                 {
-                    if (rt != null && player != null)
+                    if (_rt != null && player != null)
                     {
-                        rt.PrintDebug($"{player.displayName}({player.userID}) have Disabled the remover tool.");
+                        _rt.PrintDebug($"{player.displayName}({player.userID}) have Disabled the remover tool.");
                     }
                 }
                 DestroyAllUI(player);
@@ -882,11 +957,11 @@ namespace Oxide.Plugins
 
             private void OnDestroy()
             {
-                if (rt != null && removeType == RemoveType.Normal)
+                if (_rt != null && removeType == RemoveType.Normal)
                 {
                     if (configData != null && !configData.globalS.startCooldownOnRemoved)
                     {
-                        rt.cooldownTimes[player.userID] = Time.realtimeSinceStartup;
+                        _rt._cooldownTimes[player.userID] = Time.realtimeSinceStartup;
                     }
                 }
             }
@@ -936,6 +1011,11 @@ namespace Oxide.Plugins
 
         private Dictionary<string, int> GetPrice(BaseEntity targetEntity)
         {
+            var result = Interface.CallHook("OnRemovableEntityPrice", targetEntity) as Dictionary<string, int>;
+            if (result != null)
+            {
+                return result;
+            }
             var buildingBlock = targetEntity as BuildingBlock;
             if (buildingBlock != null)
             {
@@ -1001,7 +1081,10 @@ namespace Oxide.Plugins
                     int c = player.inventory.GetAmount(itemID);
                     if (c < p.Value) return false;
                 }
-                else if (!CheckOrPay(p.Key, p.Value, player.userID, true)) return false;
+                else if (!CheckOrPay(p.Key, p.Value, player.userID, true))
+                {
+                    return false;
+                }
             }
             return true;
         }
@@ -1090,6 +1173,11 @@ namespace Oxide.Plugins
 
         private Dictionary<string, int> GetRefund(BaseEntity targetEntity)
         {
+            var result = Interface.CallHook("OnRemovableEntityRefund", targetEntity) as Dictionary<string, int>;
+            if (result != null)
+            {
+                return result;
+            }
             var buildingBlock = targetEntity.GetComponent<BuildingBlock>();
             if (buildingBlock != null)
             {
@@ -1183,7 +1271,7 @@ namespace Oxide.Plugins
             if (configData.raidS.blockBuildingID)
             {
                 var buildingID = buildingBlock.buildingID;
-                lastAttackedBuildings[buildingID] = Time.realtimeSinceStartup;
+                _lastAttackedBuildings[buildingID] = Time.realtimeSinceStartup;
             }
             if (configData.raidS.blockPlayers)
             {
@@ -1192,7 +1280,7 @@ namespace Oxide.Plugins
                 foreach (var player in players)
                 {
                     if (player.userID.IsSteamId())
-                        lastBlockedPlayers[player.userID] = Time.realtimeSinceStartup;
+                        _lastBlockedPlayers[player.userID] = Time.realtimeSinceStartup;
                 }
                 Pool.FreeList(ref players);
             }
@@ -1206,7 +1294,7 @@ namespace Oxide.Plugins
                 if (buildingBlock != null)
                 {
                     float blockTime;
-                    if (lastAttackedBuildings.TryGetValue(buildingBlock.buildingID, out blockTime))
+                    if (_lastAttackedBuildings.TryGetValue(buildingBlock.buildingID, out blockTime))
                     {
                         timeLeft = configData.raidS.blockTime - (Time.realtimeSinceStartup - blockTime);
                         if (timeLeft > 0) return true;
@@ -1216,7 +1304,7 @@ namespace Oxide.Plugins
             if (configData.raidS.blockPlayers)
             {
                 float blockTime;
-                if (lastBlockedPlayers.TryGetValue(player.userID, out blockTime))
+                if (_lastBlockedPlayers.TryGetValue(player.userID, out blockTime))
                 {
                     timeLeft = configData.raidS.blockTime - (Time.realtimeSinceStartup - blockTime);
                     if (timeLeft > 0) return true;
@@ -1262,12 +1350,12 @@ namespace Oxide.Plugins
             {
                 case RemoveType.All:
                     {
-                        if (removeAllCoroutine != null)
+                        if (_removeAllCoroutine != null)
                         {
                             Print(player, Lang("AlreadyRemoveAll", player.UserIDString));
                             return false;
                         }
-                        removeAllCoroutine = ServerMgr.Instance.StartCoroutine(RemoveAll(targetEntity, player));
+                        _removeAllCoroutine = ServerMgr.Instance.StartCoroutine(RemoveAll(targetEntity, player));
                         Print(player, Lang("StartRemoveAll", player.UserIDString));
                         return true;
                     }
@@ -1279,12 +1367,12 @@ namespace Oxide.Plugins
                             Print(player, Lang("NotExternalWall", player.UserIDString));
                             return false;
                         }
-                        if (removeExternalCoroutine != null)
+                        if (_removeExternalCoroutine != null)
                         {
                             Print(player, Lang("AlreadyRemoveExternal", player.UserIDString));
                             return false;
                         }
-                        removeExternalCoroutine = ServerMgr.Instance.StartCoroutine(RemoveExternal(stabilityEntity, player));
+                        _removeExternalCoroutine = ServerMgr.Instance.StartCoroutine(RemoveExternal(stabilityEntity, player));
                         Print(player, Lang("StartRemoveExternal", player.UserIDString));
                         return true;
                     }
@@ -1296,12 +1384,12 @@ namespace Oxide.Plugins
                             Print(player, Lang("NotStructure", player.UserIDString));
                             return false;
                         }
-                        if (removeStructureCoroutine != null)
+                        if (_removeStructureCoroutine != null)
                         {
                             Print(player, Lang("AlreadyRemoveStructure", player.UserIDString));
                             return false;
                         }
-                        removeStructureCoroutine = ServerMgr.Instance.StartCoroutine(RemoveStructure(decayEntity, player));
+                        _removeStructureCoroutine = ServerMgr.Instance.StartCoroutine(RemoveStructure(decayEntity, player));
                         Print(player, Lang("StartRemoveStructure", player.UserIDString));
                         return true;
                     }
@@ -1365,8 +1453,7 @@ namespace Oxide.Plugins
 
         private bool CanRemoveEntity(BasePlayer player, RemoveType removeType, BaseEntity targetEntity, bool shouldPay, out string reason)
         {
-            if (targetEntity.IsDestroyed || !IsRemovableEntity(targetEntity) ||
-                removeType == RemoveType.Normal && ((targetEntity as BaseCombatEntity)?.IsDead() ?? false))
+            if (targetEntity.IsDestroyed || !IsRemovableEntity(removeType, targetEntity))
             {
                 reason = Lang("InvalidEntity", player.UserIDString);
                 return false;
@@ -1456,7 +1543,7 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            //var excludeTwigs = configData.globalS.excludeTwigs && (targetEntity as BuildingBlock)?.grade == BuildingGrade.Enum.Twigs;
+            //var 1 = configData.globalS.excludeTwigs && (targetEntity as BuildingBlock)?.grade == BuildingGrade.Enum.Twigs;
             if (configData.globalS.useEntityOwners)
             {
                 if (AreFriends(targetEntity.OwnerID, player.userID))
@@ -1567,13 +1654,25 @@ namespace Oxide.Plugins
         private static bool IsDamagedEntity(BaseEntity entity)
         {
             var baseCombatEntity = entity as BaseCombatEntity;
-            if (baseCombatEntity == null || !baseCombatEntity.repair.enabled) return false;
-            if (configData.damagedEntityS.excludeBuildingBlocks && (baseCombatEntity is BuildingBlock || baseCombatEntity is SimpleBuildingBlock)) return false;
-            if (configData.damagedEntityS.excludeQuarries && !(baseCombatEntity is BuildingBlock) && baseCombatEntity.repair.itemTarget?.Blueprint == null) //Quarry
+            if (baseCombatEntity == null || !baseCombatEntity.repair.enabled)
             {
                 return false;
             }
-            if (baseCombatEntity.healthFraction * 100f >= configData.damagedEntityS.percentage) return false;
+            if (configData.damagedEntityS.excludeBuildingBlocks &&
+                (baseCombatEntity is BuildingBlock || baseCombatEntity is SimpleBuildingBlock))
+            {
+                return false;
+            }
+            if (configData.damagedEntityS.excludeQuarries && !(baseCombatEntity is BuildingBlock) &&
+                baseCombatEntity.repair.itemTarget?.Blueprint == null) //Quarry
+            {
+                return false;
+            }
+
+            if (baseCombatEntity.healthFraction * 100f >= configData.damagedEntityS.percentage)
+            {
+                return false;
+            }
             return true;
         }
 
@@ -1581,8 +1680,10 @@ namespace Oxide.Plugins
         {
             if (entity.net == null) return true;
             float spawnedTime;
-            if (rt.entitySpawnedTimes.TryGetValue(entity.net.ID, out spawnedTime))
+            if (_rt._entitySpawnedTimes.TryGetValue(entity.net.ID, out spawnedTime))
+            {
                 return Time.realtimeSinceStartup - spawnedTime > configData.globalS.limitTime;
+            }
             return true;
         }
 
@@ -1641,7 +1742,7 @@ namespace Oxide.Plugins
             yield return ProcessContainer(removeList);
             yield return DelayRemove(removeList, player, RemoveType.All);
             Pool.Free(ref removeList);
-            removeAllCoroutine = null;
+            _removeAllCoroutine = null;
         }
 
         private IEnumerator RemoveExternal(StabilityEntity sourceEntity, BasePlayer player)
@@ -1650,7 +1751,7 @@ namespace Oxide.Plugins
             yield return GetNearbyEntities(sourceEntity, removeList, Rust.Layers.Mask.Construction, IsExternalWall);
             yield return DelayRemove(removeList, player, RemoveType.External);
             Pool.Free(ref removeList);
-            removeExternalCoroutine = null;
+            _removeExternalCoroutine = null;
         }
 
         private IEnumerator RemoveStructure(DecayEntity sourceEntity, BasePlayer player)
@@ -1659,18 +1760,18 @@ namespace Oxide.Plugins
             yield return ProcessBuilding(sourceEntity, removeList);
             yield return DelayRemove(removeList, player, RemoveType.Structure);
             Pool.Free(ref removeList);
-            removeStructureCoroutine = null;
+            _removeStructureCoroutine = null;
         }
 
-        private IEnumerator RemovePlayerEntity(ConsoleSystem.Arg arg, ulong targetID, RemovePlayerEntityType removePlayerEntityType)
+        private IEnumerator RemovePlayerEntity(ConsoleSystem.Arg arg, ulong targetID, PlayerEntityRemoveType playerEntityRemoveType)
         {
             int current = 0;
             var removeList = Pool.Get<HashSet<BaseEntity>>();
-            switch (removePlayerEntityType)
+            switch (playerEntityRemoveType)
             {
-                case RemovePlayerEntityType.All:
-                case RemovePlayerEntityType.Building:
-                    bool onlyBuilding = removePlayerEntityType == RemovePlayerEntityType.Building;
+                case PlayerEntityRemoveType.All:
+                case PlayerEntityRemoveType.Building:
+                    bool onlyBuilding = playerEntityRemoveType == PlayerEntityRemoveType.Building;
                     foreach (var serverEntity in BaseNetworkable.serverEntities)
                     {
                         if (++current % 500 == 0) yield return CoroutineEx.waitForEndOfFrame;
@@ -1692,7 +1793,7 @@ namespace Oxide.Plugins
                     }
                     break;
 
-                case RemovePlayerEntityType.Cupboard:
+                case PlayerEntityRemoveType.Cupboard:
                     foreach (var serverEntity in BaseNetworkable.serverEntities)
                     {
                         if (++current % 500 == 0) yield return CoroutineEx.waitForEndOfFrame;
@@ -1706,7 +1807,7 @@ namespace Oxide.Plugins
             yield return DelayRemove(removeList);
             Pool.Free(ref removeList);
             Print(arg, $"You have successfully removed {removed} entities of player {targetID}.");
-            removePlayerEntityCoroutine = null;
+            _removePlayerEntityCoroutine = null;
         }
 
         private IEnumerator DelayRemove(IEnumerable<BaseEntity> entities, BasePlayer player = null, RemoveType removeType = RemoveType.None)
@@ -1716,26 +1817,23 @@ namespace Oxide.Plugins
             foreach (var entity in entities)
             {
                 if (DoRemove(entity, destroyMode) && ++removed % configData.globalS.removePerFrame == 0)
+                {
                     yield return CoroutineEx.waitForEndOfFrame;
+                }
             }
-            if (removeType == RemoveType.None) yield break;
-            var toolRemover = player?.GetComponent<ToolRemover>();
-            switch (removeType)
+
+            if (removeType == RemoveType.None)
             {
-                case RemoveType.All:
-                    if (toolRemover != null && toolRemover.removeType == removeType) toolRemover.currentRemoved += removed;
-                    if (player != null) Print(player, Lang("CompletedRemoveAll", player.UserIDString, removed));
-                    yield break;
-
-                case RemoveType.Structure:
-                    if (toolRemover != null && toolRemover.removeType == removeType) toolRemover.currentRemoved += removed;
-                    if (player != null) Print(player, Lang("CompletedRemoveStructure", player.UserIDString, removed));
-                    yield break;
-
-                case RemoveType.External:
-                    if (toolRemover != null && toolRemover.removeType == removeType) toolRemover.currentRemoved += removed;
-                    if (player != null) Print(player, Lang("CompletedRemoveExternal", player.UserIDString, removed));
-                    yield break;
+                yield break;
+            }
+            var toolRemover = player?.GetComponent<ToolRemover>();
+            if (toolRemover != null && toolRemover.removeType == removeType)
+            {
+                toolRemover.currentRemoved += removed;
+            }
+            if (player != null)
+            {
+                Print(player, Lang($"CompletedRemove{removeType}", player.UserIDString, removed));
             }
         }
 
@@ -1822,7 +1920,7 @@ namespace Oxide.Plugins
         {
             if (entity != null && !entity.IsDestroyed)
             {
-                rt.PrintDebug($"{player.displayName}({player.userID}) has removed {entity.ShortPrefabName}({entity.OwnerID} | {entity.transform.position})", true);
+                _rt.PrintDebug($"{player.displayName}({player.userID}) has removed {entity.ShortPrefabName}({entity.OwnerID} | {entity.transform.position})", true);
                 Interface.CallHook("OnNormalRemovedEntity", player, entity);
                 entity.Kill(gibs ? BaseNetworkable.DestroyMode.Gib : BaseNetworkable.DestroyMode.None);
             }
@@ -1853,7 +1951,7 @@ namespace Oxide.Plugins
                     return;
                 }
             }
-            if (removeOverride && !permission.UserHasPermission(player.UserIDString, PERMISSION_OVERRIDE))
+            if (_removeOverride && !permission.UserHasPermission(player.UserIDString, PERMISSION_OVERRIDE))
             {
                 Print(player, Lang("CurrentlyDisabled", player.UserIDString));
                 return;
@@ -1956,7 +2054,7 @@ namespace Oxide.Plugins
                 if (cooldown > 0 && !(configData.globalS.cooldownExclude && player.IsAdmin))
                 {
                     float lastUse;
-                    if (cooldownTimes.TryGetValue(player.userID, out lastUse))
+                    if (_cooldownTimes.TryGetValue(player.userID, out lastUse))
                     {
                         var timeLeft = cooldown - (Time.realtimeSinceStartup - lastUse);
                         if (timeLeft > 0)
@@ -1966,7 +2064,7 @@ namespace Oxide.Plugins
                         }
                     }
                 }
-                if (removeMode == RemoveMode.MeleeHit && configData.removerModeS.meleeHitRequires)
+                if (_removeMode == RemoveMode.MeleeHit && configData.removerModeS.meleeHitRequires)
                 {
                     if (!IsMeleeTool(player))
                     {
@@ -1974,7 +2072,7 @@ namespace Oxide.Plugins
                         return false;
                     }
                 }
-                if (removeMode == RemoveMode.SpecificTool && configData.removerModeS.specificToolRequires)
+                if (_removeMode == RemoveMode.SpecificTool && configData.removerModeS.specificToolRequires)
                 {
                     if (!IsSpecificTool(player))
                     {
@@ -1999,7 +2097,7 @@ namespace Oxide.Plugins
             {
                 if (!configData.globalS.startCooldownOnRemoved)
                 {
-                    cooldownTimes[player.userID] = Time.realtimeSinceStartup;
+                    _cooldownTimes[player.userID] = Time.realtimeSinceStartup;
                 }
             }
             toolRemover.Init(removeType, time, maxRemovable, distance, interval, pay, refund, resetTime, true);
@@ -2205,13 +2303,13 @@ namespace Oxide.Plugins
             {
                 case "true":
                 case "1":
-                    removeOverride = false;
+                    _removeOverride = false;
                     Print(arg, "Remove is now allowed depending on your settings.");
                     return;
 
                 case "false":
                 case "0":
-                    removeOverride = true;
+                    _removeOverride = true;
                     Print(arg, "Remove is now restricted for all players (exept admins)");
                     foreach (var p in BasePlayer.activePlayerList)
                     {
@@ -2246,7 +2344,7 @@ namespace Oxide.Plugins
                 Pool.Free(ref stringBuilder);
                 return;
             }
-            if (removePlayerEntityCoroutine != null)
+            if (_removePlayerEntityCoroutine != null)
             {
                 Print(arg, "There is already a RemovePlayerEntity running, please wait.");
                 return;
@@ -2257,29 +2355,29 @@ namespace Oxide.Plugins
                 Print(arg, "Please enter the player's steamID.");
                 return;
             }
-            RemovePlayerEntityType removePlayerEntityType;
+            PlayerEntityRemoveType playerEntityRemoveType;
             switch (arg.Args[0].ToLower())
             {
                 case "a":
                 case "all":
-                    removePlayerEntityType = RemovePlayerEntityType.All;
+                    playerEntityRemoveType = PlayerEntityRemoveType.All;
                     break;
 
                 case "b":
                 case "building":
-                    removePlayerEntityType = RemovePlayerEntityType.Building;
+                    playerEntityRemoveType = PlayerEntityRemoveType.Building;
                     break;
 
                 case "c":
                 case "cupboard":
-                    removePlayerEntityType = RemovePlayerEntityType.Cupboard;
+                    playerEntityRemoveType = PlayerEntityRemoveType.Cupboard;
                     break;
 
                 default:
                     Print(arg, "This is not a valid argument");
                     return;
             }
-            removePlayerEntityCoroutine = ServerMgr.Instance.StartCoroutine(RemovePlayerEntity(arg, targetID, removePlayerEntityType));
+            _removePlayerEntityCoroutine = ServerMgr.Instance.StartCoroutine(RemovePlayerEntity(arg, targetID, playerEntityRemoveType));
             Print(arg, "Start running RemovePlayerEntity, please wait.");
         }
 
@@ -3369,8 +3467,14 @@ namespace Oxide.Plugins
         {
             //SendReply(arg, message);
             var player = arg.Player();
-            if (player == null) Puts(message);
-            else PrintToConsole(player, message);
+            if (player == null)
+            {
+                Puts(message);
+            }
+            else
+            {
+                PrintToConsole(player, message);
+            }
         }
 
         private string Lang(string key, string id = null, params object[] args)
