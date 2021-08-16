@@ -50,6 +50,7 @@ namespace Oxide.Plugins
         private Hash<ulong, float> _lastBlockedPlayers;
         private Hash<uint, float> _lastAttackedBuildings;
         private readonly Hash<ulong, float> _cooldownTimes = new Hash<ulong, float>();
+
         private enum RemoveMode
         {
             None,
@@ -83,7 +84,6 @@ namespace Oxide.Plugins
         {
             _rt = this;
             False = false;
-            LoadDefaultMessages();
             permission.RegisterPermission(PERMISSION_ALL, this);
             permission.RegisterPermission(PERMISSION_ADMIN, this);
             permission.RegisterPermission(PERMISSION_NORMAL, this);
@@ -91,12 +91,7 @@ namespace Oxide.Plugins
             permission.RegisterPermission(PERMISSION_OVERRIDE, this);
             permission.RegisterPermission(PERMISSION_EXTERNAL, this);
             permission.RegisterPermission(PERMISSION_STRUCTURE, this);
-            foreach (var perm in configData.permS.Keys)
-            {
-                if (!permission.PermissionExists(perm, this))
-                    permission.RegisterPermission(perm, this);
-            }
-            cmd.AddChatCommand(configData.chatS.command, this, nameof(CmdRemove));
+
             Unsubscribe(nameof(OnEntityDeath));
             Unsubscribe(nameof(OnHammerHit));
             Unsubscribe(nameof(OnEntitySpawned));
@@ -104,6 +99,15 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(OnPlayerAttack));
             Unsubscribe(nameof(OnActiveItemChanged));
             Unsubscribe(nameof(OnServerSave));
+
+            foreach (var perm in configData.permS.Keys)
+            {
+                if (!permission.PermissionExists(perm, this))
+                {
+                    permission.RegisterPermission(perm, this);
+                }
+            }
+            cmd.AddChatCommand(configData.chatS.command, this, nameof(CmdRemove));
         }
 
         private void OnServerInitialized()
@@ -247,23 +251,28 @@ namespace Oxide.Plugins
 
         #region Initializing
 
-        private readonly Dictionary<string, string> shortPrefabNameToDeployable = new Dictionary<string, string>();
-        private readonly Dictionary<string, string> prefabNameToStructure = new Dictionary<string, string>();
-        private readonly Dictionary<string, int> itemShortNameToItemID = new Dictionary<string, int>();
-        private readonly HashSet<Construction> constructions = new HashSet<Construction>();
+        private readonly HashSet<Construction> _constructions = new HashSet<Construction>();
+        private readonly Dictionary<string, int> _itemShortNameToItemId = new Dictionary<string, int>();
+        private readonly Dictionary<string, string> _prefabNameToStructure = new Dictionary<string, string>();
+        private readonly Dictionary<string, string> _shortPrefabNameToDeployable = new Dictionary<string, string>();
 
         private void Initialize()
         {
             foreach (var itemDefinition in ItemManager.GetItemDefinitions())
             {
-                if (!itemShortNameToItemID.ContainsKey(itemDefinition.shortname))
-                    itemShortNameToItemID.Add(itemDefinition.shortname, itemDefinition.itemid);
-                var deployablePrefab = itemDefinition.GetComponent<ItemModDeployable>()?.entityPrefab?.resourcePath;
-                if (string.IsNullOrEmpty(deployablePrefab)) continue;
-                var shortPrefabName = Utility.GetFileNameWithoutExtension(deployablePrefab);
-                if (!string.IsNullOrEmpty(shortPrefabName) && !shortPrefabNameToDeployable.ContainsKey(shortPrefabName))
+                if (!_itemShortNameToItemId.ContainsKey(itemDefinition.shortname))
                 {
-                    shortPrefabNameToDeployable.Add(shortPrefabName, itemDefinition.shortname);
+                    _itemShortNameToItemId.Add(itemDefinition.shortname, itemDefinition.itemid);
+                }
+                var deployablePrefab = itemDefinition.GetComponent<ItemModDeployable>()?.entityPrefab?.resourcePath;
+                if (string.IsNullOrEmpty(deployablePrefab))
+                {
+                    continue;
+                }
+                var shortPrefabName = Utility.GetFileNameWithoutExtension(deployablePrefab);
+                if (!string.IsNullOrEmpty(shortPrefabName) && !_shortPrefabNameToDeployable.ContainsKey(shortPrefabName))
+                {
+                    _shortPrefabNameToDeployable.Add(shortPrefabName, itemDefinition.shortname);
                 }
             }
             foreach (var entry in PrefabAttribute.server.prefabs)
@@ -271,10 +280,10 @@ namespace Oxide.Plugins
                 var construction = entry.Value.Find<Construction>().FirstOrDefault();
                 if (construction != null && construction.deployable == null && !string.IsNullOrEmpty(construction.info.name.english))
                 {
-                    constructions.Add(construction);
-                    if (!prefabNameToStructure.ContainsKey(construction.fullName))
+                    _constructions.Add(construction);
+                    if (!_prefabNameToStructure.ContainsKey(construction.fullName))
                     {
-                        prefabNameToStructure.Add(construction.fullName, construction.info.name.english);
+                        _prefabNameToStructure.Add(construction.fullName, construction.info.name.english);
                     }
                 }
             }
@@ -299,7 +308,10 @@ namespace Oxide.Plugins
 
         private static bool CanEntityBeSaved(BaseEntity entity)
         {
-            if (entity is BuildingBlock) return true;
+            if (entity is BuildingBlock)
+            {
+                return true;
+            }
             EntitySettings entitySettings;
             if (configData.removeS.entityS.TryGetValue(entity.ShortPrefabName, out entitySettings) && entitySettings.enabled)
             {
@@ -308,13 +320,18 @@ namespace Oxide.Plugins
             return false;
         }
 
+        直接通过钩子调用实体删除的信息，可删除信息
+
         private static bool HasEntityEnabled(BaseEntity entity)
         {
-            bool valid;
             var buildingBlock = entity as BuildingBlock;
-            if (buildingBlock != null && configData.removeS.validConstruction.TryGetValue(buildingBlock.grade, out valid) && valid)
+            if (buildingBlock != null)
             {
-                return true;
+                bool valid;
+                if (configData.removeS.validConstruction.TryGetValue(buildingBlock.grade, out valid) && valid)
+                {
+                    return true;
+                }
             }
             EntitySettings entitySettings;
             if (configData.removeS.entityS.TryGetValue(entity.ShortPrefabName, out entitySettings) && entitySettings.enabled)
@@ -326,8 +343,8 @@ namespace Oxide.Plugins
 
         private static bool IsRemovableEntity(RemoveType removeType, BaseEntity entity)
         {
-            if (_rt.shortPrefabNameToDeployable.ContainsKey(entity.ShortPrefabName)
-                || _rt.prefabNameToStructure.ContainsKey(entity.PrefabName)
+            if (_rt._shortPrefabNameToDeployable.ContainsKey(entity.ShortPrefabName)
+                || _rt._prefabNameToStructure.ContainsKey(entity.PrefabName)
                 || configData.removeS.entityS.ContainsKey(entity.ShortPrefabName))
             {
                 return true;
@@ -361,7 +378,7 @@ namespace Oxide.Plugins
             {
                 return GetImageFromLibrary(name);
             }
-            if (_rt.itemShortNameToItemID.ContainsKey(name))
+            if (_rt._itemShortNameToItemId.ContainsKey(name))
             {
                 return GetImageFromLibrary(name);
             }
@@ -396,7 +413,7 @@ namespace Oxide.Plugins
             }
 
             string structureName;
-            if (_rt.prefabNameToStructure.TryGetValue(entity.PrefabName, out structureName))
+            if (_rt._prefabNameToStructure.TryGetValue(entity.PrefabName, out structureName))
             {
                 BuildingBlocksSettings buildingBlockSettings;
                 if (configData.removeS.buildingBlockS.TryGetValue(structureName, out buildingBlockSettings))
@@ -411,7 +428,7 @@ namespace Oxide.Plugins
             displayName = GetOtherDisplayName(entity.ShortPrefabName);
         }
 
-        private static string GetDisplayNameByItemShortName(string language, string priceName)
+        private static string GetDisplayNameByPriceName(string language, string priceName)
         {
             var itemDefinition = ItemManager.FindItemDefinition(priceName);
             if (itemDefinition != null)
@@ -469,12 +486,13 @@ namespace Oxide.Plugins
         #region API
 
         private readonly Hash<string, EntitySettings> _registerEntitySettings = new Hash<string, EntitySettings>();
-        
+
         //
         private void UnregisterEntitySettings(string shortPrefabName)
         {
             _registerEntitySettings.Remove(shortPrefabName);
         }
+
         //
         private void RegisterEntitySettings(string shortPrefabName, string displayName, bool enabled = true, Dictionary<string, int> price = null, Dictionary<string, int> refund = null)
         {
@@ -482,9 +500,9 @@ namespace Oxide.Plugins
             if (!_registerEntitySettings.TryGetValue(shortPrefabName, out entitySettings))
             {
                 entitySettings = new EntitySettings();
-                _registerEntitySettings .Add(shortPrefabName, entitySettings);
+                _registerEntitySettings.Add(shortPrefabName, entitySettings);
             }
-            
+
             entitySettings.enabled = enabled;
             entitySettings.displayName = displayName;
             entitySettings.price = price ?? new Dictionary<string, int>();
@@ -632,7 +650,7 @@ namespace Oxide.Plugins
                 var language = _rt.lang.GetLanguage(player.UserIDString);
                 foreach (var p in price)
                 {
-                    UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.price2TextColor, $"{GetDisplayNameByItemShortName(language, p.Key)} x{p.Value}", textSize, $"{anchorMin.x} {anchorMin.y + i * x}", $"{anchorMax.x} {anchorMin.y + (i + 1) * x}", TextAnchor.MiddleLeft);
+                    UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.price2TextColor, $"{GetDisplayNameByPriceName(language, p.Key)} x{p.Value}", textSize, $"{anchorMin.x} {anchorMin.y + i * x}", $"{anchorMax.x} {anchorMin.y + (i + 1) * x}", TextAnchor.MiddleLeft);
                     if (configData.uiS.imageEnabled && _rt.ImageLibrary != null)
                     {
                         var image = GetItemImage(p.Key);
@@ -668,7 +686,7 @@ namespace Oxide.Plugins
                 var language = _rt.lang.GetLanguage(player.UserIDString);
                 foreach (var p in refund)
                 {
-                    UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refund2TextColor, $"{GetDisplayNameByItemShortName(language, p.Key)} x{p.Value}", textSize, $"{anchorMin.x} {anchorMin.y + i * x}", $"{anchorMax.x} {anchorMin.y + (i + 1) * x}", TextAnchor.MiddleLeft);
+                    UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refund2TextColor, $"{GetDisplayNameByPriceName(language, p.Key)} x{p.Value}", textSize, $"{anchorMin.x} {anchorMin.y + i * x}", $"{anchorMax.x} {anchorMin.y + (i + 1) * x}", TextAnchor.MiddleLeft);
                     if (configData.uiS.imageEnabled && _rt.ImageLibrary != null)
                     {
                         var image = GetItemImage(p.Key);
@@ -982,7 +1000,7 @@ namespace Oxide.Plugins
                 {
                     if (entry.Value <= 0) continue;
                     int itemID;
-                    if (itemShortNameToItemID.TryGetValue(entry.Key, out itemID))
+                    if (_itemShortNameToItemId.TryGetValue(entry.Key, out itemID))
                     {
                         player.inventory.Take(collect, itemID, entry.Value);
                         player.Command("note.inv", itemID, -entry.Value);
@@ -1019,7 +1037,7 @@ namespace Oxide.Plugins
             var buildingBlock = targetEntity as BuildingBlock;
             if (buildingBlock != null)
             {
-                var entityName = prefabNameToStructure[buildingBlock.PrefabName];
+                var entityName = _prefabNameToStructure[buildingBlock.PrefabName];
                 BuildingBlocksSettings buildingBlockSettings;
                 if (configData.removeS.buildingBlockS.TryGetValue(entityName, out buildingBlockSettings))
                 {
@@ -1076,7 +1094,7 @@ namespace Oxide.Plugins
             {
                 if (p.Value <= 0) continue;
                 int itemID;
-                if (itemShortNameToItemID.TryGetValue(p.Key, out itemID))
+                if (_itemShortNameToItemId.TryGetValue(p.Key, out itemID))
                 {
                     int c = player.inventory.GetAmount(itemID);
                     if (c < p.Value) return false;
@@ -1139,8 +1157,8 @@ namespace Oxide.Plugins
             {
                 if (entry.Value <= 0) continue;
                 int itemID; string shortname;
-                shortPrefabNameToDeployable.TryGetValue(targetEntity.ShortPrefabName, out shortname);
-                if (itemShortNameToItemID.TryGetValue(entry.Key, out itemID))
+                _shortPrefabNameToDeployable.TryGetValue(targetEntity.ShortPrefabName, out shortname);
+                if (_itemShortNameToItemId.TryGetValue(entry.Key, out itemID))
                 {
                     var isOriginalItem = entry.Key == shortname;
                     var item = ItemManager.CreateByItemID(itemID, entry.Value, isOriginalItem ? targetEntity.skinID : 0);
@@ -1181,7 +1199,7 @@ namespace Oxide.Plugins
             var buildingBlock = targetEntity.GetComponent<BuildingBlock>();
             if (buildingBlock != null)
             {
-                var entityName = prefabNameToStructure[buildingBlock.PrefabName];
+                var entityName = _prefabNameToStructure[buildingBlock.PrefabName];
                 BuildingBlocksSettings buildingBlockSettings;
                 if (configData.removeS.buildingBlockS.TryGetValue(entityName, out buildingBlockSettings))
                 {
@@ -1253,7 +1271,7 @@ namespace Oxide.Plugins
                     if (entity != null)
                     {
                         string slotName;
-                        if (shortPrefabNameToDeployable.TryGetValue(entity.ShortPrefabName, out slotName))
+                        if (_shortPrefabNameToDeployable.TryGetValue(entity.ShortPrefabName, out slotName))
                         {
                             yield return slotName;
                         }
@@ -2221,7 +2239,7 @@ namespace Oxide.Plugins
             {
                 case "price":
                     if (!float.TryParse(arg.Args[1], out value)) value = 50f;
-                    foreach (var construction in constructions)
+                    foreach (var construction in _constructions)
                     {
                         BuildingBlocksSettings buildingBlocksSettings;
                         if (configData.removeS.buildingBlockS.TryGetValue(construction.info.name.english, out buildingBlocksSettings))
@@ -2239,7 +2257,7 @@ namespace Oxide.Plugins
 
                 case "refund":
                     if (!float.TryParse(arg.Args[1], out value)) value = 40f;
-                    foreach (var construction in constructions)
+                    foreach (var construction in _constructions)
                     {
                         BuildingBlocksSettings buildingBlocksSettings;
                         if (configData.removeS.buildingBlockS.TryGetValue(construction.info.name.english, out buildingBlocksSettings))
@@ -2472,7 +2490,7 @@ namespace Oxide.Plugins
             }
 
             var newBuildingBlocksS = new Dictionary<string, BuildingBlocksSettings>();
-            foreach (var construction in constructions)
+            foreach (var construction in _constructions)
             {
                 BuildingBlocksSettings buildingBlocksSettings;
                 if (!configData.removeS.buildingBlockS.TryGetValue(construction.info.name.english, out buildingBlocksSettings))
@@ -2489,7 +2507,7 @@ namespace Oxide.Plugins
             }
             configData.removeS.buildingBlockS = newBuildingBlocksS;
 
-            foreach (var entry in shortPrefabNameToDeployable)
+            foreach (var entry in _shortPrefabNameToDeployable)
             {
                 EntitySettings entitySettings;
                 if (!configData.removeS.entityS.TryGetValue(entry.Key, out entitySettings))
@@ -2553,14 +2571,14 @@ namespace Oxide.Plugins
                 ["ServerRewards"] = "https://i.imgur.com/04rJsV3.png"
             };
 
-            [JsonProperty(PropertyName = "Display Names Of Other Things")]
-            public Dictionary<string, string> displayNames = new Dictionary<string, string>();
-
             [JsonProperty(PropertyName = "GUI")]
             public UiSettings uiS = new UiSettings();
 
             [JsonProperty(PropertyName = "Remove Info (Refund & Price)")]
             public RemoveSettings removeS = new RemoveSettings();
+
+            [JsonProperty(PropertyName = "Display Names Of Other Things")]
+            public Dictionary<string, string> displayNames = new Dictionary<string, string>();
 
             [JsonProperty(PropertyName = "Version")]
             public VersionNumber version;
