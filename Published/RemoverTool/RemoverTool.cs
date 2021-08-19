@@ -343,7 +343,7 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private static bool IsRemovableEntity(RemoveType removeType, BaseEntity entity)
+        private static bool IsRemovableEntity(BaseEntity entity)
         {
             if (_rt._shortPrefabNameToDeployable.ContainsKey(entity.ShortPrefabName)
                 || _rt._prefabNameToStructure.ContainsKey(entity.PrefabName)
@@ -351,25 +351,22 @@ namespace Oxide.Plugins
             {
                 return true;
             }
-            if (removeType == RemoveType.Normal)
+            var baseCombatEntity = entity as BaseCombatEntity;
+            if (baseCombatEntity != null)
             {
-                var baseCombatEntity = entity as BaseCombatEntity;
-                if (baseCombatEntity != null)
+                if (baseCombatEntity.IsDead())
                 {
-                    if (baseCombatEntity.IsDead())
-                    {
-                        return false;
-                    }
-                    if (baseCombatEntity.pickup.itemTarget != null)
-                    {
-                        return true;
-                    }
+                    return false;
                 }
-                var result = Interface.CallHook("IsRemovableEntity", entity);
-                if (result is bool)
+                if (baseCombatEntity.pickup.itemTarget != null)
                 {
-                    return (bool)result;
+                    return true;
                 }
+            }
+            var result = Interface.CallHook("IsRemovableEntity", entity);
+            if (result is bool)
+            {
+                return (bool)result;
             }
             return false;
         }
@@ -485,6 +482,58 @@ namespace Oxide.Plugins
 
         #endregion Methods
 
+        #region RaidBlocker
+
+        private void BlockRemove(BuildingBlock buildingBlock)
+        {
+            if (configData.raidS.blockBuildingID)
+            {
+                var buildingID = buildingBlock.buildingID;
+                _lastAttackedBuildings[buildingID] = Time.realtimeSinceStartup;
+            }
+            if (configData.raidS.blockPlayers)
+            {
+                var players = Pool.GetList<BasePlayer>();
+                Vis.Entities(buildingBlock.transform.position, configData.raidS.blockRadius, players, Rust.Layers.Mask.Player_Server);
+                foreach (var player in players)
+                {
+                    if (player.userID.IsSteamId())
+                        _lastBlockedPlayers[player.userID] = Time.realtimeSinceStartup;
+                }
+                Pool.FreeList(ref players);
+            }
+        }
+
+        private bool IsRaidBlocked(BasePlayer player, BaseEntity targetEntity, out float timeLeft)
+        {
+            if (configData.raidS.blockBuildingID)
+            {
+                var buildingBlock = targetEntity as BuildingBlock;
+                if (buildingBlock != null)
+                {
+                    float blockTime;
+                    if (_lastAttackedBuildings.TryGetValue(buildingBlock.buildingID, out blockTime))
+                    {
+                        timeLeft = configData.raidS.blockTime - (Time.realtimeSinceStartup - blockTime);
+                        if (timeLeft > 0) return true;
+                    }
+                }
+            }
+            if (configData.raidS.blockPlayers)
+            {
+                float blockTime;
+                if (_lastBlockedPlayers.TryGetValue(player.userID, out blockTime))
+                {
+                    timeLeft = configData.raidS.blockTime - (Time.realtimeSinceStartup - blockTime);
+                    if (timeLeft > 0) return true;
+                }
+            }
+            timeLeft = 0;
+            return false;
+        }
+
+        #endregion RaidBlocker
+
         #region API
 
         private class RemovableEntityInfo
@@ -495,7 +544,9 @@ namespace Oxide.Plugins
             public Dictionary<string, int> Refund { get; set; }
         }
 
-        private RemovableEntityInfo GetRemovableEntityInfo(BaseEntity entity, BasePlayer player)
+        hhhhhh
+
+        private static RemovableEntityInfo GetRemovableEntityInfo(BaseEntity entity, BasePlayer player)
         {
             var result = Interface.CallHook("OnRemovableEntityInfo", entity, player);
             if (result != null)
@@ -511,6 +562,8 @@ namespace Oxide.Plugins
                 {
                 }
             }
+
+            return null;
         }
 
         private readonly Hash<string, EntitySettings> _registerEntitySettings = new Hash<string, EntitySettings>();
@@ -640,9 +693,10 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        private static void UpdateEntityUI(BasePlayer player, BaseEntity targetEntity)
+        private static void UpdateEntityUI(BasePlayer player, BaseEntity targetEntity, RemovableEntityInfo info)
         {
             var container = UI.CreateElementContainer(UINAME_MAIN, UINAME_ENTITY, configData.uiS.entityBackgroundColor, configData.uiS.entityAnchorMin, configData.uiS.entityAnchorMax);
+
             string displayName, imageName;
             TryFindEntityName(player, targetEntity, out displayName, out imageName);
             UI.CreateLabel(ref container, UINAME_ENTITY, configData.uiS.entityTextColor, displayName, configData.uiS.entityTextSize, configData.uiS.entityTextAnchorMin, configData.uiS.entityTextAnchorMax, TextAnchor.MiddleLeft);
@@ -658,7 +712,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        private static void UpdatePriceUI(BasePlayer player, BaseEntity targetEntity, bool usePrice)
+        private static void UpdatePriceUI(BasePlayer player, BaseEntity targetEntity, RemovableEntityInfo info, bool usePrice)
         {
             Dictionary<string, int> price = null;
             if (usePrice) price = _rt.GetPrice(targetEntity);
@@ -689,7 +743,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        private static void UpdateRefundUI(BasePlayer player, BaseEntity targetEntity, bool useRefund)
+        private static void UpdateRefundUI(BasePlayer player, BaseEntity targetEntity, RemovableEntityInfo info, bool useRefund)
         {
             Dictionary<string, int> refund = null;
             if (useRefund) refund = _rt.GetRefund(targetEntity);
@@ -724,10 +778,10 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        private static void UpdateAuthorizationUI(BasePlayer player, RemoveType removeType, BaseEntity targetEntity, bool shouldPay)
+        private static void UpdateAuthorizationUI(BasePlayer player, RemoveType removeType, BaseEntity targetEntity, RemovableEntityInfo info, bool shouldPay)
         {
             string reason;
-            string color = _rt.CanRemoveEntity(player, removeType, targetEntity, shouldPay, out reason) ? configData.uiS.allowedBackgroundColor : configData.uiS.refusedBackgroundColor;
+            string color = _rt.CanRemoveEntity(player, removeType, targetEntity, shouldPay, out reason, false) ? configData.uiS.allowedBackgroundColor : configData.uiS.refusedBackgroundColor;
             var container = UI.CreateElementContainer(UINAME_MAIN, UINAME_AUTH, color, configData.uiS.authorizationsAnchorMin, configData.uiS.authorizationsAnchorMax);
             UI.CreateLabel(ref container, UINAME_AUTH, configData.uiS.authorizationsTextColor, reason, configData.uiS.authorizationsTextSize, configData.uiS.authorizationsTextAnchorMin, configData.uiS.authorizationsTextAnchorMax, TextAnchor.MiddleLeft);
             CuiHelper.DestroyUi(player, UINAME_AUTH);
@@ -813,7 +867,6 @@ namespace Oxide.Plugins
             }
 
             private const float MinInterval = 0.2f;
-
             public int CurrentRemoved { get; set; }
             public BaseEntity HitEntity { get; set; }
 
@@ -891,6 +944,10 @@ namespace Oxide.Plugins
                 InvokeRepeating(RemoveUpdate, 0f, 1f);
             }
 
+            private RemovableEntityInfo TryGetRemovableEntityInfo(bool @checked = false)
+            {
+            }
+
             private void RemoveUpdate()
             {
                 if (configData.uiS.enabled)
@@ -898,14 +955,20 @@ namespace Oxide.Plugins
                     _targetEntity = GetTargetEntity();
                     UpdateTimeLeftUI(Player, RemoveType, _timeLeft, CurrentRemoved, _maxRemovable);
 
-                    var canShow = CanEntityBeDisplayed(_targetEntity, Player);
-
-                    var entityUi = CheckUiEntry(UiEntry.Entity, canShow);
+                    bool got = false;
+                    RemovableEntityInfo info = null;
+                    bool canShow = CanEntityBeDisplayed(_targetEntity, Player);
+                    bool? entityUi = CheckUiEntry(UiEntry.Entity, canShow);
                     if (entityUi.HasValue)
                     {
                         if (entityUi.Value)
                         {
-                            UpdateEntityUI(Player, _targetEntity);
+                            if (RemoveType == RemoveType.Normal)
+                            {
+                                got = true;
+                                info = GetRemovableEntityInfo(_targetEntity, Player);
+                            }
+                            UpdateEntityUI(Player, _targetEntity, info);
                         }
                         else
                         {
@@ -916,12 +979,17 @@ namespace Oxide.Plugins
                     {
                         if (configData.uiS.authorizationEnabled)
                         {
-                            var authUi = CheckUiEntry(UiEntry.Auth, canShow);
+                            bool? authUi = CheckUiEntry(UiEntry.Auth, canShow);
                             if (authUi.HasValue)
                             {
                                 if (authUi.Value)
                                 {
-                                    UpdateAuthorizationUI(Player, RemoveType, _targetEntity, _shouldPay);
+                                    if (!got)
+                                    {
+                                        got = true;
+                                        info = GetRemovableEntityInfo(_targetEntity, Player);
+                                    }
+                                    UpdateAuthorizationUI(Player, RemoveType, _targetEntity, info, _shouldPay);
                                 }
                                 else
                                 {
@@ -934,12 +1002,17 @@ namespace Oxide.Plugins
                             canShow = canShow && HasEntityEnabled(_targetEntity);
                             if (configData.uiS.priceEnabled)
                             {
-                                var priceUi = CheckUiEntry(UiEntry.Price, canShow);
+                                bool? priceUi = CheckUiEntry(UiEntry.Price, canShow);
                                 if (priceUi.HasValue)
                                 {
                                     if (priceUi.Value)
                                     {
-                                        UpdatePriceUI(Player, _targetEntity, _shouldPay);
+                                        if (!got)
+                                        {
+                                            got = true;
+                                            info = GetRemovableEntityInfo(_targetEntity, Player);
+                                        }
+                                        UpdatePriceUI(Player, _targetEntity, info, _shouldPay);
                                     }
                                     else
                                     {
@@ -950,12 +1023,17 @@ namespace Oxide.Plugins
 
                             if (configData.uiS.refundEnabled)
                             {
-                                var refundUi = CheckUiEntry(UiEntry.Refund, canShow);
+                                bool? refundUi = CheckUiEntry(UiEntry.Refund, canShow);
                                 if (refundUi.HasValue)
                                 {
                                     if (refundUi.Value)
                                     {
-                                        UpdateRefundUI(Player, _targetEntity, _shouldRefund);
+                                        if (!got)
+                                        {
+                                            got = true;
+                                            info = GetRemovableEntityInfo(_targetEntity, Player);
+                                        }
+                                        UpdateRefundUI(Player, _targetEntity, info, _shouldRefund);
                                     }
                                     else
                                     {
@@ -1426,90 +1504,26 @@ namespace Oxide.Plugins
 
         #endregion Refund
 
-        #region RaidBlocker
-
-        private void BlockRemove(BuildingBlock buildingBlock)
-        {
-            if (configData.raidS.blockBuildingID)
-            {
-                var buildingID = buildingBlock.buildingID;
-                _lastAttackedBuildings[buildingID] = Time.realtimeSinceStartup;
-            }
-            if (configData.raidS.blockPlayers)
-            {
-                var players = Pool.GetList<BasePlayer>();
-                Vis.Entities(buildingBlock.transform.position, configData.raidS.blockRadius, players, Rust.Layers.Mask.Player_Server);
-                foreach (var player in players)
-                {
-                    if (player.userID.IsSteamId())
-                        _lastBlockedPlayers[player.userID] = Time.realtimeSinceStartup;
-                }
-                Pool.FreeList(ref players);
-            }
-        }
-
-        private bool IsRaidBlocked(BasePlayer player, BaseEntity targetEntity, out float timeLeft)
-        {
-            if (configData.raidS.blockBuildingID)
-            {
-                var buildingBlock = targetEntity as BuildingBlock;
-                if (buildingBlock != null)
-                {
-                    float blockTime;
-                    if (_lastAttackedBuildings.TryGetValue(buildingBlock.buildingID, out blockTime))
-                    {
-                        timeLeft = configData.raidS.blockTime - (Time.realtimeSinceStartup - blockTime);
-                        if (timeLeft > 0) return true;
-                    }
-                }
-            }
-            if (configData.raidS.blockPlayers)
-            {
-                float blockTime;
-                if (_lastBlockedPlayers.TryGetValue(player.userID, out blockTime))
-                {
-                    timeLeft = configData.raidS.blockTime - (Time.realtimeSinceStartup - blockTime);
-                    if (timeLeft > 0) return true;
-                }
-            }
-            timeLeft = 0;
-            return false;
-        }
-
-        #endregion RaidBlocker
-
         #region TryRemove
 
         private bool TryRemove(BasePlayer player, BaseEntity targetEntity, RemoveType removeType, bool shouldPay, bool shouldRefund)
         {
-            if (!CanEntityBeDisplayed(targetEntity, player))
-            {
-                Print(player, Lang("NotFoundOrFar", player.UserIDString));
-                return false;
-            }
-            if (removeType == RemoveType.Admin)
-            {
-                var target = targetEntity as BasePlayer;
-                if (target != null)
-                {
-                    if (target.userID.IsSteamId() && target.IsConnected)
-                    {
-                        target.Kick("From RemoverTool Plugin");
-                        return true;
-                    }
-                }
-                DoRemove(targetEntity, configData.removeTypeS[RemoveType.Admin].gibs ? BaseNetworkable.DestroyMode.Gib : BaseNetworkable.DestroyMode.None);
-                return true;
-            }
-
-            string reason;
-            if (!CanRemoveEntity(player, removeType, targetEntity, shouldPay, out reason))
-            {
-                Print(player, reason);
-                return false;
-            }
             switch (removeType)
             {
+                case RemoveType.Admin:
+                    {
+                        var target = targetEntity as BasePlayer;
+                        if (target != null)
+                        {
+                            if (target.userID.IsSteamId() && target.IsConnected)
+                            {
+                                target.Kick("From RemoverTool Plugin");
+                                return true;
+                            }
+                        }
+                        DoRemove(targetEntity, configData.removeTypeS[RemoveType.Admin].gibs ? BaseNetworkable.DestroyMode.Gib : BaseNetworkable.DestroyMode.None);
+                        return true;
+                    }
                 case RemoveType.All:
                     {
                         if (_removeAllCoroutine != null)
@@ -1557,48 +1571,17 @@ namespace Oxide.Plugins
                     }
             }
 
-            var storageContainer = targetEntity as StorageContainer;
-            if (storageContainer != null && storageContainer.inventory?.itemList?.Count > 0)
+            RemovableEntityInfo info = GetRemovableEntityInfo(targetEntity, player);
+
+            string reason;
+            if (!CanRemoveEntity(player, removeType, targetEntity, shouldPay, out reason))
             {
-                if (configData.containerS.dropContainerStorage || configData.containerS.dropItemsStorage)
-                {
-                    if (Interface.CallHook("OnDropContainerEntity", storageContainer) == null)
-                    {
-                        if (configData.containerS.dropContainerStorage)
-                        {
-                            DropItemContainer(storageContainer.inventory, storageContainer.GetDropPosition(),
-                                storageContainer.transform.rotation);
-                        }
-                        else if (configData.containerS.dropItemsStorage)
-                        {
-                            storageContainer.DropItems();
-                            //DropUtil.DropItems(storageContainer.inventory, storageContainer.GetDropPosition());
-                        }
-                    }
-                }
+                Print(player, reason);
+                return false;
             }
-            else
-            {
-                var containerIoEntity = targetEntity as ContainerIOEntity;
-                if (containerIoEntity != null && containerIoEntity.inventory?.itemList?.Count > 0)
-                {
-                    if (configData.containerS.dropContainerIoEntity || configData.containerS.dropItemsIoEntity)
-                    {
-                        if (Interface.CallHook("OnDropContainerEntity", containerIoEntity) == null)
-                        {
-                            if (configData.containerS.dropContainerIoEntity)
-                            {
-                                DropItemContainer(containerIoEntity.inventory, containerIoEntity.GetDropPosition(), containerIoEntity.transform.rotation);
-                            }
-                            else if (configData.containerS.dropItemsIoEntity)
-                            {
-                                containerIoEntity.DropItems();
-                                //DropUtil.DropItems(containerIoEntity.inventory, containerIoEntity.GetDropPosition());
-                            }
-                        }
-                    }
-                }
-            }
+
+            DropContainerEntity(targetEntity);
+
             if (shouldPay)
             {
                 bool flag = Pay(player, targetEntity);
@@ -1608,22 +1591,33 @@ namespace Oxide.Plugins
                     return false;
                 }
             }
-            if (shouldRefund) GiveRefund(player, targetEntity);
+
+            if (shouldRefund)
+            {
+                GiveRefund(player, targetEntity);
+            }
+
             DoNormalRemove(player, targetEntity, configData.removeTypeS[RemoveType.Normal].gibs);
             return true;
         }
 
-        private bool CanRemoveEntity(BasePlayer player, RemoveType removeType, BaseEntity targetEntity, bool shouldPay, out string reason)
+        private bool CanRemoveEntity(BasePlayer player, RemoveType removeType, BaseEntity targetEntity, bool shouldPay, out string reason, bool checkCanBeDisplayed = true)
         {
-            if (targetEntity.IsDestroyed || !IsRemovableEntity(removeType, targetEntity))
-            {
-                reason = Lang("InvalidEntity", player.UserIDString);
-                return false;
-            }
             if (removeType != RemoveType.Normal)
             {
                 reason = null;
                 return true;
+            }
+            if (checkCanBeDisplayed && !CanEntityBeDisplayed(targetEntity, player))
+            {
+                reason = Lang("NotFoundOrFar", player.UserIDString);
+                return false;
+            }
+
+            if (targetEntity.IsDestroyed || !IsRemovableEntity(targetEntity))
+            {
+                reason = Lang("InvalidEntity", player.UserIDString);
+                return false;
             }
             if (!HasEntityEnabled(targetEntity))
             {
@@ -1849,6 +1843,52 @@ namespace Oxide.Plugins
             return true;
         }
 
+        private static void DropContainerEntity(BaseEntity targetEntity)
+        {
+            var storageContainer = targetEntity as StorageContainer;
+            if (storageContainer != null && storageContainer.inventory?.itemList?.Count > 0)
+            {
+                if (configData.containerS.dropContainerStorage || configData.containerS.dropItemsStorage)
+                {
+                    if (Interface.CallHook("OnDropContainerEntity", storageContainer) == null)
+                    {
+                        if (configData.containerS.dropContainerStorage)
+                        {
+                            DropItemContainer(storageContainer.inventory, storageContainer.GetDropPosition(),
+                                storageContainer.transform.rotation);
+                        }
+                        else if (configData.containerS.dropItemsStorage)
+                        {
+                            storageContainer.DropItems();
+                            //DropUtil.DropItems(storageContainer.inventory, storageContainer.GetDropPosition());
+                        }
+                    }
+                }
+            }
+            else
+            {
+                var containerIoEntity = targetEntity as ContainerIOEntity;
+                if (containerIoEntity != null && containerIoEntity.inventory?.itemList?.Count > 0)
+                {
+                    if (configData.containerS.dropContainerIoEntity || configData.containerS.dropItemsIoEntity)
+                    {
+                        if (Interface.CallHook("OnDropContainerEntity", containerIoEntity) == null)
+                        {
+                            if (configData.containerS.dropContainerIoEntity)
+                            {
+                                DropItemContainer(containerIoEntity.inventory, containerIoEntity.GetDropPosition(), containerIoEntity.transform.rotation);
+                            }
+                            else if (configData.containerS.dropItemsIoEntity)
+                            {
+                                containerIoEntity.DropItems();
+                                //DropUtil.DropItems(containerIoEntity.inventory, containerIoEntity.GetDropPosition());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         #region AreFriends
 
         private bool AreFriends(ulong playerID, ulong friendID)
@@ -1901,7 +1941,7 @@ namespace Oxide.Plugins
         {
             var removeList = Pool.Get<HashSet<BaseEntity>>();
             yield return GetNearbyEntities(sourceEntity, removeList, LAYER_ALL);
-            yield return ProcessContainer(removeList);
+            yield return ProcessContainers(removeList);
             yield return DelayRemove(removeList, player, RemoveType.All);
             Pool.Free(ref removeList);
             _removeAllCoroutine = null;
@@ -2025,7 +2065,7 @@ namespace Oxide.Plugins
             Pool.FreeList(ref nearbyEntities);
         }
 
-        private static IEnumerator ProcessContainer(HashSet<BaseEntity> removeList)
+        private static IEnumerator ProcessContainers(HashSet<BaseEntity> removeList)
         {
             foreach (var entity in removeList)
             {
