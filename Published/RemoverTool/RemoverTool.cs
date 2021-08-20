@@ -16,7 +16,7 @@ using VLB;
 
 namespace Oxide.Plugins
 {
-    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.29", ResourceId = 651)]
+    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.30", ResourceId = 651)]
     [Description("Building and entity removal tool")]
     public class RemoverTool : RustPlugin
     {
@@ -349,24 +349,19 @@ namespace Oxide.Plugins
                 || _rt._prefabNameToStructure.ContainsKey(entity.PrefabName)
                 || configData.removeS.entityS.ContainsKey(entity.ShortPrefabName))
             {
+                var baseCombatEntity = entity as BaseCombatEntity;
+                if (baseCombatEntity != null)
+                {
+                    if (baseCombatEntity.IsDead())
+                    {
+                        return false;
+                    }
+                    if (baseCombatEntity.pickup.itemTarget != null)
+                    {
+                        return true;
+                    }
+                }
                 return true;
-            }
-            var baseCombatEntity = entity as BaseCombatEntity;
-            if (baseCombatEntity != null)
-            {
-                if (baseCombatEntity.IsDead())
-                {
-                    return false;
-                }
-                if (baseCombatEntity.pickup.itemTarget != null)
-                {
-                    return true;
-                }
-            }
-            var result = Interface.CallHook("IsRemovableEntity", entity);
-            if (result is bool)
-            {
-                return (bool)result;
             }
             return false;
         }
@@ -538,8 +533,8 @@ namespace Oxide.Plugins
 
         private class RemovableEntityInfo
         {
-            public string ImageID { get; set; }
-            public string DisplayName { get; set; }
+            public string EntityImageId { get; set; }
+            public string EntityDisplayName { get; set; }
             public Dictionary<string, int> Price { get; set; }
             public Dictionary<string, int> Refund { get; set; }
         }
@@ -699,13 +694,19 @@ namespace Oxide.Plugins
 
             string displayName, imageName;
             TryFindEntityName(player, targetEntity, out displayName, out imageName);
+            if (info != null && !string.IsNullOrEmpty(info.EntityDisplayName))
+            {
+                displayName = info.EntityDisplayName;
+            }
             UI.CreateLabel(ref container, UINAME_ENTITY, configData.uiS.entityTextColor, displayName, configData.uiS.entityTextSize, configData.uiS.entityTextAnchorMin, configData.uiS.entityTextAnchorMax, TextAnchor.MiddleLeft);
             if (configData.uiS.entityImageEnabled && !string.IsNullOrEmpty(imageName) && _rt.ImageLibrary != null)
             {
-                var image = GetEntityImage(imageName);
-                if (!string.IsNullOrEmpty(image))
+                var imageId = info != null && !string.IsNullOrEmpty(info.EntityImageId)
+                    ? info.EntityImageId
+                    : GetEntityImage(imageName);
+                if (!string.IsNullOrEmpty(imageId))
                 {
-                    UI.CreateImage(ref container, UINAME_ENTITY, image, configData.uiS.entityImageAnchorMin, configData.uiS.entityImageAnchorMax);
+                    UI.CreateImage(ref container, UINAME_ENTITY, imageId, configData.uiS.entityImageAnchorMin, configData.uiS.entityImageAnchorMax);
                 }
             }
             CuiHelper.DestroyUi(player, UINAME_ENTITY);
@@ -714,11 +715,22 @@ namespace Oxide.Plugins
 
         private static void UpdatePriceUI(BasePlayer player, BaseEntity targetEntity, RemovableEntityInfo info, bool usePrice)
         {
+            覆盖掉usePrice？？？？
             Dictionary<string, int> price = null;
-            if (usePrice) price = _rt.GetPrice(targetEntity);
+            if (info != null && info.Price != null)
+            {
+                price = info.Price;
+            }
+            else if (usePrice)
+            {
+                price = _rt.GetPrice(targetEntity);
+            }
             var container = UI.CreateElementContainer(UINAME_MAIN, UINAME_PRICE, configData.uiS.priceBackgroundColor, configData.uiS.priceAnchorMin, configData.uiS.priceAnchorMax);
             UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.priceTextColor, _rt.Lang("Price", player.UserIDString), configData.uiS.priceTextSize, configData.uiS.priceTextAnchorMin, configData.uiS.priceTextAnchorMax, TextAnchor.MiddleLeft);
-            if (price == null || price.Count == 0) UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.price2TextColor, _rt.Lang("Free", player.UserIDString), configData.uiS.price2TextSize, configData.uiS.price2TextAnchorMin, configData.uiS.price2TextAnchorMax, TextAnchor.MiddleLeft);
+            if (price == null || price.Count == 0)
+            {
+                UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.price2TextColor, _rt.Lang("Free", player.UserIDString), configData.uiS.price2TextSize, configData.uiS.price2TextAnchorMin, configData.uiS.price2TextAnchorMax, TextAnchor.MiddleLeft);
+            }
             else
             {
                 var anchorMin = configData.uiS.Price2TextAnchorMin;
@@ -745,8 +757,16 @@ namespace Oxide.Plugins
 
         private static void UpdateRefundUI(BasePlayer player, BaseEntity targetEntity, RemovableEntityInfo info, bool useRefund)
         {
+            覆盖掉useRefund？？？？
             Dictionary<string, int> refund = null;
-            if (useRefund) refund = _rt.GetRefund(targetEntity);
+            if (info != null && info.Refund != null)
+            {
+                refund = info.Refund;
+            }
+            else if (useRefund)
+            {
+                refund = _rt.GetRefund(targetEntity);
+            }
             var container = UI.CreateElementContainer(UINAME_MAIN, UINAME_REFUND, configData.uiS.refundBackgroundColor, configData.uiS.refundAnchorMin, configData.uiS.refundAnchorMax);
             UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refundTextColor, _rt.Lang("Refund", player.UserIDString), configData.uiS.refundTextSize, configData.uiS.refundTextAnchorMin, configData.uiS.refundTextAnchorMax, TextAnchor.MiddleLeft);
 
@@ -955,19 +975,18 @@ namespace Oxide.Plugins
                     _targetEntity = GetTargetEntity();
                     UpdateTimeLeftUI(Player, RemoveType, _timeLeft, CurrentRemoved, _maxRemovable);
 
-                    bool got = false;
                     RemovableEntityInfo info = null;
+                    if (RemoveType == RemoveType.Normal)
+                    {
+                        info = GetRemovableEntityInfo(_targetEntity, Player);
+                    }
+
                     bool canShow = CanEntityBeDisplayed(_targetEntity, Player);
                     bool? entityUi = CheckUiEntry(UiEntry.Entity, canShow);
                     if (entityUi.HasValue)
                     {
                         if (entityUi.Value)
                         {
-                            if (RemoveType == RemoveType.Normal)
-                            {
-                                got = true;
-                                info = GetRemovableEntityInfo(_targetEntity, Player);
-                            }
                             UpdateEntityUI(Player, _targetEntity, info);
                         }
                         else
@@ -984,11 +1003,6 @@ namespace Oxide.Plugins
                             {
                                 if (authUi.Value)
                                 {
-                                    if (!got)
-                                    {
-                                        got = true;
-                                        info = GetRemovableEntityInfo(_targetEntity, Player);
-                                    }
                                     UpdateAuthorizationUI(Player, RemoveType, _targetEntity, info, _shouldPay);
                                 }
                                 else
@@ -1007,11 +1021,6 @@ namespace Oxide.Plugins
                                 {
                                     if (priceUi.Value)
                                     {
-                                        if (!got)
-                                        {
-                                            got = true;
-                                            info = GetRemovableEntityInfo(_targetEntity, Player);
-                                        }
                                         UpdatePriceUI(Player, _targetEntity, info, _shouldPay);
                                     }
                                     else
@@ -1028,11 +1037,6 @@ namespace Oxide.Plugins
                                 {
                                     if (refundUi.Value)
                                     {
-                                        if (!got)
-                                        {
-                                            got = true;
-                                            info = GetRemovableEntityInfo(_targetEntity, Player);
-                                        }
                                         UpdateRefundUI(Player, _targetEntity, info, _shouldRefund);
                                     }
                                     else
@@ -1211,10 +1215,13 @@ namespace Oxide.Plugins
 
         #region Pay
 
-        private bool Pay(BasePlayer player, BaseEntity targetEntity)
+        private bool Pay(BasePlayer player, BaseEntity targetEntity, RemovableEntityInfo info = null)
         {
-            var price = GetPrice(targetEntity);
-            if (price == null) return true;
+            var price = GetPrice(targetEntity, info);
+            if (price == null)
+            {
+                return true;
+            }
             var collect = Pool.GetList<Item>();
             try
             {
@@ -1249,12 +1256,11 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private Dictionary<string, int> GetPrice(BaseEntity targetEntity)
+        private Dictionary<string, int> GetPrice(BaseEntity targetEntity, RemovableEntityInfo info = null)
         {
-            var result = Interface.CallHook("OnRemovableEntityPrice", targetEntity) as Dictionary<string, int>;
-            if (result != null)
+            if (info != null && info.Price != null)
             {
-                return result;
+                return info.Price;
             }
             var buildingBlock = targetEntity as BuildingBlock;
             if (buildingBlock != null)
@@ -1311,15 +1317,24 @@ namespace Oxide.Plugins
         private bool CanPay(BasePlayer player, BaseEntity targetEntity)
         {
             var price = GetPrice(targetEntity);
-            if (price.Count <= 0) return true;
+            if (price.Count <= 0)
+            {
+                return true;
+            }
             foreach (var p in price)
             {
-                if (p.Value <= 0) continue;
+                if (p.Value <= 0)
+                {
+                    continue;
+                }
                 int itemID;
                 if (_itemShortNameToItemId.TryGetValue(p.Key, out itemID))
                 {
                     int c = player.inventory.GetAmount(itemID);
-                    if (c < p.Value) return false;
+                    if (c < p.Value)
+                    {
+                        return false;
+                    }
                 }
                 else if (!CheckOrPay(p.Key, p.Value, player.userID, true))
                 {
@@ -1371,10 +1386,13 @@ namespace Oxide.Plugins
 
         #region Refund
 
-        private void GiveRefund(BasePlayer player, BaseEntity targetEntity)
+        private void GiveRefund(BasePlayer player, BaseEntity targetEntity, RemovableEntityInfo info = null)
         {
-            var refund = GetRefund(targetEntity);
-            if (refund == null) return;
+            var refund = GetRefund(targetEntity, info);
+            if (refund == null)
+            {
+                return;
+            }
             foreach (var entry in refund)
             {
                 if (entry.Value <= 0) continue;
@@ -1411,12 +1429,11 @@ namespace Oxide.Plugins
             }
         }
 
-        private Dictionary<string, int> GetRefund(BaseEntity targetEntity)
+        private Dictionary<string, int> GetRefund(BaseEntity targetEntity, RemovableEntityInfo info = null)
         {
-            var result = Interface.CallHook("OnRemovableEntityRefund", targetEntity) as Dictionary<string, int>;
-            if (result != null)
+            if (info != null && info.Refund != null)
             {
-                return result;
+                return info.Refund;
             }
             var buildingBlock = targetEntity.GetComponent<BuildingBlock>();
             if (buildingBlock != null)
@@ -1584,7 +1601,7 @@ namespace Oxide.Plugins
 
             if (shouldPay)
             {
-                bool flag = Pay(player, targetEntity);
+                bool flag = Pay(player, targetEntity, info);
                 if (!flag)
                 {
                     Print(player, Lang("CantPay", player.UserIDString));
@@ -1594,7 +1611,7 @@ namespace Oxide.Plugins
 
             if (shouldRefund)
             {
-                GiveRefund(player, targetEntity);
+                GiveRefund(player, targetEntity, info);
             }
 
             DoNormalRemove(player, targetEntity, configData.removeTypeS[RemoveType.Normal].gibs);
