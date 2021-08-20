@@ -103,7 +103,6 @@ namespace Oxide.Plugins
             {
                 crate.OwnerID = player.userID;
             }
-
             if (_configData.hackCooldown > 0)
             {
                 _coolDowns[player.userID] = Time.realtimeSinceStartup;
@@ -233,19 +232,19 @@ namespace Oxide.Plugins
 
         private class ConfigData
         {
-            [JsonProperty(PropertyName = "Require laptop to be in hand (True/False)")]
+            [JsonProperty(PropertyName = "Require laptop to be in hand when start unlocking")]
             public bool requireInHand = false;
 
-            [JsonProperty(PropertyName = "Consume laptop (True/False)")]
-            public bool consumeLaptop = true;
-
-            [JsonProperty(PropertyName = "Laptops Required (0 = Disable)")]
+            [JsonProperty(PropertyName = "Laptops required to start unlocking (0 = Disable)")]
             public int numberRequired = 1;
+
+            [JsonProperty(PropertyName = "Laptop consumed when start unlocking")]
+            public bool consumeLaptop = true;
 
             [JsonProperty(PropertyName = "Hack crate unlock time (Seconds)")]
             public float unlockTime = 900f;
 
-            [JsonProperty(PropertyName = "Use additional hack (True/False) (Use laptop to reduce crate unlocking time)")]
+            [JsonProperty(PropertyName = "Use additional hack (Use laptop to reduce crate unlocking time)")]
             public bool extraHack = false;
 
             [JsonProperty(PropertyName = "Maximum times of additional hack (0 = Disable)")]
@@ -254,7 +253,7 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "When a laptop consumed, how much unlock time reduces? (Seconds)")]
             public float extraUnlockTime = 300f;
 
-            [JsonProperty(PropertyName = "Only player that hacked can loot? (True/False)")]
+            [JsonProperty(PropertyName = "Only player that hacked can loot?")]
             public bool ownCrate = false;
 
             [JsonProperty(PropertyName = "Hack cooldown")]
