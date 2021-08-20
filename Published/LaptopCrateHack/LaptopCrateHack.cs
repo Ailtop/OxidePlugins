@@ -1,22 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
+using Facepunch;
 using Newtonsoft.Json;
 using Oxide.Core.Plugins;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Laptop Crate Hack", "TheSurgeon/Arainrr", "1.1.5")]
+    [Info("Laptop Crate Hack", "TheSurgeon/Arainrr", "1.1.6")]
     [Description("Require a laptop to hack a crate.")]
     public class LaptopCrateHack : RustPlugin
     {
         #region Fields
 
         [PluginReference] private readonly Plugin Friends, Clans;
-        private const int LAPTOP_ITEMID = 1523195708;
 
-        private Dictionary<uint, int> extraHackTimes;
-        private Dictionary<ulong, float> cooldowns;
+        private const int LaptopItemId = 1523195708;
+
+        private Dictionary<uint, int> _extraHackTimes;
+        private Dictionary<ulong, float> _coolDowns;
 
         #endregion Fields
 
@@ -24,65 +26,87 @@ namespace Oxide.Plugins
 
         private void Init()
         {
-            if (!configData.ownCrate) Unsubscribe(nameof(CanLootEntity));
-            if (!configData.extraHack) Unsubscribe(nameof(OnPlayerInput));
-            if (configData.hackCooldown > 0) cooldowns = new Dictionary<ulong, float>();
-            if (configData.maxExtraHack < 0)
+            if (!_configData.ownCrate)
+            {
+                Unsubscribe(nameof(CanLootEntity));
+            }
+            if (!_configData.extraHack)
+            {
+                Unsubscribe(nameof(OnPlayerInput));
+            }
+            if (_configData.hackCooldown > 0)
+            {
+                _coolDowns = new Dictionary<ulong, float>();
+            }
+            if (_configData.maxExtraHack < 0)
             {
                 Unsubscribe(nameof(OnEntityKill));
             }
             else
             {
-                extraHackTimes = new Dictionary<uint, int>();
+                _extraHackTimes = new Dictionary<uint, int>();
             }
         }
 
         private object CanHackCrate(BasePlayer player, HackableLockedCrate crate)
         {
-            if (crate == null || crate.OwnerID.IsSteamId()) return null;
-            if (configData.requireInHand)
+            if (crate == null || crate.OwnerID.IsSteamId())
+            {
+                return null;
+            }
+            if (_configData.requireInHand)
             {
                 var activeItem = player.GetActiveItem();
-                if (activeItem == null || activeItem.info.itemid != LAPTOP_ITEMID)
+                if (activeItem == null || activeItem.info.itemid != LaptopItemId)
                 {
                     Print(player, Lang("NotHolding", player.UserIDString));
                     return false;
                 }
             }
-            var amount = player.inventory.GetAmount(LAPTOP_ITEMID);
-            if (amount < configData.numberRequired)
-            {
-                Print(player, Lang("YouNeed", player.UserIDString, configData.numberRequired, amount));
-                return false;
-            }
-            if (configData.hackCooldown > 0)
+            if (_configData.hackCooldown > 0)
             {
                 float lastUse;
-                if (cooldowns.TryGetValue(player.userID, out lastUse))
+                if (_coolDowns.TryGetValue(player.userID, out lastUse))
                 {
-                    var timeLeft = configData.hackCooldown - (Time.realtimeSinceStartup - lastUse);
+                    var timeLeft = _configData.hackCooldown - (Time.realtimeSinceStartup - lastUse);
                     if (timeLeft > 0)
                     {
                         Print(player, Lang("OnCooldown", player.UserIDString, Mathf.CeilToInt(timeLeft)));
                         return false;
                     }
                 }
-                cooldowns[player.userID] = Time.realtimeSinceStartup;
             }
-            if (configData.consumeLaptop)
+            if (_configData.numberRequired > 0)
             {
-                List<Item> collect = new List<Item>();
-                player.inventory.Take(collect, LAPTOP_ITEMID, configData.numberRequired);
-                foreach (Item item in collect) item.Remove();
+                var amount = player.inventory.GetAmount(LaptopItemId);
+                if (amount < _configData.numberRequired)
+                {
+                    Print(player, Lang("YouNeed", player.UserIDString, _configData.numberRequired, amount));
+                    return false;
+                }
+                if (_configData.consumeLaptop)
+                {
+                    List<Item> collect = Pool.GetList<Item>();
+                    player.inventory.Take(collect, LaptopItemId, _configData.numberRequired);
+                    foreach (Item item in collect)
+                    {
+                        item.Remove();
+                    }
+                    Pool.FreeList(ref collect);
+                }
+                if (_configData.unlockTime > 0)
+                {
+                    crate.hackSeconds = HackableLockedCrate.requiredHackSeconds - _configData.unlockTime;
+                }
             }
-
-            if (configData.ownCrate)
+            if (_configData.ownCrate)
             {
                 crate.OwnerID = player.userID;
             }
-            if (configData.unlockTime > 0)
+
+            if (_configData.hackCooldown > 0)
             {
-                crate.hackSeconds = HackableLockedCrate.requiredHackSeconds - configData.unlockTime;
+                _coolDowns[player.userID] = Time.realtimeSinceStartup;
             }
             return null;
         }
@@ -99,32 +123,45 @@ namespace Oxide.Plugins
 
         private void OnPlayerInput(BasePlayer player, InputState input)
         {
-            if (player == null || input == null) return;
+            if (player == null || input == null)
+            {
+                return;
+            }
             if (input.WasJustPressed(BUTTON.USE))
             {
                 var activeItem = player.GetActiveItem();
-                if (activeItem != null && activeItem.info.itemid == LAPTOP_ITEMID)
+                if (activeItem != null && activeItem.info.itemid == LaptopItemId)
                 {
-                    var crate = GetLookEntity(player);
-                    if (crate == null || crate.net == null || crate.IsFullyHacked() || !crate.IsBeingHacked()) return;
-                    if (crate.hackSeconds > HackableLockedCrate.requiredHackSeconds) return;
-                    if (configData.maxExtraHack > 0)
+                    var crate = GetEntityLookingAt(player);
+                    if (crate == null || crate.net == null || crate.IsFullyHacked() || !crate.IsBeingHacked())
+                    {
+                        return;
+                    }
+
+                    if (crate.hackSeconds > HackableLockedCrate.requiredHackSeconds)
+                    {
+                        return;
+                    }
+                    if (_configData.maxExtraHack > 0)
                     {
                         int times;
-                        if (extraHackTimes.TryGetValue(crate.net.ID, out times) && times >= configData.maxExtraHack)
+                        if (_extraHackTimes.TryGetValue(crate.net.ID, out times) && times >= _configData.maxExtraHack)
                         {
                             return;
                         }
 
-                        if (extraHackTimes.ContainsKey(crate.net.ID))
+                        if (_extraHackTimes.ContainsKey(crate.net.ID))
                         {
-                            extraHackTimes[crate.net.ID]++;
+                            _extraHackTimes[crate.net.ID]++;
                         }
-                        else extraHackTimes.Add(crate.net.ID, 1);
+                        else
+                        {
+                            _extraHackTimes.Add(crate.net.ID, 1);
+                        }
                     }
 
                     activeItem.UseItem();
-                    crate.hackSeconds += configData.extraUnlockTime;
+                    crate.hackSeconds += _configData.extraUnlockTime;
                 }
             }
         }
@@ -132,7 +169,7 @@ namespace Oxide.Plugins
         private void OnEntityKill(HackableLockedCrate crate)
         {
             if (crate == null || crate.net == null) return;
-            extraHackTimes.Remove(crate.net.ID);
+            _extraHackTimes.Remove(crate.net.ID);
         }
 
         #endregion Oxide Hooks
@@ -142,9 +179,9 @@ namespace Oxide.Plugins
         private bool AreFriends(ulong playerID, ulong friendID)
         {
             if (playerID == friendID) return true;
-            if (configData.useTeams && SameTeam(playerID, friendID)) return true;
-            if (configData.useFriends && HasFriend(playerID, friendID)) return true;
-            if (configData.useClans && SameClan(playerID, friendID)) return true;
+            if (_configData.useTeams && SameTeam(playerID, friendID)) return true;
+            if (_configData.useFriends && HasFriend(playerID, friendID)) return true;
+            if (_configData.useClans && SameClan(playerID, friendID)) return true;
             return false;
         }
 
@@ -182,19 +219,17 @@ namespace Oxide.Plugins
 
         #region Helpers
 
-        private static HackableLockedCrate GetLookEntity(BasePlayer player)
+        private static HackableLockedCrate GetEntityLookingAt(BasePlayer player)
         {
             RaycastHit hitInfo;
-            if (Physics.Raycast(player.eyes.HeadRay(), out hitInfo, 20f, Rust.Layers.Solid))
-                return hitInfo.GetEntity() as HackableLockedCrate;
-            return null;
+            return Physics.Raycast(player.eyes.HeadRay(), out hitInfo, 10f, Rust.Layers.Solid) ? hitInfo.GetEntity() as HackableLockedCrate : null;
         }
 
         #endregion Helpers
 
         #region ConfigurationFile
 
-        private ConfigData configData;
+        private ConfigData _configData;
 
         private class ConfigData
         {
@@ -204,7 +239,7 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Consume laptop (True/False)")]
             public bool consumeLaptop = true;
 
-            [JsonProperty(PropertyName = "Laptops Required (Must be greater than 0)")]
+            [JsonProperty(PropertyName = "Laptops Required (0 = Disable)")]
             public int numberRequired = 1;
 
             [JsonProperty(PropertyName = "Hack crate unlock time (Seconds)")]
@@ -252,9 +287,11 @@ namespace Oxide.Plugins
             base.LoadConfig();
             try
             {
-                configData = Config.ReadObject<ConfigData>();
-                if (configData == null)
+                _configData = Config.ReadObject<ConfigData>();
+                if (_configData == null)
+                {
                     LoadDefaultConfig();
+                }
             }
             catch (Exception ex)
             {
@@ -267,16 +304,16 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             PrintWarning("Creating a new configuration file");
-            configData = new ConfigData();
+            _configData = new ConfigData();
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig() => Config.WriteObject(_configData);
 
         #endregion ConfigurationFile
 
         #region LanguageFile
 
-        private void Print(BasePlayer player, string message) => Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
+        private void Print(BasePlayer player, string message) => Player.Message(player, message, _configData.chatS.prefix, _configData.chatS.steamIDIcon);
 
         private string Lang(string key, string id = null, params object[] args)
         {
@@ -286,7 +323,7 @@ namespace Oxide.Plugins
             }
             catch (Exception)
             {
-                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. lang: {lang.GetLanguage(id)}. args: {string.Join(" ,", args)})");
                 throw;
             }
         }
