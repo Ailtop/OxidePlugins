@@ -3704,7 +3704,7 @@ namespace Oxide.Plugins
             }
             catch (Exception)
             {
-                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. args: {string.Join(" ,", args)})");
+                PrintError($"Error in the language formatting of '{key}'. (userid: {id}. lang: {lang.GetLanguage(id)}. args: {string.Join(" ,", args)})");
                 throw;
             }
         }
