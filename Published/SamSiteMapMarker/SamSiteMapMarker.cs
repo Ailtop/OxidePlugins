@@ -5,9 +5,9 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Sam Site Map", "Arainrr", "1.3.6")]
-    [Description("Mark all samsites in the map")]
-    internal class SamSiteMap : RustPlugin
+    [Info("Sam Site Map Marker", "Arainrr", "1.4.0")]
+    [Description("Mark all sam sites on the map")]
+    internal class SamSiteMapMarker : RustPlugin
     {
         #region Fields
 
