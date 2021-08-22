@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Oxide.Plugins
 {
@@ -51,35 +52,36 @@ namespace Oxide.Plugins
         private const string RefundItemName = "Drone Item";// Make sure the custom ItemName is unique.
         private const string PriceItemName = "Custom Currency";// Make sure the custom ItemName is unique.
 
-        private readonly RemovableEntityInfo _droneEntityInfo = new RemovableEntityInfo
+        private readonly Dictionary<string, object> _droneEntityInfo = new Dictionary<string, object>
         {
-            DisplayName = "Drone",
-            Price = new Dictionary<string, RemovableEntityInfo.ItemInfo>
+            ["DisplayName"] = "Drone",
+            ["Price"] = new Dictionary<string, object>
             {
                 // All items are built-in.
-                ["wood"] = new RemovableEntityInfo.ItemInfo
+                ["wood"] = new Dictionary<string, object>
                 {
-                    Amount = 1000,
-                    DisplayName = "Wood..."
+                    ["Amount"] = 1000,
+                    ["DisplayName"] = "Wood..."
                 },
                 // economics and serverrewards are built-in not custom.
-                ["economics"] = new RemovableEntityInfo.ItemInfo
+                ["economics"] = new Dictionary<string, object>
                 {
-                    Amount = 100,
+                    ["Amount"] = 100,
+                    ["DisplayName"] = "Economics..."
                 },
                 // Custom ItemName
-                [PriceItemName] = new RemovableEntityInfo.ItemInfo
+                [PriceItemName] = new Dictionary<string, object>
                 {
-                    Amount = 100,
-                    DisplayName = "Custom Gold"
+                    ["Amount"] = 100,
+                    ["DisplayName"] = "Custom Gold"
                 }
             },
-            Refund = new Dictionary<string, RemovableEntityInfo.ItemInfo>
+            ["Refund"] = new Dictionary<string, object>
             {
-                [RefundItemName] = new RemovableEntityInfo.ItemInfo
+                [RefundItemName] = new Dictionary<string, object>
                 {
-                    Amount = 1,
-                    DisplayName = "Refund Drone",
+                    ["Amount"] = 1,
+                    ["DisplayName"] = "Refund Drone",
                 }
             }
         };
@@ -92,19 +94,19 @@ namespace Oxide.Plugins
         /// <param name="entity">Entity</param>
         /// <param name="player">Player</param>
         /// <returns>Serialized information</returns>
-        private string OnRemovableEntityInfo(BaseEntity entity, BasePlayer player)
+        private Dictionary<string, object> OnRemovableEntityInfo(BaseEntity entity, BasePlayer player)
         {
             PrintWarning($"OnRemovableEntityInfo: {entity.ShortPrefabName} | {player.userID}");
             if (entity is Drone)
             {
-                return JsonConvert.SerializeObject(_droneEntityInfo);
+                return _droneEntityInfo;
             }
 
             return null;
         }
         /// <summary>
         /// Used to check if the player can pay.
-        /// Called only when the price is not empty.
+        /// It is only called when there is a custom ItemName in the price
         /// </summary>
         /// <param name="entity">Entity</param>
         /// <param name="player">Player</param>
@@ -123,7 +125,7 @@ namespace Oxide.Plugins
         }
         /// <summary>
         /// Called when giving refund items.
-        /// Called only for custom items.
+        /// It is only called when there is a custom item name in the refund.
         /// </summary>
         /// <param name="entity">Entity</param>
         /// <param name="player">Player</param>
