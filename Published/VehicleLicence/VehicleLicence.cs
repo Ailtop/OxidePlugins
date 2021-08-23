@@ -51,7 +51,7 @@ namespace Oxide.Plugins
 
         private const int LAYER_GROUND = Rust.Layers.Solid | Rust.Layers.Mask.Water;
 
-        private Timer checkVehiclesTimer;
+        private Timer _checkVehiclesTimer;
         private static object False;
         public static VehicleLicence Instance { get; private set; }
         public readonly Dictionary<BaseEntity, Vehicle> vehiclesCache = new Dictionary<BaseEntity, Vehicle>();
@@ -207,13 +207,13 @@ namespace Oxide.Plugins
             if (configData.globalS.checkVehiclesInterval > 0 && allBaseVehicleSettings.Any(x => x.Value.wipeTime > 0))
             {
                 Subscribe(nameof(OnEntityDismounted));
-                checkVehiclesTimer = timer.Every(configData.globalS.checkVehiclesInterval, CheckVehicles);
+                _checkVehiclesTimer = timer.Every(configData.globalS.checkVehiclesInterval, CheckVehicles);
             }
         }
 
         private void Unload()
         {
-            checkVehiclesTimer?.Destroy();
+            _checkVehiclesTimer?.Destroy();
             if (!configData.globalS.storeVehicle)
             {
                 foreach (var entry in vehiclesCache.ToArray())
@@ -428,25 +428,6 @@ namespace Oxide.Plugins
         }
 
         #endregion Message
-
-        #region RustTranslationAPI
-
-        private string GetItemTranslationByShortName(string language, string itemShortName) => (string)RustTranslationAPI.Call("GetItemTranslationByShortName", language, itemShortName);
-
-        private string GetItemDisplayName(string language, string itemShortName, string displayName)
-        {
-            if (RustTranslationAPI != null)
-            {
-                var displayName1 = GetItemTranslationByShortName(language, itemShortName);
-                if (!string.IsNullOrEmpty(displayName1))
-                {
-                    return displayName1;
-                }
-            }
-            return displayName;
-        }
-
-        #endregion RustTranslationAPI
 
         #region CheckEntity
 
@@ -847,7 +828,7 @@ namespace Oxide.Plugins
 
         #endregion VehicleModules
 
-        #region Drop
+        #region DropInventory
 
         private static bool CanDropInventory(BaseVehicleS baseVehicleS)
         {
@@ -924,7 +905,7 @@ namespace Oxide.Plugins
             }
         }
 
-        #endregion Drop
+        #endregion DropInventory
 
         #region TryPay
 
@@ -1079,7 +1060,7 @@ namespace Oxide.Plugins
 
         #endregion AreFriends
 
-        #region PlayerIsBlocked
+        #region IsPlayerBlocked
 
         private bool IsPlayerBlocked(BasePlayer player)
         {
@@ -1101,7 +1082,7 @@ namespace Oxide.Plugins
 
         private bool IsCombatBlocked(string playerID) => (bool)NoEscape.Call("IsCombatBlocked", playerID);
 
-        #endregion PlayerIsBlocked
+        #endregion IsPlayerBlocked
 
         #region GetBaseVehicleS
 
@@ -2517,6 +2498,25 @@ namespace Oxide.Plugins
         #endregion Command Helpers
 
         #endregion Commands
+
+        #region RustTranslationAPI
+
+        private string GetItemTranslationByShortName(string language, string itemShortName) => (string)RustTranslationAPI.Call("GetItemTranslationByShortName", language, itemShortName);
+
+        private string GetItemDisplayName(string language, string itemShortName, string displayName)
+        {
+            if (RustTranslationAPI != null)
+            {
+                var displayName1 = GetItemTranslationByShortName(language, itemShortName);
+                if (!string.IsNullOrEmpty(displayName1))
+                {
+                    return displayName1;
+                }
+            }
+            return displayName;
+        }
+
+        #endregion RustTranslationAPI
 
         #region ConfigurationFile
 

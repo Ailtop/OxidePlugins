@@ -30,6 +30,10 @@ namespace Oxide.Plugins
             /// </summary>
             public Dictionary<string, ItemInfo> Refund { get; set; }
 
+            public Func<BaseEntity, BasePlayer, string, int, bool> OnGiveRefund { get; set; }
+
+            public Func<BaseEntity, BasePlayer, string, int, bool, bool> OnCheckOrPay { get; set; }
+
             public struct ItemInfo
             {
                 /// <summary>
@@ -49,8 +53,8 @@ namespace Oxide.Plugins
             }
         }
 
-        private const string RefundItemName = "Drone Item";// Make sure the custom ItemName is unique.
-        private const string PriceItemName = "Custom Currency";// Make sure the custom ItemName is unique.
+        private const string RefundItemName = "Drone Item"; // Make sure the custom ItemName is unique.
+        private const string PriceItemName = "Custom Currency"; // Make sure the custom ItemName is unique.
 
         private readonly Dictionary<string, object> _droneEntityInfo = new Dictionary<string, object>
         {
@@ -100,15 +104,19 @@ namespace Oxide.Plugins
         /// <param name="itemAmount">Item amount</param>
         /// <param name="check">If true, check if the player can pay. If false, consume the item</param>
         /// <returns>Returns whether payment can be made or whether payment was successful</returns>
-        private static bool OnRemovableEntityCheckOrPay(BaseEntity entity, BasePlayer player, string itemName, int itemAmount, bool check)
+        private static bool OnRemovableEntityCheckOrPay(BaseEntity entity, BasePlayer player, string itemName,
+            int itemAmount, bool check)
         {
-            Interface.Oxide.LogWarning($"OnRemovableEntityCheckOrPay: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {check}");
+            Interface.Oxide.LogWarning(
+                $"OnRemovableEntityCheckOrPay: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {check}");
             if (itemName == PriceItemName)
             {
                 return true;
             }
+
             return false;
         }
+
         /// <summary>
         /// Called when giving refund items.
         /// It is only called when there is a custom item name in the refund.
@@ -118,14 +126,17 @@ namespace Oxide.Plugins
         /// <param name="itemName">Item name</param>
         /// <param name="itemAmount">Item amount</param>
         /// <returns>Returns whether the refund has been granted successful</returns>
-        private static bool OnRemovableEntityGiveRefund(BaseEntity entity, BasePlayer player, string itemName, int itemAmount)
+        private static bool OnRemovableEntityGiveRefund(BaseEntity entity, BasePlayer player, string itemName,
+            int itemAmount)
         {
-            Interface.Oxide.LogWarning($"OnRemovableEntityGiveRefund: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount}");
+            Interface.Oxide.LogWarning(
+                $"OnRemovableEntityGiveRefund: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount}");
             if (itemName == RefundItemName)
             {
                 var item = ItemManager.CreateByName("drone", itemAmount);
                 player.GiveItem(item);
             }
+
             return true;
         }
 
