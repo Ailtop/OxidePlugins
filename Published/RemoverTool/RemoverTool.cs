@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-using Apex;
 using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -14,6 +13,7 @@ using Oxide.Game.Rust;
 using Oxide.Game.Rust.Cui;
 using UnityEngine;
 using VLB;
+using Time = UnityEngine.Time;
 
 namespace Oxide.Plugins
 {
@@ -1588,7 +1588,7 @@ namespace Oxide.Plugins
                         player.inventory.Take(collect, itemId, entry.Value);
                         player.Command("note.inv", itemId, -entry.Value);
                     }
-                    else if (!CheckOrPay(targetEntity, player, entry.Key, entry.Value, false))
+                    else if (!CheckOrPay(targetEntity, player, entry.Key, entry.Value, false, info))
                     {
                         return false;
                     }
@@ -1690,7 +1690,7 @@ namespace Oxide.Plugins
                         return false;
                     }
                 }
-                else if (!CheckOrPay(targetEntity, player, p.Key, p.Value, true))
+                else if (!CheckOrPay(targetEntity, player, p.Key, p.Value, true, info))
                 {
                     return false;
                 }
@@ -1698,7 +1698,7 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private bool CheckOrPay(BaseEntity targetEntity, BasePlayer player, string itemName, int itemAmount, bool check)
+        private bool CheckOrPay(BaseEntity targetEntity, BasePlayer player, string itemName, int itemAmount, bool check, RemovableEntityInfo? info)
         {
             if (itemAmount <= 0)
             {
@@ -1762,11 +1762,14 @@ namespace Oxide.Plugins
                     return true;
 
                 default:
-                    var result = Interface.CallHook("OnRemovableEntityCheckOrPay", targetEntity, player, itemName, itemAmount, check);
-                    if (result is bool)
                     {
-                        return (bool)result;
+                        var result = info?.OnCheckOrPay.Value?.Invoke(targetEntity, player, itemName, itemAmount, check);
+                        if (result != null)
+                        {
+                            return (bool)result;
+                        }
                     }
+
                     return true;
             }
         }
@@ -1804,25 +1807,39 @@ namespace Oxide.Plugins
                 }
                 else
                 {
+                    bool flag = false;
                     switch (itemName.ToLower())
                     {
                         case "economics":
-                            if (Economics == null) continue;
-                            Economics.Call("Deposit", player.userID, (double)itemAmount);
-                            continue;
+                            {
+                                if (Economics == null) continue;
+                                var result = Economics.Call("Deposit", player.userID, (double)itemAmount);
+                                if (result != null) flag = true;
+                                break;
+                            }
 
                         case "serverrewards":
-                            if (ServerRewards == null) continue;
-                            ServerRewards.Call("AddPoints", player.userID, itemAmount);
-                            continue;
+                            {
+                                if (ServerRewards == null) continue;
+                                var result = ServerRewards.Call("AddPoints", player.userID, itemAmount);
+                                if (result != null) flag = true;
+                                break;
+                            }
 
                         default:
-                            var result = Interface.CallHook("OnRemovableEntityGiveRefund", targetEntity, player, itemName, itemAmount);
-                            if (result == null)
                             {
-                                PrintError($"{player} didn't receive refund because {itemName} doesn't seem to be a valid item name");
+                                var result = info?.OnGiveRefund.Value?.Invoke(targetEntity, player, itemName, itemAmount);
+                                if (result != null)
+                                {
+                                    flag = true;
+                                }
+                                break;
                             }
-                            continue;
+                    }
+
+                    if (!flag)
+                    {
+                        PrintError($"{player} didn't receive refund maybe {itemName} doesn't seem to be a valid item name");
                     }
                 }
             }
@@ -2260,6 +2277,8 @@ namespace Oxide.Plugins
                 DisplayName = new ValueCache<string>(nameof(DisplayName), dictionary);
                 Price = new DictionaryCache(nameof(Price), dictionary);
                 Refund = new DictionaryCache(nameof(Refund), dictionary);
+                OnGiveRefund = new ValueCache<Func<BaseEntity, BasePlayer, string, int, bool>>(nameof(OnGiveRefund), dictionary);
+                OnCheckOrPay = new ValueCache<Func<BaseEntity, BasePlayer, string, int, bool, bool>>(nameof(OnCheckOrPay), dictionary);
             }
 
             public ValueCache<string> ImageId { get; }
@@ -2269,6 +2288,10 @@ namespace Oxide.Plugins
             public DictionaryCache Price { get; }
 
             public DictionaryCache Refund { get; }
+
+            public ValueCache<Func<BaseEntity, BasePlayer, string, int, bool>> OnGiveRefund { get; }
+
+            public ValueCache<Func<BaseEntity, BasePlayer, string, int, bool, bool>> OnCheckOrPay { get; }
         }
 
         private static RemovableEntityInfo? GetRemovableEntityInfo(BaseEntity entity, BasePlayer player)
@@ -2309,6 +2332,29 @@ namespace Oxide.Plugins
             /// Remove the refund of the entity. ItemName to ItemInfo
             /// </summary>
             public Dictionary<string, ItemInfo> Refund { get; set; }
+
+            /// <summary>
+            /// Called when giving refund items.
+            /// It is only called when there is a custom item name in the refund.
+            /// </summary>
+            /// <param name="entity">Entity</param>
+            /// <param name="player">Player</param>
+            /// <param name="itemName">Item name</param>
+            /// <param name="itemAmount">Item amount</param>
+            /// <returns>Please return a non-null value</returns>
+            public Func<BaseEntity, BasePlayer, string, int, bool> OnGiveRefund { get; set; }
+
+            /// <summary>
+            /// Used to check if the player can pay.
+            /// It is only called when there is a custom ItemName in the price
+            /// </summary>
+            /// <param name="entity">Entity</param>
+            /// <param name="player">Player</param>
+            /// <param name="itemName">Item name</param>
+            /// <param name="itemAmount">Item amount</param>
+            /// <param name="check">If true, check if the player can pay. If false, consume the item</param>
+            /// <returns>Returns whether payment can be made or whether payment was successful</returns>
+            public Func<BaseEntity, BasePlayer, string, int, bool, bool> OnCheckOrPay { get; set; }
 
             public struct ItemInfo
             {

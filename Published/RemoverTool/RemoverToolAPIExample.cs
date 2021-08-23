@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+﻿using System;
+using System.Collections.Generic;
+using Oxide.Core;
 
 namespace Oxide.Plugins
 {
@@ -83,8 +83,53 @@ namespace Oxide.Plugins
                     ["Amount"] = 1,
                     ["DisplayName"] = "Refund Drone",
                 }
-            }
+            },
+            ["OnGiveRefund"] = new Func<BaseEntity, BasePlayer, string, int, bool>(OnRemovableEntityGiveRefund),
+            ["OnCheckOrPay"] = new Func<BaseEntity, BasePlayer, string, int, bool, bool>(OnRemovableEntityCheckOrPay),
         };
+
+        #region RemoverTool Callbacks
+
+        /// <summary>
+        /// Used to check if the player can pay.
+        /// It is only called when there is a custom ItemName in the price
+        /// </summary>
+        /// <param name="entity">Entity</param>
+        /// <param name="player">Player</param>
+        /// <param name="itemName">Item name</param>
+        /// <param name="itemAmount">Item amount</param>
+        /// <param name="check">If true, check if the player can pay. If false, consume the item</param>
+        /// <returns>Returns whether payment can be made or whether payment was successful</returns>
+        private static bool OnRemovableEntityCheckOrPay(BaseEntity entity, BasePlayer player, string itemName, int itemAmount, bool check)
+        {
+            Interface.Oxide.LogWarning($"OnRemovableEntityCheckOrPay: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {check}");
+            if (itemName == PriceItemName)
+            {
+                return true;
+            }
+            return false;
+        }
+        /// <summary>
+        /// Called when giving refund items.
+        /// It is only called when there is a custom item name in the refund.
+        /// </summary>
+        /// <param name="entity">Entity</param>
+        /// <param name="player">Player</param>
+        /// <param name="itemName">Item name</param>
+        /// <param name="itemAmount">Item amount</param>
+        /// <returns>Returns whether the refund has been granted successful</returns>
+        private static bool OnRemovableEntityGiveRefund(BaseEntity entity, BasePlayer player, string itemName, int itemAmount)
+        {
+            Interface.Oxide.LogWarning($"OnRemovableEntityGiveRefund: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount}");
+            if (itemName == RefundItemName)
+            {
+                var item = ItemManager.CreateByName("drone", itemAmount);
+                player.GiveItem(item);
+            }
+            return true;
+        }
+
+        #endregion RemoverTool Callbacks
 
         #region RemoverTool Hooks
 
@@ -103,44 +148,6 @@ namespace Oxide.Plugins
             }
 
             return null;
-        }
-        /// <summary>
-        /// Used to check if the player can pay.
-        /// It is only called when there is a custom ItemName in the price
-        /// </summary>
-        /// <param name="entity">Entity</param>
-        /// <param name="player">Player</param>
-        /// <param name="itemName">Item name</param>
-        /// <param name="itemAmount">Item amount</param>
-        /// <param name="check">If true, check if the player can pay. If false, consume the item</param>
-        /// <returns>Returns whether payment can be made or whether payment was successful</returns>
-        private bool OnRemovableEntityCheckOrPay(BaseEntity entity, BasePlayer player, string itemName, int itemAmount, bool check)
-        {
-            PrintWarning($"OnRemovableEntityCheckOrPay: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {check}");
-            if (itemName == PriceItemName)
-            {
-                return true;
-            }
-            return false;
-        }
-        /// <summary>
-        /// Called when giving refund items.
-        /// It is only called when there is a custom item name in the refund.
-        /// </summary>
-        /// <param name="entity">Entity</param>
-        /// <param name="player">Player</param>
-        /// <param name="itemName">Item name</param>
-        /// <param name="itemAmount">Item amount</param>
-        /// <returns>Please return a non-null value</returns>
-        private bool OnRemovableEntityGiveRefund(BaseEntity entity, BasePlayer player, string itemName, int itemAmount)
-        {
-            PrintWarning($"OnRemovableEntityGiveRefund: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount}");
-            if (itemName == RefundItemName)
-            {
-                var item = ItemManager.CreateByName("drone", itemAmount);
-                player.GiveItem(item);
-            }
-            return true;
         }
 
         #endregion RemoverTool Hooks
