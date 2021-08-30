@@ -1,6 +1,5 @@
-﻿using System;
+﻿using Oxide.Core;
 using System.Collections.Generic;
-using Oxide.Core;
 
 namespace Oxide.Plugins
 {
@@ -29,10 +28,6 @@ namespace Oxide.Plugins
             /// Remove the refund of the entity. ItemName to ItemInfo
             /// </summary>
             public Dictionary<string, ItemInfo> Refund { get; set; }
-
-            public Func<BaseEntity, BasePlayer, string, int, bool> OnGiveRefund { get; set; }
-
-            public Func<BaseEntity, BasePlayer, string, int, bool, bool> OnCheckOrPay { get; set; }
 
             public struct ItemInfo
             {
@@ -73,7 +68,7 @@ namespace Oxide.Plugins
                     ["Amount"] = 100,
                     ["DisplayName"] = "Economics..."
                 },
-                // Custom ItemName
+                // Custom ItemName.
                 [PriceItemName] = new Dictionary<string, object>
                 {
                     ["Amount"] = 100,
@@ -82,17 +77,16 @@ namespace Oxide.Plugins
             },
             ["Refund"] = new Dictionary<string, object>
             {
+                // Custom ItemName.
                 [RefundItemName] = new Dictionary<string, object>
                 {
                     ["Amount"] = 1,
                     ["DisplayName"] = "Refund Drone",
                 }
-            },
-            ["OnGiveRefund"] = new Func<BaseEntity, BasePlayer, string, int, bool>(OnRemovableEntityGiveRefund),
-            ["OnCheckOrPay"] = new Func<BaseEntity, BasePlayer, string, int, bool, bool>(OnRemovableEntityCheckOrPay),
+            }
         };
 
-        #region RemoverTool Callbacks
+        #region RemoverTool Hooks
 
         /// <summary>
         /// Used to check if the player can pay.
@@ -104,11 +98,9 @@ namespace Oxide.Plugins
         /// <param name="itemAmount">Item amount</param>
         /// <param name="check">If true, check if the player can pay. If false, consume the item</param>
         /// <returns>Returns whether payment can be made or whether payment was successful</returns>
-        private static bool OnRemovableEntityCheckOrPay(BaseEntity entity, BasePlayer player, string itemName,
-            int itemAmount, bool check)
+        private bool OnRemovableEntityCheckOrPay(BaseEntity entity, BasePlayer player, string itemName, int itemAmount, bool check)
         {
-            Interface.Oxide.LogWarning(
-                $"OnRemovableEntityCheckOrPay: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {check}");
+            Interface.Oxide.LogWarning($"OnRemovableEntityCheckOrPay: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {check}");
             if (itemName == PriceItemName)
             {
                 return true;
@@ -126,11 +118,9 @@ namespace Oxide.Plugins
         /// <param name="itemName">Item name</param>
         /// <param name="itemAmount">Item amount</param>
         /// <returns>Returns whether the refund has been granted successful</returns>
-        private static bool OnRemovableEntityGiveRefund(BaseEntity entity, BasePlayer player, string itemName,
-            int itemAmount)
+        private bool OnRemovableEntityGiveRefund(BaseEntity entity, BasePlayer player, string itemName, int itemAmount)
         {
-            Interface.Oxide.LogWarning(
-                $"OnRemovableEntityGiveRefund: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount}");
+            Interface.Oxide.LogWarning($"OnRemovableEntityGiveRefund: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount}");
             if (itemName == RefundItemName)
             {
                 var item = ItemManager.CreateByName("drone", itemAmount);
@@ -139,10 +129,6 @@ namespace Oxide.Plugins
 
             return true;
         }
-
-        #endregion RemoverTool Callbacks
-
-        #region RemoverTool Hooks
 
         /// <summary>
         /// Return information about the removable entity.

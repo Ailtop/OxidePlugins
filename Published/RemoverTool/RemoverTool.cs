@@ -1,16 +1,16 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using Facepunch;
+﻿using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust;
 using Oxide.Game.Rust.Cui;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
 using UnityEngine;
 using VLB;
 using Time = UnityEngine.Time;
@@ -24,6 +24,9 @@ namespace Oxide.Plugins
         #region Fields
 
         [PluginReference] private readonly Plugin Friends, ServerRewards, Clans, Economics, ImageLibrary, BuildingOwners, RustTranslationAPI;
+
+        private const string ECONOMICS_KEY = "economics";
+        private const string SERVER_REWARDS_KEY = "serverrewards";
 
         private const string PERMISSION_ALL = "removertool.all";
         private const string PERMISSION_ADMIN = "removertool.admin";
@@ -399,8 +402,8 @@ namespace Oxide.Plugins
         {
             switch (shortname.ToLower())
             {
-                case "economics": return GetImageFromLibrary("Economics");
-                case "serverrewards": return GetImageFromLibrary("ServerRewards");
+                case ECONOMICS_KEY: return GetImageFromLibrary(ECONOMICS_KEY);
+                case SERVER_REWARDS_KEY: return GetImageFromLibrary(SERVER_REWARDS_KEY);
             }
             return GetEntityImage(shortname);
         }
@@ -1706,7 +1709,7 @@ namespace Oxide.Plugins
             }
             switch (itemName.ToLower())
             {
-                case "economics":
+                case ECONOMICS_KEY:
                     if (Economics == null)
                     {
                         return false;
@@ -1733,7 +1736,7 @@ namespace Oxide.Plugins
                     }
                     return true;
 
-                case "serverrewards":
+                case SERVER_REWARDS_KEY:
                     if (ServerRewards == null)
                     {
                         return false;
@@ -1763,8 +1766,8 @@ namespace Oxide.Plugins
 
                 default:
                     {
-                        var result = info?.OnCheckOrPay.Value?.Invoke(targetEntity, player, itemName, itemAmount, check);
-                        if (result != null)
+                        var result = Interface.CallHook("OnRemovableEntityCheckOrPay", targetEntity, player, itemName, itemAmount, check);
+                        if (result is bool)
                         {
                             return (bool)result;
                         }
@@ -1810,26 +1813,32 @@ namespace Oxide.Plugins
                     bool flag = false;
                     switch (itemName.ToLower())
                     {
-                        case "economics":
+                        case ECONOMICS_KEY:
                             {
                                 if (Economics == null) continue;
                                 var result = Economics.Call("Deposit", player.userID, (double)itemAmount);
-                                if (result != null) flag = true;
+                                if (result != null)
+                                {
+                                    flag = true;
+                                }
                                 break;
                             }
 
-                        case "serverrewards":
+                        case SERVER_REWARDS_KEY:
                             {
                                 if (ServerRewards == null) continue;
                                 var result = ServerRewards.Call("AddPoints", player.userID, itemAmount);
-                                if (result != null) flag = true;
+                                if (result != null)
+                                {
+                                    flag = true;
+                                }
                                 break;
                             }
 
                         default:
                             {
-                                var result = info?.OnGiveRefund.Value?.Invoke(targetEntity, player, itemName, itemAmount);
-                                if (result != null)
+                                var result = Interface.CallHook("OnRemovableEntityGiveRefund", targetEntity, player, itemName, itemAmount);
+                                if (result == null)
                                 {
                                     flag = true;
                                 }
@@ -2284,8 +2293,6 @@ namespace Oxide.Plugins
                 DisplayName = new ValueCache<string>(nameof(DisplayName), dictionary);
                 Price = new ItemInfoDictCache(nameof(Price), dictionary);
                 Refund = new ItemInfoDictCache(nameof(Refund), dictionary);
-                OnGiveRefund = new ValueCache<Func<BaseEntity, BasePlayer, string, int, bool>>(nameof(OnGiveRefund), dictionary);
-                OnCheckOrPay = new ValueCache<Func<BaseEntity, BasePlayer, string, int, bool, bool>>(nameof(OnCheckOrPay), dictionary);
             }
 
             public ValueCache<string> ImageId { get; }
@@ -2295,10 +2302,6 @@ namespace Oxide.Plugins
             public ItemInfoDictCache Price { get; }
 
             public ItemInfoDictCache Refund { get; }
-
-            public ValueCache<Func<BaseEntity, BasePlayer, string, int, bool>> OnGiveRefund { get; }
-
-            public ValueCache<Func<BaseEntity, BasePlayer, string, int, bool, bool>> OnCheckOrPay { get; }
         }
 
         private static RemovableEntityInfo? GetRemovableEntityInfo(BaseEntity entity, BasePlayer player)
@@ -2996,8 +2999,8 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Image Urls (Used to UI image)")]
             public readonly Dictionary<string, string> imageUrls = new Dictionary<string, string>
             {
-                ["Economics"] = "https://i.imgur.com/znPwdcv.png",
-                ["ServerRewards"] = "https://i.imgur.com/04rJsV3.png"
+                [ECONOMICS_KEY] = "https://i.imgur.com/znPwdcv.png",
+                [SERVER_REWARDS_KEY] = "https://i.imgur.com/04rJsV3.png"
             };
 
             [JsonProperty(PropertyName = "GUI")]
