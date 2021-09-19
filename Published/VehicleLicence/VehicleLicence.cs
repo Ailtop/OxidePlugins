@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.19")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.20")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -51,9 +51,11 @@ namespace Oxide.Plugins
 
         private const int LAYER_GROUND = Rust.Layers.Solid | Rust.Layers.Mask.Water;
 
-        private Timer _checkVehiclesTimer;
         private static object False;
+        private Timer _checkVehiclesTimer;
+
         public static VehicleLicence Instance { get; private set; }
+
         public readonly Dictionary<BaseEntity, Vehicle> vehiclesCache = new Dictionary<BaseEntity, Vehicle>();
         public readonly Dictionary<string, BaseVehicleS> allBaseVehicleSettings = new Dictionary<string, BaseVehicleS>();
         public readonly Dictionary<string, string> commandToVehicleType = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -644,7 +646,7 @@ namespace Oxide.Plugins
                     if (refundInventory)
                     {
                         var moduleStorage = moduleEntity as VehicleModuleStorage;
-                        if (moduleStorage != null)
+                        if (moduleStorage != null && !(moduleEntity is VehicleModuleEngine))
                         {
                             var storageContainer = moduleStorage.GetContainer()?.inventory;
                             if (storageContainer != null) collect.AddRange(storageContainer.itemList);
