@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Auto Pickup", "Arainrr", "1.2.14")]
+    [Info("Auto Pickup", "Arainrr", "1.2.15")]
     [Description("Automatically pickup hemp, pumpkin, ore, pickupable items, corpse, etc.")]
     public class AutoPickup : RustPlugin
     {
@@ -167,7 +167,7 @@ namespace Oxide.Plugins
             {
                 return false;
             }
-            if (configData.settings.preventPickupLoot && lootContainer.OwnerID.IsSteamId() && !AreFriends(lootContainer.OwnerID, player.userID))
+            if (configData.globalS.preventPickupLoot && lootContainer.OwnerID.IsSteamId() && !AreFriends(lootContainer.OwnerID, player.userID))
             {
                 return false;
             }
@@ -239,9 +239,9 @@ namespace Oxide.Plugins
         private bool AreFriends(ulong playerID, ulong friendID)
         {
             if (playerID == friendID) return true;
-            if (configData.settings.useTeams && SameTeam(playerID, friendID)) return true;
-            if (configData.settings.useFriends && HasFriend(playerID, friendID)) return true;
-            if (configData.settings.useClans && SameClan(playerID, friendID)) return true;
+            if (configData.globalS.useTeams && SameTeam(playerID, friendID)) return true;
+            if (configData.globalS.useFriends && HasFriend(playerID, friendID)) return true;
+            if (configData.globalS.useClans && SameClan(playerID, friendID)) return true;
             return false;
         }
 
@@ -304,7 +304,7 @@ namespace Oxide.Plugins
         {
             return new StoredData.AutoPickData
             {
-                enabled = configData.settings.defaultEnabled
+                enabled = configData.globalS.defaultEnabled
             };
         }
 
@@ -345,6 +345,10 @@ namespace Oxide.Plugins
                     {
                         bool enabled;
                         if (configData.plantEntityS.TryGetValue(baseNetworkable.ShortPrefabName, out enabled) && !enabled)
+                        {
+                            return;
+                        }
+                        if (configData.globalS.preventPlanterBox && baseNetworkable.GetParentEntity() is PlanterBox)
                         {
                             return;
                         }
@@ -610,7 +614,7 @@ namespace Oxide.Plugins
                         {
                             case PickupType.PlantEntity:
                                 var plantEntity = entity as GrowableEntity;
-                                if (configData.settings.preventPickupPlant && plantEntity.OwnerID.IsSteamId() && !instance.AreFriends(plantEntity.OwnerID, player.userID)) return;
+                                if (configData.globalS.preventPickupPlant && plantEntity.OwnerID.IsSteamId() && !instance.AreFriends(plantEntity.OwnerID, player.userID)) return;
                                 if (CanAutoPickup(player, plantEntity))
                                 {
                                     if (autoPickData.autoClone)
@@ -637,7 +641,7 @@ namespace Oxide.Plugins
                             case PickupType.ItemDrop:
                             case PickupType.ItemDropBackpack:
                                 var droppedItemContainer = entity as DroppedItemContainer;
-                                if (configData.settings.preventPickupBackpack && droppedItemContainer.playerSteamID.IsSteamId() && !instance.AreFriends(droppedItemContainer.playerSteamID, player.userID)) return;
+                                if (configData.globalS.preventPickupBackpack && droppedItemContainer.playerSteamID.IsSteamId() && !instance.AreFriends(droppedItemContainer.playerSteamID, player.userID)) return;
                                 if (CanAutoPickup(player, droppedItemContainer))
                                 {
                                     if (PickupDroppedItemContainer(player, droppedItemContainer))
@@ -652,7 +656,7 @@ namespace Oxide.Plugins
                             case PickupType.PlayerCorpse:
                                 var playerCorpse = entity as PlayerCorpse;
                                 if (!playerCorpse.CanLoot()) return;
-                                if (configData.settings.preventPickupCorpse && playerCorpse.playerSteamID.IsSteamId() && !instance.AreFriends(playerCorpse.playerSteamID, player.userID)) return;
+                                if (configData.globalS.preventPickupCorpse && playerCorpse.playerSteamID.IsSteamId() && !instance.AreFriends(playerCorpse.playerSteamID, player.userID)) return;
                                 if (CanAutoPickup(player, playerCorpse))
                                 {
                                     if (PickupPlayerCorpse(player, playerCorpse))
@@ -892,7 +896,7 @@ namespace Oxide.Plugins
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Settings")]
-            public Settings settings = new Settings();
+            public Settings globalS = new Settings();
 
             [JsonProperty(PropertyName = "Chat Settings")]
             public ChatS chatS = new ChatS();
@@ -943,6 +947,9 @@ namespace Oxide.Plugins
 
                 [JsonProperty(PropertyName = "Prevent pickup other player's loot container")]
                 public bool preventPickupLoot = true;
+
+                [JsonProperty(PropertyName = "Prevent pickup of plant entities in the planter box")]
+                public bool preventPlanterBox = false;
             }
 
             public class ChatS
@@ -1103,7 +1110,7 @@ namespace Oxide.Plugins
 
         private void OnNewSave(string filename)
         {
-            if (configData.settings.clearDataOnWipe)
+            if (configData.globalS.clearDataOnWipe)
             {
                 ClearData();
             }
