@@ -1,16 +1,16 @@
-﻿using Facepunch;
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust;
 using Oxide.Game.Rust.Cui;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
 using UnityEngine;
 using VLB;
 using Time = UnityEngine.Time;
@@ -897,6 +897,7 @@ namespace Oxide.Plugins
                     _shouldPay = shouldPay && configData.removeS.priceEnabled;
                     _shouldRefund = shouldRefund && configData.removeS.refundEnabled;
                     _rt.PrintDebug($"{player.displayName}({player.userID}) have Enabled the remover tool.");
+                    Interface.CallHook("OnRemoverToolActivated", player);
                 }
                 else
                 {
@@ -1107,6 +1108,7 @@ namespace Oxide.Plugins
                     {
                         _rt.PrintDebug($"{player.displayName}({player.userID}) have Disabled the remover tool.");
                     }
+                    Interface.CallHook("OnRemoverToolDeactivated", player);
                 }
                 DestroyAllUI(player);
                 Destroy(this);
@@ -2947,7 +2949,7 @@ namespace Oxide.Plugins
                     var itemDefinition = ItemManager.FindItemDefinition(entry.Value);
                     entitySettings = new EntitySettings
                     {
-                        enabled = itemDefinition.category != ItemCategory.Food,
+                        enabled = configData.globalS.defaultEntityS.removeAllowed && itemDefinition.category != ItemCategory.Food,
                         displayName = itemDefinition.displayName.english,
                         refund = new Dictionary<string, int> { [entry.Value] = 1 },
                         price = new Dictionary<string, int>()
@@ -3077,6 +3079,15 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "RemoveType - Normal - Entity Spawned Time Limit - Cannot be removed when entity spawned time more than it")]
             public float limitTime = 300f;
+
+            [JsonProperty(PropertyName = "Default Entity Settings (When automatically adding new entities to 'Other Entity Settings')")]
+            public DefaultEntitySettings defaultEntityS = new DefaultEntitySettings();
+
+            public class DefaultEntitySettings
+            {
+                [JsonProperty(PropertyName = "Default Remove Allowed")]
+                public bool removeAllowed = true;
+            }
         }
 
         public class ContainerSettings
