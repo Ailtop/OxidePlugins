@@ -1709,10 +1709,13 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "TruePVE Mapping", Order = 8)]
             public string mapping = "exclude";
 
-            [JsonProperty(PropertyName = "Use Blacklist Commands (If false, a whitelist is used)", Order = 9)]
+            // [JsonProperty(PropertyName = "Do not create a new zone when in the same event type of pvp zone", Order = 9)]
+            // public bool dontCreateWhenInSameType = false;
+
+            [JsonProperty(PropertyName = "Use Blacklist Commands (If false, a whitelist is used)", Order = 10)]
             public bool useBlacklistCommands = true;
 
-            [JsonProperty(PropertyName = "Command List (If there is a '/' at the front, it is a chat command)", Order = 10)]
+            [JsonProperty(PropertyName = "Command List (If there is a '/' at the front, it is a chat command)", Order = 11)]
             public List<string> commandList = new List<string>();
 
             public abstract BaseDynamicZoneS GetDynamicZoneS();
