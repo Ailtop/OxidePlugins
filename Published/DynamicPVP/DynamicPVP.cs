@@ -1,5 +1,11 @@
 ﻿//Requires: ZoneManager
 
+using Facepunch;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using Oxide.Core;
+using Oxide.Core.Libraries.Covalence;
+using Oxide.Core.Plugins;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -7,12 +13,6 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using Facepunch;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
-using Oxide.Core;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -1396,6 +1396,73 @@ namespace Oxide.Plugins
             return true;
         }
 
+        private bool CreateEventData(string eventName, Vector3 position, bool isTimed)
+        {
+            if (EventDataExists(eventName)) return false;
+            if (isTimed)
+            {
+                var timedEventS = new TimedEventS();
+                storedData.timedEvents.Add(eventName, timedEventS);
+            }
+            else
+            {
+                var autoEventS = new AutoEventS { position = position };
+                storedData.autoEvents.Add(eventName, autoEventS);
+            }
+            dataChanged = true;
+            return true;
+        }
+
+        private bool RemoveEventData(string eventName, bool forceClose = true)
+        {
+            if (!EventDataExists(eventName)) return false;
+            storedData.RemoveEventData(eventName);
+            if (forceClose) ForceCloseZones(eventName);
+            dataChanged = true;
+            return true;
+        }
+
+        private bool StartEvent(string eventName, Vector3 position)
+        {
+            if (!EventDataExists(eventName)) return false;
+            var autoEventS = GetBaseEventS(eventName) as AutoEventS;
+            if (autoEventS != null)
+            {
+                CreateDynamicZone(eventName, position == default(Vector3) ? autoEventS.position : position, autoEventS.zoneID);
+            }
+            else
+            {
+                CreateDynamicZone(eventName, position);
+            }
+            return true;
+        }
+
+        private bool UpdateEventDataValue()
+        {
+        }
+
+        private bool StopEvent(string eventName)
+        {
+            if (!EventDataExists(eventName)) return false;
+            return ForceCloseZones(eventName);
+        }
+
+        private bool ForceCloseZones(string eventName)
+        {
+            bool closed = false;
+            foreach (var entry in activeDynamicZones.ToArray())
+            {
+                if (entry.Value == eventName)
+                {
+                    if (DeleteDynamicZone(entry.Key))
+                    {
+                        closed = true;
+                    }
+                }
+            }
+            return closed;
+        }
+
         #endregion API
 
         #region Commands
@@ -1542,70 +1609,6 @@ namespace Oxide.Plugins
             }
         }
 
-        private bool CreateEventData(string eventName, Vector3 position, bool isTimed)
-        {
-            if (EventDataExists(eventName)) return false;
-            if (isTimed)
-            {
-                var timedEventS = new TimedEventS();
-                storedData.timedEvents.Add(eventName, timedEventS);
-            }
-            else
-            {
-                var autoEventS = new AutoEventS { position = position };
-                storedData.autoEvents.Add(eventName, autoEventS);
-            }
-            dataChanged = true;
-            return true;
-        }
-
-        private bool RemoveEventData(string eventName)
-        {
-            if (!EventDataExists(eventName)) return false;
-            storedData.RemoveEventData(eventName);
-            ForceCloseZones(eventName);
-            dataChanged = true;
-            return true;
-        }
-
-        private bool StartEvent(string eventName, Vector3 position)
-        {
-            if (!EventDataExists(eventName)) return false;
-            var autoEventS = GetBaseEventS(eventName) as AutoEventS;
-            if (autoEventS != null)
-            {
-                CreateDynamicZone(eventName, autoEventS.position, autoEventS.zoneID);
-            }
-            else
-            {
-                CreateDynamicZone(eventName, position);
-            }
-            return true;
-        }
-
-        private bool StopEvent(string eventName)
-        {
-            if (!EventDataExists(eventName)) return false;
-            ForceCloseZones(eventName);
-            return true;
-        }
-
-        private bool ForceCloseZones(string eventName)
-        {
-            bool closed = false;
-            foreach (var entry in activeDynamicZones.ToArray())
-            {
-                if (entry.Value == eventName)
-                {
-                    if (DeleteDynamicZone(entry.Key))
-                    {
-                        closed = true;
-                    }
-                }
-            }
-            return closed;
-        }
-
         #endregion Commands
 
         #region ConfigurationFile
@@ -1615,13 +1618,13 @@ namespace Oxide.Plugins
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Global Settings")]
-            public GlobalS global = new GlobalS();
+            public GlobalSettings global = new GlobalSettings();
 
             [JsonProperty(PropertyName = "Chat Settings")]
-            public ChatS chatS = new ChatS();
+            public ChatSettings chatS = new ChatSettings();
 
             [JsonProperty(PropertyName = "General Event Settings")]
-            public GeneralEventS generalEvents = new GeneralEventS();
+            public GeneralEventSettings generalEvents = new GeneralEventSettings();
 
             [JsonProperty(PropertyName = "Monument Event Settings")]
             public Dictionary<string, MonumentEventS> monumentEvents = new Dictionary<string, MonumentEventS>();
@@ -1630,7 +1633,7 @@ namespace Oxide.Plugins
             public VersionNumber version;
         }
 
-        private class GlobalS
+        private class GlobalSettings
         {
             [JsonProperty(PropertyName = "Enable Debug Mode")]
             public bool debugEnabled;
@@ -1648,7 +1651,7 @@ namespace Oxide.Plugins
             public PVPDelayFlags pvpDelayFlags = PVPDelayFlags.ZonePlayersCanDamageDelayedPlayers | PVPDelayFlags.DelayedPlayersCanDamageDelayedPlayers | PVPDelayFlags.DelayedPlayersCanDamageZonePlayers;
         }
 
-        public class ChatS
+        public class ChatSettings
         {
             [JsonProperty(PropertyName = "Command")]
             public string command = "dynpvp";
@@ -1663,7 +1666,7 @@ namespace Oxide.Plugins
             public ulong steamIDIcon = 0;
         }
 
-        private class GeneralEventS
+        private class GeneralEventSettings
         {
             [JsonProperty(PropertyName = "Bradley Event")]
             public TimedEventS bradleyAPC = new TimedEventS();
