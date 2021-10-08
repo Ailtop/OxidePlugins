@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Cupboard Auto Lock", "BuzZ/Arainrr", "0.0.5")]
+    [Info("Cupboard Auto Lock", "BuzZ/Arainrr", "0.0.6")]
     [Description("Automatically add a codelock on cupboards.")]
     public class CupboardAutoLock : RustPlugin
     {
@@ -34,7 +34,7 @@ namespace Oxide.Plugins
                 if (codeLock == null) return;
                 codeLock.SetParent(buildingPrivlidge, buildingPrivlidge.GetSlotAnchorName(BaseEntity.Slot.Lock));
                 codeLock.OwnerID = buildingPrivlidge.OwnerID;
-                codeLock.OnDeployed(buildingPrivlidge, player);
+                codeLock.OnDeployed(buildingPrivlidge, player, null);
                 codeLock.Spawn();
                 if (configData.cupboardNoRefill) codeLock.SetFlag(BaseEntity.Flags.Locked, true, false);
                 else
