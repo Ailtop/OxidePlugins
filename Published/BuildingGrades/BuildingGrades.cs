@@ -29,6 +29,7 @@ namespace Oxide.Plugins
 
         private static BuildingGrades instance;
 
+        private HashSet<ulong> blockedPlayers;
         private readonly Dictionary<ulong, float> cooldowns = new Dictionary<ulong, float>();
         private readonly Dictionary<string, HashSet<uint>> categories = new Dictionary<string, HashSet<uint>>(StringComparer.OrdinalIgnoreCase);
 
@@ -66,6 +67,19 @@ namespace Oxide.Plugins
             cmd.AddChatCommand(configData.chatS.downgradeCommand, this, nameof(CmdDowngrade));
             cmd.AddChatCommand(configData.chatS.upgradeAllCommand, this, nameof(CmdUpgradeAll));
             cmd.AddChatCommand(configData.chatS.downgradeAllCommand, this, nameof(CmdDowngradeAll));
+
+            if (configData.globalS.useCombatBlocker || configData.globalS.useRaidBlocker)
+            {
+                blockedPlayers = new HashSet<ulong>();
+            }
+            if (!configData.globalS.useRaidBlocker)
+            {
+                Unsubscribe(nameof(OnRaidBlock));
+            }
+            if (!configData.globalS.useCombatBlocker)
+            {
+                Unsubscribe(nameof(OnCombatBlock));
+            }
         }
 
         private void OnServerInitialized()
@@ -296,6 +310,10 @@ namespace Oxide.Plugins
             return false;
         }
 
+        private void OnCombatBlock(BasePlayer player) => blockedPlayers?.Add(player.userID);
+
+        private void OnRaidBlock(BasePlayer player, Vector3 position) => blockedPlayers?.Add(player.userID);
+
         private bool IsRaidBlocked(string playerID) => (bool)NoEscape.Call("IsRaidBlocked", playerID);
 
         private bool IsCombatBlocked(string playerID) => (bool)NoEscape.Call("IsCombatBlocked", playerID);
@@ -324,6 +342,7 @@ namespace Oxide.Plugins
         #endregion Methods
 
         #region Building Grade Control
+         
 
         private readonly MethodInfo isUpgradeBlockedMethod = typeof(BuildingBlock).GetMethod("IsUpgradeBlocked", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
@@ -338,6 +357,7 @@ namespace Oxide.Plugins
 
         public IEnumerator StartChangeBuildingGrade(BuildingBlock sourceEntity, BasePlayer player, BuildingGrade.Enum targetGrade, HashSet<uint> filter, PermissionSettings permS, bool isUpgrade, bool isAll, bool isAdmin)
         {
+            blockedPlayers?.Clear();
             yield return GetAllBuildingBlocks(sourceEntity, filter, isAll);
             //if (pay) {
             //    FindUpgradeCosts(targetGrade);
@@ -355,6 +375,7 @@ namespace Oxide.Plugins
             tempFriends.Clear();
             allBuildingBlocks.Clear();
             tempGrantedGrades.Clear();
+            blockedPlayers?.Clear();
             cooldowns[playerID] = Time.realtimeSinceStartup;
             changeGradeCoroutine = null;
         }
@@ -386,6 +407,11 @@ namespace Oxide.Plugins
             }
         }
 
+        private bool ShouldInterrupt(ulong playerID)
+        {
+            return blockedPlayers != null && blockedPlayers.Contains(playerID);
+        }
+
         #region Upgrade
 
         private IEnumerator UpgradeBuildingBlocks(BasePlayer player, BuildingGrade.Enum targetGrade, PermissionSettings permS, bool isAdmin)
@@ -398,6 +424,10 @@ namespace Oxide.Plugins
                 if (buildingBlock == null || buildingBlock.IsDestroyed)
                 {
                     continue;
+                }
+                if (ShouldInterrupt(player.userID))
+                {
+                    break;
                 }
                 BuildingGrade.Enum grade = targetGrade;
                 if (CheckBuildingGrade(buildingBlock, true, ref grade))
@@ -557,6 +587,10 @@ namespace Oxide.Plugins
                 {
                     continue;
                 }
+                if (ShouldInterrupt(player.userID))
+                {
+                    break;
+                }
                 BuildingGrade.Enum grade = targetGrade;
                 if (CheckBuildingGrade(buildingBlock, false, ref grade))
                 {
@@ -568,7 +602,6 @@ namespace Oxide.Plugins
                         }
                     }
                 }
-
                 if (current++ % configData.globalS.perFrame == 0)
                 {
                     yield return CoroutineEx.waitForEndOfFrame;
