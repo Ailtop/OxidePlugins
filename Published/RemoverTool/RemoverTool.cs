@@ -1,16 +1,16 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using Facepunch;
+﻿using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust;
 using Oxide.Game.Rust.Cui;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
 using UnityEngine;
 using VLB;
 using Time = UnityEngine.Time;
@@ -23,7 +23,7 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        [PluginReference] private readonly Plugin Friends, ServerRewards, Clans, Economics, ImageLibrary, BuildingOwners, RustTranslationAPI;
+        [PluginReference] private readonly Plugin Friends, ServerRewards, Clans, Economics, ImageLibrary, BuildingOwners, RustTranslationAPI, NoEscape;
 
         private const string ECONOMICS_KEY = "economics";
         private const string SERVER_REWARDS_KEY = "serverrewards";
@@ -53,8 +53,6 @@ namespace Oxide.Plugins
         private Coroutine _removePlayerEntityCoroutine;
 
         private Hash<uint, float> _entitySpawnedTimes;
-        private Hash<ulong, float> _lastBlockedPlayers;
-        private Hash<uint, float> _lastAttackedBuildings;
         private readonly Hash<ulong, float> _cooldownTimes = new Hash<ulong, float>();
 
         private enum RemoveMode
@@ -98,13 +96,14 @@ namespace Oxide.Plugins
             permission.RegisterPermission(PERMISSION_EXTERNAL, this);
             permission.RegisterPermission(PERMISSION_STRUCTURE, this);
 
-            Unsubscribe(nameof(OnEntityDeath));
             Unsubscribe(nameof(OnHammerHit));
             Unsubscribe(nameof(OnEntitySpawned));
             Unsubscribe(nameof(OnEntityKill));
             Unsubscribe(nameof(OnPlayerAttack));
             Unsubscribe(nameof(OnActiveItemChanged));
             Unsubscribe(nameof(OnServerSave));
+            Unsubscribe(nameof(OnRaidBlock));
+            Unsubscribe(nameof(OnCombatBlock));
 
             foreach (var perm in configData.permS.Keys)
             {
@@ -141,12 +140,15 @@ namespace Oxide.Plugins
                 }
             }
 
-            if (configData.raidS.enabled)
+            if (configData.noEscapeS.useRaidBlocker)
             {
-                _lastBlockedPlayers = new Hash<ulong, float>();
-                _lastAttackedBuildings = new Hash<uint, float>();
-                Subscribe(nameof(OnEntityDeath));
+                Subscribe(nameof(OnRaidBlock));
             }
+            if (configData.noEscapeS.useCombatBlocker)
+            {
+                Subscribe(nameof(OnCombatBlock));
+            }
+
             if (configData.globalS.entityTimeLimit)
             {
                 _entitySpawnedTimes = new Hash<uint, float>();
@@ -219,14 +221,6 @@ namespace Oxide.Plugins
                     }
                 }
             }
-        }
-
-        private void OnEntityDeath(BuildingBlock buildingBlock, HitInfo info)
-        {
-            if (buildingBlock == null || info == null) return;
-            var attacker = info.InitiatorPlayer;
-            if (attacker != null && attacker.userID.IsSteamId() && HasAccess(attacker, buildingBlock)) return;
-            BlockRemove(buildingBlock);
         }
 
         private void OnEntitySpawned(BaseEntity entity)
@@ -496,57 +490,55 @@ namespace Oxide.Plugins
 
         #endregion Methods
 
-        #region RaidBlocker
+        #region NoEscape
 
-        private void BlockRemove(BuildingBlock buildingBlock)
+        private void OnRaidBlock(BasePlayer player)
         {
-            if (configData.raidS.blockBuildingID)
+            if (configData.noEscapeS.useRaidBlocker)
             {
-                var buildingID = buildingBlock.buildingID;
-                _lastAttackedBuildings[buildingID] = Time.realtimeSinceStartup;
-            }
-            if (configData.raidS.blockPlayers)
-            {
-                var players = Pool.GetList<BasePlayer>();
-                Vis.Entities(buildingBlock.transform.position, configData.raidS.blockRadius, players, Rust.Layers.Mask.Player_Server);
-                foreach (var player in players)
-                {
-                    if (player.userID.IsSteamId())
-                        _lastBlockedPlayers[player.userID] = Time.realtimeSinceStartup;
-                }
-                Pool.FreeList(ref players);
+                //TODO lang
+                player.GetComponent<ToolRemover>()?.DisableTool(false);
             }
         }
 
-        private bool IsRaidBlocked(BasePlayer player, BaseEntity targetEntity, out float timeLeft)
+        private void OnCombatBlock(BasePlayer player)
         {
-            if (configData.raidS.blockBuildingID)
+            if (configData.noEscapeS.useCombatBlocker)
             {
-                var buildingBlock = targetEntity as BuildingBlock;
-                if (buildingBlock != null)
-                {
-                    float blockTime;
-                    if (_lastAttackedBuildings.TryGetValue(buildingBlock.buildingID, out blockTime))
-                    {
-                        timeLeft = configData.raidS.blockTime - (Time.realtimeSinceStartup - blockTime);
-                        if (timeLeft > 0) return true;
-                    }
-                }
+                //TODO lang
+                player.GetComponent<ToolRemover>()?.DisableTool(false);
             }
-            if (configData.raidS.blockPlayers)
+        }
+
+        private bool IsPlayerBlocked(BasePlayer player, out string reason)
+        {
+            if (NoEscape == null)
             {
-                float blockTime;
-                if (_lastBlockedPlayers.TryGetValue(player.userID, out blockTime))
-                {
-                    timeLeft = configData.raidS.blockTime - (Time.realtimeSinceStartup - blockTime);
-                    if (timeLeft > 0) return true;
-                }
+                reason = null;
+                return false;
             }
-            timeLeft = 0;
+            if (configData.noEscapeS.useRaidBlocker && IsRaidBlocked(player.UserIDString))
+            {
+                //TODO lang
+                reason = Lang("RaidBlocked", player.UserIDString);
+                return true;
+            }
+            if (configData.noEscapeS.useCombatBlocker && IsCombatBlocked(player.UserIDString))
+            {
+                //TODO lang
+                reason = Lang("CombatBlocked", player.UserIDString);
+                return true;
+            }
+
+            reason = null;
             return false;
         }
 
-        #endregion RaidBlocker
+        private bool IsRaidBlocked(string playerID) => (bool)NoEscape.Call("IsRaidBlocked", playerID);
+
+        private bool IsCombatBlocked(string playerID) => (bool)NoEscape.Call("IsCombatBlocked", playerID);
+
+        #endregion NoEscape
 
         #region UI
 
@@ -1266,10 +1258,8 @@ namespace Oxide.Plugins
                 reason = Lang("DamagedEntity", player.UserIDString);
                 return false;
             }
-            float timeLeft;
-            if (configData.raidS.enabled && IsRaidBlocked(player, targetEntity, out timeLeft))
+            if (IsPlayerBlocked(player, out reason))
             {
-                reason = Lang("RaidBlocked", player.UserIDString, Math.Ceiling(timeLeft));
                 return false;
             }
             if (configData.globalS.entityTimeLimit && IsEntityTimeLimit(targetEntity))
@@ -2179,7 +2169,7 @@ namespace Oxide.Plugins
                             {
                                 _value = (T)value;
                             }
-                            catch (Exception ex)
+                            catch (Exception)
                             {
                                 _rt.PrintError($"Incorrect type for {_key}( {typeof(T)})");
                             }
@@ -2995,8 +2985,8 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Remove Mode Settings (Only one model works)")]
             public readonly RemoverModeSettings removerModeS = new RemoverModeSettings();
 
-            [JsonProperty(PropertyName = "Raid Blocker Settings")]
-            public readonly RaidBlockerSettings raidS = new RaidBlockerSettings();
+            [JsonProperty(PropertyName = "NoEscape Settings")]
+            public readonly NoEscapeSettings noEscapeS = new NoEscapeSettings();
 
             [JsonProperty(PropertyName = "Image Urls (Used to UI image)")]
             public readonly Dictionary<string, string> imageUrls = new Dictionary<string, string>
@@ -3234,22 +3224,13 @@ namespace Oxide.Plugins
             public bool specificToolDisableInHand = false;
         }
 
-        public class RaidBlockerSettings
+        public class NoEscapeSettings
         {
-            [JsonProperty(PropertyName = "Enabled")]
-            public bool enabled = false;
+            [JsonProperty(PropertyName = "Use Raid Blocker")]
+            public bool useRaidBlocker;
 
-            [JsonProperty(PropertyName = "Block Time")]
-            public float blockTime = 300;
-
-            [JsonProperty(PropertyName = "By Buildings")]
-            public bool blockBuildingID = true;
-
-            [JsonProperty(PropertyName = "By Surrounding Players")]
-            public bool blockPlayers = true;
-
-            [JsonProperty(PropertyName = "By Surrounding Players - Radius")]
-            public float blockRadius = 120;
+            [JsonProperty(PropertyName = "Use Combat Blocker")]
+            public bool useCombatBlocker;
         }
 
         public class UiSettings
@@ -3984,7 +3965,7 @@ namespace Oxide.Plugins
                 ["InvalidEntity"] = "Can't remove: No valid entity targeted.",
                 ["NotFoundOrFar"] = "Can't remove: The entity is not found or too far away.",
                 ["StorageNotEmpty"] = "Can't remove: The entity storage is not empty.",
-                ["RaidBlocked"] = "Can't remove: Raid blocked for {0} seconds.",
+                ["RaidBlocked"] = "Can't remove: Raid/Combat blocked.",
                 ["NotRemoveAccess"] = "Can't remove: You don't have any rights to remove this.",
                 ["NotStructure"] = "Can't remove: The entity is not a structure.",
                 ["NotExternalWall"] = "Can't remove: The entity is not an external wall.",
@@ -4041,7 +4022,7 @@ namespace Oxide.Plugins
                 ["InvalidEntity"] = "无法拆除该实体: 无效的实体",
                 ["NotFoundOrFar"] = "无法拆除该实体: 没有找到实体或者距离太远",
                 ["StorageNotEmpty"] = "无法拆除该实体: 该实体内含有物品",
-                ["RaidBlocked"] = "无法拆除该实体: 拆除工具被突袭阻止了 {0} 秒",
+                ["RaidBlocked"] = "无法拆除该实体: 拆除工具被突袭/战斗阻止了",
                 ["NotRemoveAccess"] = "无法拆除该实体: 您无权拆除该实体",
                 ["NotStructure"] = "无法拆除该实体: 该实体不是建筑物",
                 ["NotExternalWall"] = "无法拆除该实体: 该实体不是外高墙",
@@ -4096,7 +4077,7 @@ namespace Oxide.Plugins
                 ["InvalidEntity"] = "Нельзя удалить: Неверный объект.",
                 ["NotFoundOrFar"] = "Нельзя удалить: Объект не найден, либо слишком далеко.",
                 ["StorageNotEmpty"] = "Нельзя удалить: Хранилище объекта не пусто.",
-                ["RaidBlocked"] = "Нельзя удалить: Рэйд-блок {0} секунд.",
+                ["RaidBlocked"] = "Нельзя удалить: Рейды/боевые остановки.",
                 ["NotRemoveAccess"] = "Нельзя удалить: У вас нет прав удалять это.",
                 ["NotStructure"] = "Нельзя удалить: Объект не конструкция.",
                 ["NotExternalWall"] = "Нельзя удалить: Объект не внешняя стена.",
