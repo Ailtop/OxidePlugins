@@ -1,12 +1,12 @@
-﻿using System;
+﻿using Facepunch;
+using Newtonsoft.Json;
+using Oxide.Core;
+using Oxide.Core.Plugins;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
-using Facepunch;
-using Newtonsoft.Json;
-using Oxide.Core;
-using Oxide.Core.Plugins;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -108,6 +108,19 @@ namespace Oxide.Plugins
                 ServerMgr.Instance.StopCoroutine(changeGradeCoroutine);
             }
             instance = null;
+        }
+
+        private void OnRaidBlock(BasePlayer player)
+        {
+            OnCombatBlock(player);
+        }
+
+        private void OnCombatBlock(BasePlayer player)
+        {
+            if (changeGradeCoroutine != null)
+            {
+                blockedPlayers?.Add(player.userID);
+            }
         }
 
         #endregion Oxide Hooks
@@ -310,10 +323,6 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private void OnCombatBlock(BasePlayer player) => blockedPlayers?.Add(player.userID);
-
-        private void OnRaidBlock(BasePlayer player, Vector3 position) => blockedPlayers?.Add(player.userID);
-
         private bool IsRaidBlocked(string playerID) => (bool)NoEscape.Call("IsRaidBlocked", playerID);
 
         private bool IsCombatBlocked(string playerID) => (bool)NoEscape.Call("IsCombatBlocked", playerID);
@@ -342,7 +351,6 @@ namespace Oxide.Plugins
         #endregion Methods
 
         #region Building Grade Control
-         
 
         private readonly MethodInfo isUpgradeBlockedMethod = typeof(BuildingBlock).GetMethod("IsUpgradeBlocked", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
