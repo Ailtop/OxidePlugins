@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 
 namespace Oxide.Plugins
 {
-    [Info("SAM Site Range", "gsuberland/Arainrr", "1.2.4")]
+    [Info("SAM Site Range", "gsuberland/Arainrr", "1.2.5")]
     [Description("Modifies SAM site range.")]
     internal class SAMSiteRange : RustPlugin
     {
@@ -13,11 +13,11 @@ namespace Oxide.Plugins
         private void Init()
         {
             Unsubscribe(nameof(OnEntitySpawned));
-            foreach (var permissionRange in configData.permissionList)
+            foreach (var kvp in configData.permissions)
             {
-                if (!permission.PermissionExists(permissionRange.permission))
+                if (!permission.PermissionExists(kvp.Key))
                 {
-                    permission.RegisterPermission(permissionRange.permission, this);
+                    permission.RegisterPermission(kvp.Key, this);
                 }
             }
         }
@@ -28,7 +28,7 @@ namespace Oxide.Plugins
             foreach (var serverEntity in BaseNetworkable.serverEntities)
             {
                 var samSite = serverEntity as SamSite;
-                if (!ReferenceEquals(samSite, null))
+                if (samSite != null)
                 {
                     OnEntitySpawned(samSite);
                 }
@@ -44,22 +44,41 @@ namespace Oxide.Plugins
         private void ApplySettings(SamSite samSite)
         {
             if (samSite == null) return;
-            if (samSite.OwnerID == 0) samSite.scanRadius = configData.staticRange;
-            else samSite.scanRadius = GetRange(samSite.OwnerID.ToString());
+            if (samSite.OwnerID == 0)
+            {
+                samSite.vehicleScanRadius = configData.staticVehicleRange;
+                samSite.missileScanRadius = configData.staticMissileRange;
+            }
+            else
+            {
+                PermissionSettings permissionSettings;
+                if (GetPermissionS(samSite.OwnerID, out permissionSettings))
+                {
+                    samSite.vehicleScanRadius = permissionSettings.vehicleScanRadius;
+                    samSite.missileScanRadius = permissionSettings.missileScanRadius;
+                }
+                else
+                {
+                    return;
+                }
+            }
             samSite.SendNetworkUpdateImmediate();
         }
 
-        private float GetRange(string ownerID)
+        private bool GetPermissionS(ulong playerId, out PermissionSettings permissionSettings)
         {
-            float range = 0f;
-            foreach (var permissionRange in configData.permissionList)
+            int priority = 0;
+            permissionSettings = null;
+            foreach (var entry in configData.permissions)
             {
-                if (permission.UserHasPermission(ownerID, permissionRange.permission) && permissionRange.range > range)
+                if (entry.Value.priority >= priority && permission.UserHasPermission(playerId.ToString(), entry.Key))
                 {
-                    range = permissionRange.range;
+                    priority = entry.Value.priority;
+                    permissionSettings = entry.Value;
                 }
             }
-            return range == 0f ? 150f : range;
+
+            return permissionSettings != null;
         }
 
         #endregion Methods
@@ -70,29 +89,35 @@ namespace Oxide.Plugins
 
         private class ConfigData
         {
-            [JsonProperty(PropertyName = "Static sam site range")]
-            public float staticRange = 150f;
+            [JsonProperty(PropertyName = "Static SamSite Vehicle Scan Range")]
+            public float staticVehicleRange = 350f;
 
-            [JsonProperty(PropertyName = "Permission list", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<PermissionRange> permissionList = new List<PermissionRange>
+            [JsonProperty(PropertyName = "Static SamSite Missile Scan Range")]
+            public float staticMissileRange = 500f;
+
+            [JsonProperty(PropertyName = "Permissions", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public Dictionary<string, PermissionSettings> permissions = new Dictionary<string, PermissionSettings>()
             {
-                new PermissionRange
+                ["samsiterange.use"] = new PermissionSettings
                 {
-                    permission ="samsiterange.use",
-                    range = 200f,
+                    priority = 0,
+                    vehicleScanRadius = 200f,
+                    missileScanRadius = 275f,
                 },
-                new PermissionRange
+                ["samsiterange.vip"] = new PermissionSettings
                 {
-                    permission = "samsiterange.vip",
-                    range = 250f,
+                    priority = 1,
+                    vehicleScanRadius = 250f,
+                    missileScanRadius = 325f,
                 }
             };
+        }
 
-            public class PermissionRange
-            {
-                public string permission;
-                public float range;
-            }
+        private class PermissionSettings
+        {
+            public int priority;
+            public float vehicleScanRadius;
+            public float missileScanRadius;
         }
 
         protected override void LoadConfig()
@@ -102,7 +127,9 @@ namespace Oxide.Plugins
             {
                 configData = Config.ReadObject<ConfigData>();
                 if (configData == null)
+                {
                     LoadDefaultConfig();
+                }
             }
             catch (Exception ex)
             {
