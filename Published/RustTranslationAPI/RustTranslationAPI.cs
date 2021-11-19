@@ -1,9 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using Apex;
+﻿using Apex;
 using Newtonsoft.Json;
 using Oxide.Core;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Oxide.Plugins
 {
@@ -197,7 +197,11 @@ namespace Oxide.Plugins
                 else
                 {
                     string translation;
-                    var token = itemDefinition.shortname == "electric.generator.small" ? "Test generator" : itemDefinition.displayName.token;
+                    string token;
+                    if (!configData.customItemToken.TryGetValue(itemDefinition.shortname, out token))
+                    {
+                        token = itemDefinition.displayName.token;
+                    }
                     if (translationFiles.translations.TryGetValue(token, out translation))
                     {
                         translationFiles.itemIDTranslations.Add(itemDefinition.itemid, translation);
@@ -625,6 +629,12 @@ namespace Oxide.Plugins
 
         private class ConfigData
         {
+            [JsonProperty(PropertyName = "Custom item token", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public Dictionary<string, string> customItemToken = new Dictionary<string, string>
+            {
+                ["electric.generator.small"] = "Test generator"
+            };
+
             [JsonProperty(PropertyName = "Translations override", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public Dictionary<string, Dictionary<string, string>> translationsOverride = new Dictionary<string, Dictionary<string, string>>
             {
