@@ -1,13 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Game.Rust;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info("Better No Stability", "Arainrr", "1.1.6")]
+    [Info("Better No Stability", "Arainrr", "1.1.7")]
     [Description("Similar to 'server.stability false', but when an item loses its base, it does not levitate.")]
     public class BetterNoStability : RustPlugin
     {
@@ -161,12 +161,14 @@ namespace Oxide.Plugins
                 Print(player, Lang("NotAllowed", player.UserIDString));
                 return;
             }
-            if (storedData.disabledPlayers.Remove(player.userID))
+            if (storedData.disabledPlayers.Contains(player.userID))
             {
+                storedData.disabledPlayers.Remove(player.userID);
                 Print(player, Lang("Toggle", player.UserIDString, Lang("Enabled", player.UserIDString)));
             }
             else
             {
+                storedData.disabledPlayers.Add(player.userID);
                 Print(player, Lang("Toggle", player.UserIDString, Lang("Disabled", player.UserIDString)));
             }
             SaveData();
