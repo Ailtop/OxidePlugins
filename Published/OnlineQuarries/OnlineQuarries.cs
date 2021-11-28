@@ -1,12 +1,12 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using Oxide.Core.Plugins;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json;
-using Oxide.Core.Plugins;
 
 namespace Oxide.Plugins
 {
-    [Info("Online Quarries", "mvrb/Arainrr", "1.2.6", ResourceId = 2216)]
+    [Info("Online Quarries", "mvrb/Arainrr", "1.2.7", ResourceId = 2216)]
     [Description("Automatically disable players' quarries when offline")]
     public class OnlineQuarries : RustPlugin
     {
@@ -20,10 +20,21 @@ namespace Oxide.Plugins
 
         #region Oxide Hooks
 
+        private void Init()
+        {
+            Unsubscribe(nameof(OnEntityDistanceCheck));
+        }
+
         private void OnServerInitialized()
         {
+            if (configData.preventOther)
+            {
+                Subscribe(nameof(OnEntityDistanceCheck));
+            }
             foreach (var miningQuarry in BaseNetworkable.serverEntities.OfType<MiningQuarry>())
+            {
                 OnEntitySpawned(miningQuarry);
+            }
             CheckQuarries();
         }
 
@@ -33,71 +44,52 @@ namespace Oxide.Plugins
             miningQuarries.Add(miningQuarry);
         }
 
-        private void Unload()
-        {
-            foreach (var entry in stopEngineTimer)
-                entry.Value?.Destroy();
-        }
-
         private void OnPlayerConnected(BasePlayer player)
         {
             if (player == null) return;
-            if (stopEngineTimer.ContainsKey(player.userID))
+            Timer value;
+            if (stopEngineTimer.TryGetValue(player.userID, out value))
             {
-                stopEngineTimer[player.userID]?.Destroy();
+                value?.Destroy();
                 stopEngineTimer.Remove(player.userID);
             }
+
             if (configData.autoStart)
+            {
                 CheckQuarries(player, true);
+            }
         }
 
         private void OnPlayerDisconnected(BasePlayer player)
         {
             if (player == null) return;
-            ulong playerID = player.userID;
-            if (stopEngineTimer.ContainsKey(playerID))
+            ulong playerId = player.userID;
+            Timer value;
+            if (stopEngineTimer.TryGetValue(playerId, out value))
             {
-                stopEngineTimer[player.userID]?.Destroy();
-                stopEngineTimer.Remove(player.userID);
+                value?.Destroy();
+                stopEngineTimer.Remove(playerId);
             }
-            stopEngineTimer.Add(playerID, timer.Once(configData.offlineTime, () =>
+            stopEngineTimer.Add(playerId, timer.Once(configData.offlineTime, () =>
             {
                 CheckQuarries();
-                stopEngineTimer.Remove(playerID);
+                stopEngineTimer.Remove(playerId);
             }));
         }
 
-        private void OnQuarryToggled(MiningQuarry miningQuarry, BasePlayer player)
+        private object OnEntityDistanceCheck(EngineSwitch engineSwitch, BasePlayer player, uint id, string debugName, float maximumDistance)
         {
-            if (miningQuarry == null || miningQuarry.OwnerID == 0) return;
-            bool isOn = miningQuarry.HasFlag(BaseEntity.Flags.On);
-            if (configData.preventOther)
+            if (player == null || engineSwitch == null) return null;
+            if (id == 1739656243u && debugName == "StopEngine" || id == 1249530220u && debugName == "StartEngine")
             {
-                if (!CheckPlayer(miningQuarry.OwnerID, player.userID))
+                var parentEntity = engineSwitch.GetParentEntity();
+                if (parentEntity == null) return null;
+                if (!AreFriends(parentEntity.OwnerID, player.userID))
                 {
-                    if (isOn)
-                    {
-                        miningQuarry.SetOn(false);
-                        Item item = ItemManager.CreateByName("lowgradefuel");
-                        if (item == null) return;
-                        item.MoveToContainer(miningQuarry.fuelStoragePrefab?.instance?.GetComponent<StorageContainer>()?.inventory);
-                        isOn = false;
-                    }
-                    else miningQuarry.SetOn(true);
-                }
-                return;
-            }
-            if (isOn)
-            {
-                if (BasePlayer.FindByID(miningQuarry.OwnerID) != null) return;
-                if (!CheckPlayer(miningQuarry.OwnerID))
-                {
-                    miningQuarry.SetOn(false);
-                    Item item = ItemManager.CreateByName("lowgradefuel");
-                    if (item == null) return;
-                    item.MoveToContainer(miningQuarry.fuelStoragePrefab?.instance?.GetComponent<StorageContainer>()?.inventory);
+                    return false;
                 }
             }
+            return null;
         }
 
         #endregion Oxide Hooks
@@ -108,29 +100,40 @@ namespace Oxide.Plugins
         {
             foreach (var miningQuarry in miningQuarries)
             {
-                if (miningQuarry == null) continue;
-                if (player != null)
+                if (miningQuarry == null)
                 {
-                    if (CheckPlayer(miningQuarry.OwnerID, player.userID) || miningQuarry.OwnerID == player.userID)
-                        miningQuarry.SetOn(isOn);
                     continue;
                 }
-                if (!CheckPlayer(miningQuarry.OwnerID))
+                if (player != null)
+                {
+                    if (AreFriends(miningQuarry.OwnerID, player.userID))
+                    {
+                        miningQuarry.SetOn(isOn);
+                    }
+                    continue;
+                }
+
+                if (!AnyOnlineFriends(miningQuarry.OwnerID))
+                {
                     miningQuarry.SetOn(isOn);
+                }
             }
         }
 
-        private bool CheckPlayer(ulong playerID, ulong friendID = 0)
+        private bool AnyOnlineFriends(ulong playerId)
         {
-            if (friendID == 0)
+            foreach (var friend in BasePlayer.activePlayerList)
             {
-                foreach (var friend in BasePlayer.activePlayerList)
-                    if (AreFriends(playerID, friend.userID)) return true;
+                if (AreFriends(playerId, friend.userID))
+                {
+                    return true;
+                }
             }
-            else if (AreFriends(playerID, friendID))
-                return true;
+
             return false;
         }
+
+        #region AreFriends
 
         private bool AreFriends(ulong playerID, ulong friendID)
         {
@@ -171,6 +174,8 @@ namespace Oxide.Plugins
             return (string)playerClan == (string)friendClan;
         }
 
+        #endregion AreFriends
+
         #endregion Methods
 
         #region ConfigurationFile
@@ -205,7 +210,9 @@ namespace Oxide.Plugins
             {
                 configData = Config.ReadObject<ConfigData>();
                 if (configData == null)
+                {
                     LoadDefaultConfig();
+                }
             }
             catch (Exception ex)
             {
