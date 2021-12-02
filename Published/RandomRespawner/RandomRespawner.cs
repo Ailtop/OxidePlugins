@@ -1,12 +1,12 @@
-﻿using System;
+﻿using Facepunch;
+using Newtonsoft.Json;
+using Oxide.Core;
+using Rust;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using Facepunch;
-using Newtonsoft.Json;
-using Oxide.Core;
-using Rust;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -254,6 +254,15 @@ namespace Oxide.Plugins
         }
 
         #endregion Methods
+
+        #region API
+
+        private List<Vector3> GetSpawnPositions()
+        {
+            return spawnPositionCache;
+        }
+
+        #endregion API
 
         #region Helpers
 
