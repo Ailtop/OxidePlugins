@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.20")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.21")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -655,7 +655,7 @@ namespace Oxide.Plugins
                 }
                 if (refundFuel)
                 {
-                    var fuelContainer = modularCar.fuelSystem?.GetFuelContainer()?.inventory;
+                    var fuelContainer = modularCar.GetFuelSystem()?.GetFuelContainer()?.inventory;
                     if (fuelContainer != null) collect.AddRange(fuelContainer.itemList);
                 }
                 if (refundModule)
@@ -768,7 +768,7 @@ namespace Oxide.Plugins
             }
             else
             {
-                fuelContainer = (entity as ModularCar)?.fuelSystem?.GetFuelContainer()?.inventory;
+                fuelContainer = (entity as ModularCar)?.GetFuelSystem()?.GetFuelContainer()?.inventory;
             }
 
             if (fuelContainer == null /*|| fuelContainer.FindItemByItemID(ITEMID_FUEL) != null*/) return;
