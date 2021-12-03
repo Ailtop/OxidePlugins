@@ -1,18 +1,27 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Facepunch;
 using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using static SamSite;
 
 namespace Oxide.Plugins
 {
-    [Info("SAM Site Range", "gsuberland/Arainrr", "1.2.5")]
+    [Info("SAM Site Range", "gsuberland/Arainrr", "1.2.6")]
     [Description("Modifies SAM site range.")]
     internal class SAMSiteRange : RustPlugin
     {
+        #region Fields
+
+        private static object False;
+
+        #endregion Fields
+
         #region Oxide Hooks
 
         private void Init()
         {
-            Unsubscribe(nameof(OnEntitySpawned));
+            False = false;
             foreach (var kvp in configData.permissions)
             {
                 if (!permission.PermissionExists(kvp.Key))
@@ -22,47 +31,57 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnServerInitialized()
+        private void Unload()
         {
-            Subscribe(nameof(OnEntitySpawned));
-            foreach (var serverEntity in BaseNetworkable.serverEntities)
-            {
-                var samSite = serverEntity as SamSite;
-                if (samSite != null)
-                {
-                    OnEntitySpawned(samSite);
-                }
-            }
+            False = null;
         }
 
-        private void OnEntitySpawned(SamSite samSite) => ApplySettings(samSite);
+        private object OnSamSiteTargetScan(SamSite samSite, List<ISamSiteTarget> result)
+        {
+            float vehicleRange, missileRange;
+            if (GetSamSiteScanRange(samSite, out vehicleRange, out missileRange))
+            {
+                AddTargetSet(samSite, result, Rust.Layers.Mask.Vehicle_World, vehicleRange);
+                AddTargetSet(samSite, result, Rust.Layers.Mask.Physics_Projectile, missileRange);
+                return False;
+            }
+
+            return null;
+        }
+
+        private void AddTargetSet(SamSite samSite, List<ISamSiteTarget> allTargets, int layerMask, float scanRadius)
+        {
+            List<ISamSiteTarget> obj2 = Pool.GetList<ISamSiteTarget>();
+            Vis.Entities(samSite.eyePoint.transform.position, scanRadius, obj2, layerMask, QueryTriggerInteraction.Ignore);
+            allTargets.AddRange(obj2);
+            Pool.FreeList(ref obj2);
+        }
 
         #endregion Oxide Hooks
 
         #region Methods
 
-        private void ApplySettings(SamSite samSite)
+        private bool GetSamSiteScanRange(SamSite samSite, out float vehicleRange, out float missileRange)
         {
-            if (samSite == null) return;
-            if (samSite.OwnerID == 0)
+            if (samSite != null)
             {
-                samSite.vehicleScanRadius = configData.staticVehicleRange;
-                samSite.missileScanRadius = configData.staticMissileRange;
-            }
-            else
-            {
+                if (samSite.OwnerID == 0)
+                {
+                    vehicleRange = configData.staticVehicleRange;
+                    missileRange = configData.staticMissileRange;
+                    return true;
+                }
+
                 PermissionSettings permissionSettings;
                 if (GetPermissionS(samSite.OwnerID, out permissionSettings))
                 {
-                    samSite.vehicleScanRadius = permissionSettings.vehicleScanRadius;
-                    samSite.missileScanRadius = permissionSettings.missileScanRadius;
-                }
-                else
-                {
-                    return;
+                    vehicleRange = permissionSettings.vehicleScanRadius;
+                    missileRange = permissionSettings.missileScanRadius;
+                    return true;
                 }
             }
-            samSite.SendNetworkUpdateImmediate();
+            vehicleRange = missileRange = 0f;
+            return false;
         }
 
         private bool GetPermissionS(ulong playerId, out PermissionSettings permissionSettings)
