@@ -6,7 +6,7 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info("Rust Translation API", "Arainrr", "1.0.4")]
+    [Info("Rust Translation API", "Arainrr", "1.0.3")]
     [Description("Provides translation APIs for Rust items, holdables, deployables, etc")]
     public class RustTranslationAPI : RustPlugin
     {
