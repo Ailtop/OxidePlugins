@@ -6,7 +6,7 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info("Rust Translation API", "Arainrr", "1.0.3")]
+    [Info("Rust Translation API", "Arainrr", "1.0.4")]
     [Description("Provides translation APIs for Rust items, holdables, deployables, etc")]
     public class RustTranslationAPI : RustPlugin
     {
@@ -75,9 +75,9 @@ namespace Oxide.Plugins
                 }
                 var translationFiles = new TranslationFiles();
                 translationFiles.language = language;
-                foreach (var kvp in translations)
+                foreach (var entry in translations)
                 {
-                    translationFiles.translations.Add(kvp.Key, kvp.Value);
+                    translationFiles.translations.Add(entry.Key, entry.Value);
                 }
 
                 UpdateTranslations(translationFiles);
