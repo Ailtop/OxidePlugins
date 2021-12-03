@@ -1,7 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Oxide.Core;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -106,7 +106,7 @@ namespace Oxide.Plugins
 
         private object CanHelicopterStrafeTarget(PatrolHelicopterAI heli, BasePlayer player) => HasTargetFlags(player, TargetFlags.Helicopter) ? False : null;
 
-        private object OnSamSiteTarget(SamSite samSite, BaseCombatEntity baseCombatEntity) => AnyHasTargetFlags(baseCombatEntity, TargetFlags.Sam) ? False : null;
+        private object OnSamSiteTarget(SamSite samSite, SamSite.ISamSiteTarget samSiteTarget) => AnyHasTargetFlags(samSiteTarget as BaseEntity, TargetFlags.Sam) ? False : null;
 
         private object OnSensorDetect(HBHFSensor hbhf, BasePlayer player) => HasTargetFlags(player, TargetFlags.HBHF) ? False : null;
 
@@ -114,9 +114,20 @@ namespace Oxide.Plugins
 
         #region Methods
 
-        private bool AnyHasTargetFlags(BaseCombatEntity baseCombatEntity, TargetFlags flag)
+        private bool AnyHasTargetFlags(BaseEntity baseEntity, TargetFlags flag)
         {
-            var baseVehicle = baseCombatEntity as BaseVehicle;
+            if (baseEntity == null)
+            {
+                return false;
+            }
+
+            // var rocket = baseEntity as MLRSRocket;
+            // if (rocket != null)
+            // {
+            //     return true;
+            // }
+
+            var baseVehicle = baseEntity as BaseVehicle;
             if (baseVehicle != null)
             {
                 var mountedPlayers = GetMountedPlayers(baseVehicle);
@@ -129,7 +140,7 @@ namespace Oxide.Plugins
                 }
                 return false;
             }
-            var children = baseCombatEntity.GetComponentsInChildren<BasePlayer>();
+            var children = baseEntity.GetComponentsInChildren<BasePlayer>();
             if (children != null && children.Length > 0)
             {
                 foreach (var child in children)
