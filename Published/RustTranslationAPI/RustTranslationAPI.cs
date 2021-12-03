@@ -1,5 +1,4 @@
-﻿using Apex;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Oxide.Core;
 using System;
 using System.Collections.Generic;
@@ -76,7 +75,10 @@ namespace Oxide.Plugins
                 }
                 var translationFiles = new TranslationFiles();
                 translationFiles.language = language;
-                translationFiles.translations.AddRange(translations);
+                foreach (var kvp in translations)
+                {
+                    translationFiles.translations.Add(kvp.Key, kvp.Value);
+                }
 
                 UpdateTranslations(translationFiles);
                 UpdateItemTranslations(translationFiles, isEnglish);
