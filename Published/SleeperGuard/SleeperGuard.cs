@@ -1,10 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using Network;
+﻿using Network;
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Rust;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -29,7 +29,7 @@ namespace Oxide.Plugins
         private readonly Dictionary<ulong, float> noticeTimes = new Dictionary<ulong, float>();
 
         //Reduce boxing
-        private static readonly object True = true, False = false, Null = null;
+        private static object True, False;
 
         #endregion Fields
 
@@ -37,6 +37,8 @@ namespace Oxide.Plugins
 
         private void Init()
         {
+            True = true;
+            False = false;
             LoadData();
             permission.RegisterPermission(permCanLoot, this);
             permission.RegisterPermission(permCanDamage, this);
@@ -59,27 +61,36 @@ namespace Oxide.Plugins
             {
                 double unloadedPluginTime = TimeEx.currentTimestamp - storedData.lastSavedTimestamp;
                 foreach (var entry in storedData.sleeperDatas)
+                {
                     entry.Value.ignoredTime += unloadedPluginTime;
+                }
             }
+
             foreach (var sleeper in BasePlayer.sleepingPlayerList)
+            {
                 OnPlayerSleep(sleeper);
+            }
         }
 
         private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), SaveData);
 
-        private void Unload() => SaveData();
+        private void Unload()
+        {
+            SaveData();
+            True = False = null;
+        }
 
-        private object OnNpcTarget(BaseEntity npc, BasePlayer player) => CanIgnoreSleeper(player) ? True : Null;
+        private object OnNpcTarget(BaseEntity npc, BasePlayer player) => CanIgnoreSleeper(player) ? True : null;
 
-        private object CanBradleyApcTarget(BradleyAPC apc, BasePlayer player) => CanIgnoreSleeper(player) ? False : Null;
+        private object CanBradleyApcTarget(BradleyAPC apc, BasePlayer player) => CanIgnoreSleeper(player) ? False : null;
 
         private object OnEntityTakeDamage(BasePlayer target, HitInfo info)
         {
-            if (target == null || !target.userID.IsSteamId()) return Null;
+            if (target == null || !target.userID.IsSteamId()) return null;
             if (target.IsSleeping())
             {
                 BasePlayer attacker = info?.InitiatorPlayer;
-                if (attacker != null && permission.UserHasPermission(attacker.UserIDString, permCanDamage)) return Null;
+                if (attacker != null && permission.UserHasPermission(attacker.UserIDString, permCanDamage)) return null;
                 if (permission.UserHasPermission(target.UserIDString, permDamageProtection))
                 {
                     double timeleft;
@@ -94,13 +105,13 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            return Null;
+            return null;
         }
 
         private object CanLootPlayer(BasePlayer target, BasePlayer looter)
         {
-            if (target == null || looter == null || !target.IsSleeping()) return Null;
-            if (permission.UserHasPermission(looter.UserIDString, permCanLoot)) return Null;
+            if (target == null || looter == null || !target.IsSleeping()) return null;
+            if (permission.UserHasPermission(looter.UserIDString, permCanLoot)) return null;
             if (permission.UserHasPermission(target.UserIDString, permLootProtection))
             {
                 double timeleft;
@@ -113,7 +124,7 @@ namespace Oxide.Plugins
                     return False;
                 }
             }
-            return Null;
+            return null;
         }
 
         private void OnPlayerSleep(BasePlayer player)
