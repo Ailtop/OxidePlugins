@@ -15,6 +15,8 @@ using System.Reflection;
 using System.Text;
 using UnityEngine;
 
+//TODO 通过 #define 来实现一些私人功能
+
 namespace Oxide.Plugins
 {
     [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.23")]
