@@ -1,5 +1,10 @@
-﻿#define DEBUG
+﻿// #define DEBUG
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Text;
 using Facepunch;
 using Network;
 using Newtonsoft.Json;
@@ -8,18 +13,11 @@ using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust;
 using Rust.Modular;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Text;
 using UnityEngine;
-
-//TODO 通过 #define 来实现一些私人功能
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.23")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.24")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -29,6 +27,8 @@ namespace Oxide.Plugins
 
         private const string PERMISSION_USE = "vehiclelicence.use";
         private const string PERMISSION_ALL = "vehiclelicence.all";
+        private const string PERMISSION_ADMIN = "vehiclelicence.admin";
+
         private const string PERMISSION_BYPASS_COST = "vehiclelicence.bypasscost";
 
         private const int ITEMID_FUEL = -946369541;
@@ -96,6 +96,7 @@ namespace Oxide.Plugins
             Instance = this;
             permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_ALL, this);
+            permission.RegisterPermission(PERMISSION_ADMIN, this);
             permission.RegisterPermission(PERMISSION_BYPASS_COST, this);
 
             foreach (NormalVehicleType value in Enum.GetValues(typeof(NormalVehicleType)))
@@ -281,6 +282,10 @@ namespace Oxide.Plugins
                     }
                 }
             }
+            if (HasAdminPermission(friend))
+            {
+                return null;
+            }
             SendCantUseMessage(friend, vehicle);
             return False;
         }
@@ -303,8 +308,11 @@ namespace Oxide.Plugins
                     return null;
                 }
             }
-
             if (AreFriends(vehicle.playerID, friend.userID))
+            {
+                return null;
+            }
+            if (HasAdminPermission(friend))
             {
                 return null;
             }
@@ -470,16 +478,17 @@ namespace Oxide.Plugins
             foreach (var entry in vehiclesCache.ToArray())
             {
                 if (entry.Key == null || entry.Key.IsDestroyed) continue;
-                if (VehicleIsActive(entry.Value, currentTimestamp)) continue;
+                if (VehicleIsActive(entry.Key, entry.Value, currentTimestamp)) continue;
                 if (VehicleAnyMounted(entry.Key)) continue;
                 entry.Key.Kill(BaseNetworkable.DestroyMode.Gib);
             }
         }
 
-        private bool VehicleIsActive(Vehicle vehicle, double currentTimestamp)
+        private bool VehicleIsActive(BaseEntity entity, Vehicle vehicle, double currentTimestamp)
         {
             var baseVehicleS = GetBaseVehicleS(vehicle.vehicleType);
             if (baseVehicleS.wipeTime <= 0) return true;
+            if (baseVehicleS.excludeCupboard && entity.GetBuildingPrivilege() != null) return true;
             return currentTimestamp - vehicle.lastDismount < baseVehicleS.wipeTime;
         }
 
@@ -1209,6 +1218,12 @@ namespace Oxide.Plugins
         }
 
         #endregion ClaimVehicle
+
+        #region Permission
+
+        private bool HasAdminPermission(BasePlayer player) => permission.UserHasPermission(player.UserIDString, PERMISSION_ADMIN);
+
+        #endregion Permission
 
         #region Helpers
 
@@ -3245,6 +3260,9 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Time Before Vehicle Wipe (Seconds)")]
             public double wipeTime;
+
+            [JsonProperty(PropertyName = "Exclude cupboard zones when wiping")]
+            public bool excludeCupboard;
 
             [JsonProperty(PropertyName = "Maximum Health")]
             public float maxHealth;
