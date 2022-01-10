@@ -1,11 +1,5 @@
 ﻿//Requires: ZoneManager
 
-using Facepunch;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
-using Oxide.Core;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -13,17 +7,23 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using Facepunch;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using Oxide.Core;
+using Oxide.Core.Libraries.Covalence;
+using Oxide.Core.Plugins;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.7", ResourceId = 2728)]
+    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.8", ResourceId = 2728)]
     [Description("Creates temporary PvP zones on certain actions/events")]
     public class DynamicPVP : RustPlugin
     {
         #region Fields
 
-        [PluginReference] private readonly Plugin ZoneManager, TruePVE, NextGenPVE, BotSpawn;
+        [PluginReference] private readonly Plugin ZoneManager, TruePVE, NextGenPVE, BotReSpawn;
 
         private const string PERMISSION_ADMIN = "dynamicpvp.admin";
         private const string PREFAB_SPHERE = "assets/prefabs/visualization/sphere.prefab";
@@ -216,14 +216,14 @@ namespace Oxide.Plugins
         }
 
         private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), () =>
-        {
-            SaveDebug();
-            if (dataChanged)
-            {
-                SaveData();
-                dataChanged = false;
-            }
-        });
+          {
+              SaveDebug();
+              if (dataChanged)
+              {
+                  SaveData();
+                  dataChanged = false;
+              }
+          });
 
         private void OnPlayerRespawned(BasePlayer player)
         {
@@ -968,10 +968,10 @@ namespace Oxide.Plugins
                     else stringBuilder.Append("Dome,");
                 }
 
-                var iBotSpawnEvent = baseEventS as IBotSpawnEvent;
-                if (BotSpawnAllowed(iBotSpawnEvent))
+                var iBotReSpawnEventS = baseEventS as IBotReSpawnEvent;
+                if (BotReSpawnAllowed(iBotReSpawnEventS))
                 {
-                    var botsSpawned = SpawnBots(position, iBotSpawnEvent.botProfileName, zoneID);
+                    var botsSpawned = SpawnBots(position, iBotReSpawnEventS.botProfileName, zoneID);
                     if (!botsSpawned) PrintDebug($"ERROR: Bot NOT spawned for zone({zoneID}).", error: true);
                     else stringBuilder.Append("Bots,");
                 }
@@ -1051,7 +1051,7 @@ namespace Oxide.Plugins
                 else stringBuilder.Append("Dome,");
             }
 
-            if (BotSpawnAllowed(baseEventS as IBotSpawnEvent))
+            if (BotReSpawnAllowed(baseEventS as IBotReSpawnEvent))
             {
                 var botsRemoved = KillBots(zoneID);
                 if (!botsRemoved) PrintDebug($"ERROR: Bot NOT killed for zone({zoneID} | {eventName}).", error: true);
@@ -1203,12 +1203,12 @@ namespace Oxide.Plugins
 
         #endregion TruePVE/NextGenPVE Integration
 
-        #region BotSpawn Integration
+        #region BotReSpawn  Integration
 
-        private bool BotSpawnAllowed(IBotSpawnEvent iBotSpawnEventS)
+        private bool BotReSpawnAllowed(IBotReSpawnEvent iBotReSpawnEventS)
         {
-            if (BotSpawn == null || iBotSpawnEventS == null || string.IsNullOrEmpty(iBotSpawnEventS.botProfileName)) return false;
-            return iBotSpawnEventS.botsEnabled;
+            if (BotReSpawn == null || iBotReSpawnEventS == null || string.IsNullOrEmpty(iBotReSpawnEventS.botProfileName)) return false;
+            return iBotReSpawnEventS.botsEnabled;
         }
 
         private bool SpawnBots(Vector3 zoneLocation, string zoneProfile, string zoneGroupID)
@@ -1244,11 +1244,11 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private string[] CreateGroupSpawn(Vector3 location, string profileName, string group) => (string[])BotSpawn?.Call("AddGroupSpawn", location, profileName, group);
+        private string[] CreateGroupSpawn(Vector3 location, string profileName, string group, int quantity = 0) => (string[])BotReSpawn?.Call("AddGroupSpawn", location, profileName, group, quantity);
 
-        private string[] RemoveGroupSpawn(string group) => (string[])BotSpawn?.Call("RemoveGroupSpawn", group);
+        private string[] RemoveGroupSpawn(string group) => (string[])BotReSpawn?.Call("RemoveGroupSpawn", group);
 
-        #endregion BotSpawn Integration
+        #endregion BotReSpawn  Integration
 
         #region ZoneManager Integration
 
@@ -1437,9 +1437,9 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private bool UpdateEventDataValue()
-        {
-        }
+        // private bool UpdateEventDataValue()
+        // {
+        // }
 
         private bool StopEvent(string eventName)
         {
@@ -1738,7 +1738,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private class BotDomeMixedEventS : DomeMixedEventS, IBotSpawnEvent
+        private class BotDomeMixedEventS : DomeMixedEventS, IBotReSpawnEvent
         {
             public bool botsEnabled { get; set; }
             public string botProfileName { get; set; } = string.Empty;
@@ -1835,7 +1835,7 @@ namespace Oxide.Plugins
             float duration { get; set; }
         }
 
-        private interface IBotSpawnEvent
+        private interface IBotReSpawnEvent
         {
             [JsonProperty(PropertyName = "Enable Bots (Need BotSpawn Plugin)", Order = 21)]
             bool botsEnabled { get; set; }
