@@ -12,7 +12,6 @@ using Newtonsoft.Json.Converters;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust;
-using ProtoBuf;
 using Rust.Modular;
 using UnityEngine;
 
@@ -638,17 +637,17 @@ namespace Oxide.Plugins
 
                     case NormalVehicleType.Snowmobile:
                     case NormalVehicleType.TomahaSnowmobile:
-                    {
-                        var snowmobile = entity as Snowmobile;
-                        if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                         {
-                            fuelSystem = snowmobile?.GetFuelSystem();
+                            var snowmobile = entity as Snowmobile;
+                            if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
+                            {
+                                fuelSystem = snowmobile?.GetFuelSystem();
+                            }
+                            if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
+                            {
+                                inventory = snowmobile?.GetItemContainer()?.inventory;
+                            }
                         }
-                        if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
-                        {
-                            inventory = snowmobile?.GetItemContainer()?.inventory;
-                        }
-                    }
                         break;
 
                     default: return;
@@ -905,16 +904,16 @@ namespace Oxide.Plugins
 
                     case NormalVehicleType.RHIB:
                     case NormalVehicleType.Rowboat:
-                            itemContainer = ((entity as MotorRowboat)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
-                            break;
+                        itemContainer = ((entity as MotorRowboat)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
+                        break;
 
                     case NormalVehicleType.HotAirBalloon:
-                            itemContainer = ((entity as HotAirBalloon)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
-                            break;
+                        itemContainer = ((entity as HotAirBalloon)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
+                        break;
 
                     case NormalVehicleType.RidableHorse:
                         itemContainer = (entity as RidableHorse)?.inventory;
-                            break;
+                        break;
 
                     case NormalVehicleType.SubmarineSolo:
                     case NormalVehicleType.SubmarineDuo:
@@ -3266,6 +3265,7 @@ namespace Oxide.Plugins
                     }
                 },
             };
+
             [JsonProperty(PropertyName = "Snowmobile Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public InvFuelVehicleS snowmobileS = new InvFuelVehicleS
             {
@@ -3275,7 +3275,7 @@ namespace Oxide.Plugins
                 minDistanceForPlayers = 2,
                 usePermission = true,
                 permission = "vehiclelicence.snowmobile",
-                commands = new List<string> { "snow" },
+                commands = new List<string> { "snow", "snowmobile" },
                 purchasePrices = new Dictionary<string, PriceInfo>
                 {
                     ["scrap"] = new PriceInfo { amount = 1000, displayName = "Scrap" }
@@ -3291,6 +3291,7 @@ namespace Oxide.Plugins
                     }
                 },
             };
+
             [JsonProperty(PropertyName = "Tomaha Snowmobile Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public InvFuelVehicleS tomahaSnowmobileS = new InvFuelVehicleS
             {
@@ -3300,7 +3301,7 @@ namespace Oxide.Plugins
                 minDistanceForPlayers = 2,
                 usePermission = true,
                 permission = "vehiclelicence.tomahasnowmobile",
-                commands = new List<string> { "tsnow" },
+                commands = new List<string> { "tsnow", "tsnowmobile" },
                 purchasePrices = new Dictionary<string, PriceInfo>
                 {
                     ["scrap"] = new PriceInfo { amount = 1000, displayName = "Scrap" }
