@@ -12,12 +12,13 @@ using Newtonsoft.Json.Converters;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust;
+using ProtoBuf;
 using Rust.Modular;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.24")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.25")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -51,6 +52,9 @@ namespace Oxide.Plugins
         private const string PREFAB_CHASSIS_MEDIUM = "assets/content/vehicles/modularcar/car_chassis_3module.entity.prefab";
         private const string PREFAB_CHASSIS_LARGE = "assets/content/vehicles/modularcar/car_chassis_4module.entity.prefab";
 
+        private const string PREFAB_SNOWMOBILE = "assets/content/vehicles/snowmobiles/snowmobile.prefab";
+        private const string PREFAB_SNOWMOBILE_TOMAHA = "assets/content/vehicles/snowmobiles/tomahasnowmobile.prefab";
+
         private const int LAYER_GROUND = Rust.Layers.Solid | Rust.Layers.Mask.Water;
 
         private static object False;
@@ -76,6 +80,8 @@ namespace Oxide.Plugins
             MagnetCrane,
             SubmarineSolo,
             SubmarineDuo,
+            Snowmobile,
+            TomahaSnowmobile,
         }
 
         public enum ChassisType
@@ -630,6 +636,21 @@ namespace Oxide.Plugins
                         }
                         break;
 
+                    case NormalVehicleType.Snowmobile:
+                    case NormalVehicleType.TomahaSnowmobile:
+                    {
+                        var snowmobile = entity as Snowmobile;
+                        if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
+                        {
+                            fuelSystem = snowmobile?.GetFuelSystem();
+                        }
+                        if (CanRefundInventory(baseVehicleS, isCrash, isUnload))
+                        {
+                            inventory = snowmobile?.GetItemContainer()?.inventory;
+                        }
+                    }
+                        break;
+
                     default: return;
                 }
 
@@ -782,6 +803,11 @@ namespace Oxide.Plugins
                         fuelSystem = (entity as BaseSubmarine)?.GetFuelSystem();
                         break;
 
+                    case NormalVehicleType.Snowmobile:
+                    case NormalVehicleType.TomahaSnowmobile:
+                        fuelSystem = (entity as Snowmobile)?.GetFuelSystem();
+                        break;
+
                     default: return;
                 }
 
@@ -879,28 +905,25 @@ namespace Oxide.Plugins
 
                     case NormalVehicleType.RHIB:
                     case NormalVehicleType.Rowboat:
-                        {
                             itemContainer = ((entity as MotorRowboat)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
-                        }
-                        break;
+                            break;
 
                     case NormalVehicleType.HotAirBalloon:
-                        {
                             itemContainer = ((entity as HotAirBalloon)?.storageUnitInstance.Get(true) as StorageContainer)?.inventory;
-                        }
-                        break;
+                            break;
 
                     case NormalVehicleType.RidableHorse:
-                        {
-                            itemContainer = (entity as RidableHorse)?.inventory;
-                        }
-                        break;
+                        itemContainer = (entity as RidableHorse)?.inventory;
+                            break;
 
                     case NormalVehicleType.SubmarineSolo:
                     case NormalVehicleType.SubmarineDuo:
-                        {
-                            itemContainer = (entity as BaseSubmarine)?.GetTorpedoContainer()?.inventory;
-                        }
+                        itemContainer = (entity as BaseSubmarine)?.GetTorpedoContainer()?.inventory;
+                        break;
+
+                    case NormalVehicleType.Snowmobile:
+                    case NormalVehicleType.TomahaSnowmobile:
+                        itemContainer = (entity as Snowmobile)?.GetItemContainer()?.inventory;
                         break;
                 }
                 if (itemContainer != null)
@@ -1132,6 +1155,8 @@ namespace Oxide.Plugins
                 case NormalVehicleType.MagnetCrane: return configData.normalVehicleS.magnetCraneS;
                 case NormalVehicleType.SubmarineSolo: return configData.normalVehicleS.submarineSoloS;
                 case NormalVehicleType.SubmarineDuo: return configData.normalVehicleS.submarineDuoS;
+                case NormalVehicleType.Snowmobile: return configData.normalVehicleS.snowmobileS;
+                case NormalVehicleType.TomahaSnowmobile: return configData.normalVehicleS.tomahaSnowmobileS;
                 default: return null;
             }
         }
@@ -1275,6 +1300,8 @@ namespace Oxide.Plugins
                     case NormalVehicleType.MagnetCrane: return PREFAB_MAGNET_CRANE;
                     case NormalVehicleType.SubmarineSolo: return PREFAB_SUBMARINE_SOLO;
                     case NormalVehicleType.SubmarineDuo: return PREFAB_SUBMARINE_DUO;
+                    case NormalVehicleType.Snowmobile: return PREFAB_SNOWMOBILE;
+                    case NormalVehicleType.TomahaSnowmobile: return PREFAB_SNOWMOBILE_TOMAHA;
                 }
             }
             else
@@ -3224,6 +3251,56 @@ namespace Oxide.Plugins
                 usePermission = true,
                 permission = "vehiclelicence.submarineduo",
                 commands = new List<string> { "subduo", "duo" },
+                purchasePrices = new Dictionary<string, PriceInfo>
+                {
+                    ["scrap"] = new PriceInfo { amount = 1000, displayName = "Scrap" }
+                },
+                spawnCooldown = 300,
+                recallCooldown = 30,
+                cooldownPermissions = new Dictionary<string, CooldownPermissionS>
+                {
+                    ["vehiclelicence.vip"] = new CooldownPermissionS
+                    {
+                        spawnCooldown = 150,
+                        recallCooldown = 10,
+                    }
+                },
+            };
+            [JsonProperty(PropertyName = "Snowmobile Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public InvFuelVehicleS snowmobileS = new InvFuelVehicleS
+            {
+                purchasable = true,
+                displayName = "Snowmobile",
+                distance = 5,
+                minDistanceForPlayers = 2,
+                usePermission = true,
+                permission = "vehiclelicence.snowmobile",
+                commands = new List<string> { "snow" },
+                purchasePrices = new Dictionary<string, PriceInfo>
+                {
+                    ["scrap"] = new PriceInfo { amount = 1000, displayName = "Scrap" }
+                },
+                spawnCooldown = 300,
+                recallCooldown = 30,
+                cooldownPermissions = new Dictionary<string, CooldownPermissionS>
+                {
+                    ["vehiclelicence.vip"] = new CooldownPermissionS
+                    {
+                        spawnCooldown = 150,
+                        recallCooldown = 10,
+                    }
+                },
+            };
+            [JsonProperty(PropertyName = "Tomaha Snowmobile Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public InvFuelVehicleS tomahaSnowmobileS = new InvFuelVehicleS
+            {
+                purchasable = true,
+                displayName = "Tomaha Snowmobile",
+                distance = 5,
+                minDistanceForPlayers = 2,
+                usePermission = true,
+                permission = "vehiclelicence.tomahasnowmobile",
+                commands = new List<string> { "tsnow" },
                 purchasePrices = new Dictionary<string, PriceInfo>
                 {
                     ["scrap"] = new PriceInfo { amount = 1000, displayName = "Scrap" }
