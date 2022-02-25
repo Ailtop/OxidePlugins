@@ -11,14 +11,14 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode", "Wulf/lukespragg/Arainrr", "4.2.9", ResourceId = 673)]
-    [Description("Allows players with permission to be invulerable and god-like")]
+    [Info("Godmode", "Wulf/lukespragg/Arainrr", "4.2.10", ResourceId = 673)]
+    [Description("Allows players with permission to be invulnerable and god-like")]
     internal class Godmode : RustPlugin
     {
         #region Fields
 
         private const string PermAdmin = "godmode.admin";
-        private const string PermInvulerable = "godmode.invulnerable";
+        private const string PermInvulnerable = "godmode.invulnerable";
         private const string PermLootPlayers = "godmode.lootplayers";
         private const string PermLootProtection = "godmode.lootprotection";
         private const string PermNoAttacking = "godmode.noattacking";
@@ -28,7 +28,7 @@ namespace Oxide.Plugins
 
         private static object False, True;
 
-        private Dictionary<ulong, float> informHistory;
+        private Dictionary<ulong, float> _informHistory;
 
         #endregion Fields
 
@@ -40,7 +40,7 @@ namespace Oxide.Plugins
             False = false;
             True = true;
             permission.RegisterPermission(PermAdmin, this);
-            permission.RegisterPermission(PermInvulerable, this);
+            permission.RegisterPermission(PermInvulnerable, this);
             permission.RegisterPermission(PermLootPlayers, this);
             permission.RegisterPermission(PermLootProtection, this);
             permission.RegisterPermission(PermNoAttacking, this);
@@ -50,16 +50,22 @@ namespace Oxide.Plugins
 
             AddCovalenceCommand(configData.godCommand, nameof(GodCommand));
             AddCovalenceCommand(configData.godsCommand, nameof(GodsCommand));
-            if (configData.informOnAttack) informHistory = new Dictionary<ulong, float>();
+            if (configData.informOnAttack) _informHistory = new Dictionary<ulong, float>();
             if (!configData.disconnectDisable) Unsubscribe(nameof(OnPlayerDisconnected));
         }
 
         private void OnServerInitialized()
         {
-            foreach (var god in storedData.godPlayers)
+            foreach (var god in storedData.godPlayers.ToArray())
             {
+                if (!permission.UserHasPermission(god, PermToggle))
+                {
+                    storedData.godPlayers.Remove(god);
+                    continue;
+                }
                 EnableGodmode(god, true);
             }
+            CheckHooks();
         }
 
         private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), SaveData);
@@ -111,7 +117,7 @@ namespace Oxide.Plugins
         {
             if (player == null || !player.userID.IsSteamId()) return null;
             var attacker = info?.InitiatorPlayer;
-            if (IsGod(player) && permission.UserHasPermission(player.UserIDString, PermInvulerable))
+            if (IsGod(player) && permission.UserHasPermission(player.UserIDString, PermInvulnerable))
             {
                 InformPlayers(player, attacker);
                 NullifyDamage(ref info);
@@ -165,26 +171,26 @@ namespace Oxide.Plugins
         {
             if (!configData.informOnAttack || victim == null || attacker == null || victim == attacker) return;
             float victimTime;
-            if (!informHistory.TryGetValue(victim.userID, out victimTime))
+            if (!_informHistory.TryGetValue(victim.userID, out victimTime))
             {
-                informHistory.Add(victim.userID, 0);
+                _informHistory.Add(victim.userID, 0);
             }
             float attackerTime;
-            if (!informHistory.TryGetValue(attacker.userID, out attackerTime))
+            if (!_informHistory.TryGetValue(attacker.userID, out attackerTime))
             {
-                informHistory.Add(attacker.userID, 0);
+                _informHistory.Add(attacker.userID, 0);
             }
             var currentTime = Time.realtimeSinceStartup;
             if (IsGod(victim))
             {
                 if (currentTime - victimTime > configData.informInterval)
                 {
-                    informHistory[victim.userID] = currentTime;
+                    _informHistory[victim.userID] = currentTime;
                     Print(attacker, Lang("InformAttacker", attacker.UserIDString, victim.displayName));
                 }
                 if (currentTime - attackerTime > configData.informInterval)
                 {
-                    informHistory[attacker.userID] = currentTime;
+                    _informHistory[attacker.userID] = currentTime;
                     Print(victim, Lang("InformVictim", victim.UserIDString, attacker.displayName));
                 }
             }
@@ -192,12 +198,12 @@ namespace Oxide.Plugins
             {
                 if (currentTime - victimTime > configData.informInterval)
                 {
-                    informHistory[victim.userID] = currentTime;
+                    _informHistory[victim.userID] = currentTime;
                     Print(attacker, Lang("CantAttack", attacker.UserIDString, victim.displayName));
                 }
                 if (currentTime - attackerTime > configData.informInterval)
                 {
-                    informHistory[attacker.userID] = currentTime;
+                    _informHistory[attacker.userID] = currentTime;
                     Print(victim, Lang("InformVictim", victim.UserIDString, attacker.displayName));
                 }
             }
@@ -224,29 +230,27 @@ namespace Oxide.Plugins
                 else Print(target, Lang("GodmodeDisabledBy", target.UserIDString, "server console"));
                 return false;
             }
-            else
+
+            EnableGodmode(target.UserIDString);
+            if (player != null)
             {
-                EnableGodmode(target.UserIDString);
-                if (player != null)
+                if (target == player) Print(player, Lang("GodmodeEnabled", player.UserIDString));
+                else
                 {
-                    if (target == player) Print(player, Lang("GodmodeEnabled", player.UserIDString));
-                    else
-                    {
-                        Print(player, Lang("GodmodeEnabledFor", player.UserIDString, target.displayName));
-                        Print(target, Lang("GodmodeEnabledBy", target.UserIDString, player.displayName));
-                    }
+                    Print(player, Lang("GodmodeEnabledFor", player.UserIDString, target.displayName));
+                    Print(target, Lang("GodmodeEnabledBy", target.UserIDString, player.displayName));
                 }
-                else Print(target, Lang("GodmodeEnabledBy", target.UserIDString, "server console"));
-                string targetID = target.UserIDString;
-                if (configData.timeLimit > 0) timer.Once(configData.timeLimit, () => DisableGodmode(targetID));
-                return true;
             }
+            else Print(target, Lang("GodmodeEnabledBy", target.UserIDString, "server console"));
+            string targetId = target.UserIDString;
+            if (configData.timeLimit > 0) timer.Once(configData.timeLimit, () => DisableGodmode(targetId));
+            return true;
         }
 
-        private bool EnableGodmode(string playerID, bool isInit = false)
+        private bool EnableGodmode(string playerId, bool isInit = false)
         {
-            if (string.IsNullOrEmpty(playerID) || IsGod(playerID)) return false;
-            var player = RustCore.FindPlayerByIdString(playerID);
+            if (string.IsNullOrEmpty(playerId) || IsGod(playerId)) return false;
+            var player = RustCore.FindPlayerByIdString(playerId);
             if (player == null) return false;
             PlayerRename(player, true);
             ModifyMetabolism(player, true);
@@ -255,14 +259,14 @@ namespace Oxide.Plugins
                 storedData.godPlayers.Add(player.UserIDString);
                 CheckHooks();
             }
-            Interface.CallHook("OnGodmodeToggled", playerID, true);
+            Interface.CallHook("OnGodmodeToggled", playerId, true);
             return true;
         }
 
-        private bool DisableGodmode(string playerID, bool isUnload = false)
+        private bool DisableGodmode(string playerId, bool isUnload = false)
         {
-            if (string.IsNullOrEmpty(playerID) || !IsGod(playerID)) return false;
-            var player = RustCore.FindPlayerByIdString(playerID);
+            if (string.IsNullOrEmpty(playerId) || !IsGod(playerId)) return false;
+            var player = RustCore.FindPlayerByIdString(playerId);
             if (player == null) return false;
             PlayerRename(player, false);
             ModifyMetabolism(player, false);
@@ -271,7 +275,7 @@ namespace Oxide.Plugins
                 storedData.godPlayers.Remove(player.UserIDString);
                 CheckHooks();
             }
-            Interface.CallHook("OnGodmodeToggled", playerID, false);
+            Interface.CallHook("OnGodmodeToggled", playerId, false);
             return true;
         }
 
@@ -367,9 +371,9 @@ namespace Oxide.Plugins
             player.metabolism.SendChangesToClient();
         }
 
-        private static string GetPayerOriginalName(ulong playerID)
+        private static string GetPayerOriginalName(ulong playerId)
         {
-            return SingletonComponent<ServerMgr>.Instance.persistance.GetPlayerName(playerID);
+            return SingletonComponent<ServerMgr>.Instance.persistance.GetPlayerName(playerId);
         }
 
         #endregion Helpers
@@ -378,19 +382,19 @@ namespace Oxide.Plugins
 
         private bool EnableGodmode(IPlayer iPlayer) => EnableGodmode(iPlayer.Id);
 
-        private bool EnableGodmode(ulong playerID) => EnableGodmode(playerID.ToString());
+        private bool EnableGodmode(ulong playerId) => EnableGodmode(playerId.ToString());
 
         private bool DisableGodmode(IPlayer iPlayer) => DisableGodmode(iPlayer.Id);
 
-        private bool DisableGodmode(ulong playerID) => DisableGodmode(playerID.ToString());
+        private bool DisableGodmode(ulong playerId) => DisableGodmode(playerId.ToString());
 
-        private bool IsGod(ulong playerID) => IsGod(playerID.ToString());
+        private bool IsGod(ulong playerId) => IsGod(playerId.ToString());
 
         private bool IsGod(BasePlayer player) => player != null && IsGod(player.UserIDString);
 
-        private bool IsGod(string playerID) => storedData.godPlayers.Contains(playerID);
+        private bool IsGod(string playerId) => storedData.godPlayers.Contains(playerId);
 
-        private string[] AllGods(string playerID) => storedData.godPlayers.ToArray();
+        private string[] AllGods(string playerId) => storedData.godPlayers.ToArray();
 
         #endregion API
 
