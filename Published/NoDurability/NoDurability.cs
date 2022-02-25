@@ -5,7 +5,7 @@ using Oxide.Core.Plugins;
 
 namespace Oxide.Plugins
 {
-    [Info("No Durability", "Wulf/lukespragg/Arainrr", "2.2.4", ResourceId = 1061)]
+    [Info("No Durability", "Wulf/lukespragg/Arainrr", "2.2.5", ResourceId = 1061)]
     public class NoDurability : RustPlugin
     {
         #region Fields
@@ -21,7 +21,13 @@ namespace Oxide.Plugins
 
         private void OnLoseCondition(Item item, ref float amount)
         {
-            if (item == null || configData.itemExcludeList.Contains(item.info.shortname)) return;
+            if (item == null) return;
+            if (configData.itemListIsBlackList
+                ? configData.itemList.Contains(item.info.shortname)
+                : !configData.itemList.Contains(item.info.shortname))
+            {
+                return;
+            }
             var player = item.GetOwnerPlayer() ?? item.GetRootContainer()?.GetOwnerPlayer();
             if (player == null || !permission.UserHasPermission(player.UserIDString, PERMISSION_USE)) return;
             if (configData.useZoneManager && ZoneManager != null)
@@ -35,18 +41,19 @@ namespace Oxide.Plugins
                     }
                     if (configData.excludeDynPVPZone && DynamicPVP != null)
                     {
-                        foreach (var zoneID in zoneIDs)
+                        foreach (var zoneId in zoneIDs)
                         {
-                            if (IsPlayerInZone(zoneID, player) && IsDynamicPVPZone(zoneID))
+                            if (IsPlayerInZone(zoneId, player) && IsDynamicPVPZone(zoneId))
                             {
                                 return;
                             }
                         }
                         return;
                     }
-                    foreach (var zoneID in configData.zoneExcludeList)
+
+                    foreach (var zoneId in configData.zoneList)
                     {
-                        if (IsPlayerInZone(zoneID, player))
+                        if (IsPlayerInZone(zoneId, player))
                         {
                             return;
                         }
@@ -92,10 +99,13 @@ namespace Oxide.Plugins
             public bool excludeDynPVPZone;
 
             [JsonProperty(PropertyName = "Zone exclude list (Zone ID)")]
-            public HashSet<string> zoneExcludeList = new HashSet<string>();
+            public HashSet<string> zoneList = new HashSet<string>();
 
-            [JsonProperty(PropertyName = "Item exclude list (Item shortname)")]
-            public HashSet<string> itemExcludeList = new HashSet<string>();
+            [JsonProperty(PropertyName = "Item list (Item short name)")]
+            public HashSet<string> itemList = new HashSet<string>();
+
+            [JsonProperty(PropertyName = "Item list is a blacklist? (If false, it's is a whitelist)")]
+            public bool itemListIsBlackList = true;
         }
 
         protected override void LoadConfig()
