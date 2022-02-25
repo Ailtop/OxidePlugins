@@ -1,28 +1,32 @@
 ﻿using System.Collections.Generic;
+using CompanionServer.Handlers;
+using Network;
 using Newtonsoft.Json;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SAM Site Map", "Arainrr", "1.3.7")]
+    [Info("SAM Site Map", "Arainrr", "1.4.0")]
     [Description("Mark all SAM sites on the map")]
     internal class SamSiteMap : RustPlugin
     {
+        #region Fields
+
         private const string PERMISSION_USE = "samsitemap.use";
         private const string PREFAB_MARKER = "assets/prefabs/tools/map/genericradiusmarker.prefab";
         private const string PREFAB_TEXT = "assets/prefabs/deployable/vendingmachine/vending_mapmarker.prefab";
-        private readonly HashSet<MapMarker> mapMarkers = new HashSet<MapMarker>();
-        private readonly Dictionary<SamSite, MapMarkerGenericRadius> samSiteMarkers = new Dictionary<SamSite, MapMarkerGenericRadius>();
+
+        private static SamSiteMap _instance;
+
+        #endregion Fields
+
+        #region Oxide Hooks
 
         private void Init()
         {
-            permission.RegisterPermission(PERMISSION_USE, this);
-
+            _instance = this;
             Unsubscribe(nameof(OnEntitySpawned));
-            if (!configData.usePermission)
-            {
-                Unsubscribe(nameof(CanNetworkTo));
-            }
+            permission.RegisterPermission(PERMISSION_USE, this);
         }
 
         private void OnServerInitialized()
@@ -33,161 +37,415 @@ namespace Oxide.Plugins
                 var samSite = severEntity as SamSite;
                 if (samSite != null)
                 {
-                    OnEntitySpawned(samSite);
+                    CreateMapMarker(samSite);
                 }
+            }
+
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                OnPlayerConnected(player);
             }
         }
 
-        private object CanNetworkTo(MapMarker marker, BasePlayer player)
+        private void Unload()
         {
-            if (marker == null || player == null) return null;
-            if (!mapMarkers.Contains(marker)) return null;
-            if (permission.UserHasPermission(player.UserIDString, PERMISSION_USE)) return null;
-            return false;
+            SamSiteMapMarker.DestroyAll();
+            _instance = null;
         }
 
         private void OnPlayerConnected(BasePlayer player)
         {
-            if (configData.usePermission && !permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
+            if (player == null || !player.IsConnected) return;
+            if (player.IsReceivingSnapshot)
             {
+                timer.Once(1f, () => OnPlayerConnected(player));
                 return;
             }
-            foreach (var entry in samSiteMarkers)
+            if (configData.usePermission)
             {
-                if (entry.Value == null) continue;
-                foreach (var mapMarker in entry.Value.GetComponentsInChildren<MapMarker>())
-                {
-                    var mapMarkerGenericRadius = mapMarker as MapMarkerGenericRadius;
-                    if (mapMarkerGenericRadius != null)
-                        mapMarkerGenericRadius.SendUpdate();
-                    else mapMarker.SendNetworkUpdate();
-                }
-                entry.Value.SendUpdate();
+                SamSiteMapMarker.SendSnapshotToPlayer(player);
+                return;
             }
+            SamSiteMapMarker.SendUpdateToPlayers();
         }
 
         private void OnEntitySpawned(SamSite samSite)
         {
-            NextTick(() =>
-            {
-                if (samSite == null) return;
-                CreateMapMarker(samSite, samSite.OwnerID == 0);
-            });
+            CreateMapMarker(samSite);
         }
 
-        private void OnEntityKill(SamSite samSite)
-        {
-            if (samSite == null) return;
-            MapMarkerGenericRadius mapMarker;
-            if (!samSiteMarkers.TryGetValue(samSite, out mapMarker)) return;
-            KillMapMarker(mapMarker);
-            samSiteMarkers.Remove(samSite);
-        }
+        #endregion Oxide Hooks
 
-        private void OnEntityKill(MapMarker mapMarker) => mapMarkers.Remove(mapMarker);
+        #region Methods
 
-        private void Unload()
+        private void CreateMapMarker(SamSite samSite)
         {
-            foreach (var entry in samSiteMarkers)
+            var settings = GetSamSiteSettings(samSite);
+            if (!settings.enabled)
             {
-                KillMapMarker(entry.Value);
+                return;
             }
-        }
-
-        private void KillMapMarker(MapMarkerGenericRadius mapMarker)
-        {
-            if (mapMarker != null && !mapMarker.IsDestroyed)
+            if (samSite.GetComponent<SamSiteMapMarker>() != null)
             {
-                mapMarker.KillMessage();
+                return;
             }
+            samSite.gameObject.AddComponent<SamSiteMapMarker>().Init(settings, configData.usePermission, configData.checkInterval);
         }
 
-        private void CreateMapMarker(SamSite samSite, bool isStatic = false)
+        private SamSiteSettings GetSamSiteSettings(SamSite samSite)
         {
-            if (isStatic ? !configData.staticSamS.enabled : !configData.playerSamS.enabled) return;
-            if (samSiteMarkers.ContainsKey(samSite)) return;
-            //Text map marker
-            VendingMachineMapMarker machineMapMarker = null;
-            if (!string.IsNullOrEmpty(isStatic ? configData.staticSamS.samSiteMarker.text : configData.playerSamS.samSiteMarker.text))
+            return samSite.OwnerID == 0 ? configData.staticSamS : configData.playerSamS;
+        }
+
+        #endregion Methods
+
+        #region MapMarker
+
+        private class SamSiteMapMarker : MonoBehaviour
+        {
+            #region Static
+
+            private static List<SamSiteMapMarker> _mapMarkers;
+
+            public static void DestroyAll()
             {
-                machineMapMarker = GameManager.server.CreateEntity(PREFAB_TEXT, samSite.transform.position) as VendingMachineMapMarker;
-                if (machineMapMarker != null)
+                if (_mapMarkers == null) return;
+                foreach (var samMapMarker in _mapMarkers)
                 {
-                    machineMapMarker.markerShopName = isStatic ? configData.staticSamS.samSiteMarker.text : configData.playerSamS.samSiteMarker.text;
-                    machineMapMarker.OwnerID = samSite.OwnerID;
-                    mapMarkers.Add(machineMapMarker);
-                    machineMapMarker.Spawn();
-                    machineMapMarker.SendNetworkUpdate();
-                    if (configData.usePermission)
+                    Destroy(samMapMarker);
+                }
+                _mapMarkers.Clear();
+                _mapMarkers = null;
+            }
+
+            public static void SendUpdateToPlayers()
+            {
+                if (_mapMarkers == null) return;
+                foreach (var mapMarker in _mapMarkers)
+                {
+                    if (!mapMarker.CanSeeMapMarker()) continue;
+                    mapMarker.EnableMarkers();
+                }
+            }
+
+            private static void SendSnapshotToPlayers()
+            {
+                if (_mapMarkers == null) return;
+                foreach (var player in BasePlayer.activePlayerList)
+                {
+                    SendSnapshotToPlayer(player);
+                }
+            }
+
+            public static void SendSnapshotToPlayer(BasePlayer player)
+            {
+                if (_mapMarkers == null) return;
+                if (_instance.permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
+                {
+                    foreach (var mapMarker in _mapMarkers)
                     {
-                        MapMarker.serverMapMarkers.Remove(machineMapMarker);
+                        if (!mapMarker.CanSeeMapMarker()) continue;
+                        mapMarker.UnlimitedMarkers(player.Connection);
                     }
                 }
             }
-            //Attack range map marker
-            MapMarkerGenericRadius radiusMapMarker = null;
-            if ((isStatic && configData.staticSamS.samSiteMarker.samSiteRadiusMarker.enabled) || (!isStatic && configData.playerSamS.samSiteMarker.samSiteRadiusMarker.enabled))
+
+            #endregion Static
+
+            private SamSite _samSite;
+            private MapMarkerGenericRadius _mapMarker;
+            private MapMarkerGenericRadius _radiusMapMarker;
+            private VendingMachineMapMarker _textMapMarker;
+            private bool _usePermission;
+            private SamSiteSettings _setting;
+            private bool _tempCanShow;
+
+            private void Awake()
             {
-                radiusMapMarker = GameManager.server.CreateEntity(PREFAB_MARKER, samSite.transform.position) as MapMarkerGenericRadius;
-                if (radiusMapMarker != null)
+                if (_mapMarkers == null) _mapMarkers = new List<SamSiteMapMarker>();
+                _mapMarkers.Add(this);
+                _samSite = GetComponent<SamSite>();
+            }
+
+            public void Init(SamSiteSettings settings, bool usePermission, float checkInterval)
+            {
+                _setting = settings;
+                _usePermission = usePermission;
+                SpawnMapMarkers(settings.samSiteMarkerSetting, usePermission);
+                _tempCanShow = CanSeeMapMarker();
+                if (usePermission)
                 {
-                    radiusMapMarker.alpha = isStatic ? configData.staticSamS.samSiteMarker.samSiteRadiusMarker.alpha : configData.playerSamS.samSiteMarker.samSiteRadiusMarker.alpha;
-                    var color1 = isStatic ? configData.staticSamS.samSiteMarker.samSiteRadiusMarker.colorl : configData.playerSamS.samSiteMarker.samSiteRadiusMarker.colorl;
-                    if (!ColorUtility.TryParseHtmlString(color1, out radiusMapMarker.color1))
+                    if (_tempCanShow)
                     {
-                        radiusMapMarker.color1 = Color.black;
-                        PrintError($"Invalid range map marker color1: {color1}");
+                        Show();
                     }
-                    var color2 = isStatic ? configData.staticSamS.samSiteMarker.samSiteRadiusMarker.color2 : configData.playerSamS.samSiteMarker.samSiteRadiusMarker.color2;
-                    if (!ColorUtility.TryParseHtmlString(color2, out radiusMapMarker.color2))
+                }
+                else
+                {
+                    if (!_tempCanShow)
                     {
-                        radiusMapMarker.color2 = Color.white;
-                        PrintError($"Invalid range map marker color2: {color2}");
+                        Hide();
                     }
-                    radiusMapMarker.radius = samSite.vehicleScanRadius / 145f;
-                    radiusMapMarker.OwnerID = samSite.OwnerID;
-                    mapMarkers.Add(radiusMapMarker);
-                    radiusMapMarker.Spawn();
-                    radiusMapMarker.SendUpdate();
-                    if (configData.usePermission)
+                }
+                InvokeRepeating(nameof(TimedCheck), checkInterval, checkInterval);
+            }
+
+            private void SpawnMapMarkers(SamSiteMarkerSetting settings, bool usePermission)
+            {
+                //Text map marker
+                if (!string.IsNullOrEmpty(settings.text))
+                {
+                    _textMapMarker = GameManager.server.CreateEntity(PREFAB_TEXT, _samSite.transform.position) as VendingMachineMapMarker;
+                    if (_textMapMarker != null)
                     {
-                        MapMarker.serverMapMarkers.Remove(radiusMapMarker);
+                        _textMapMarker.markerShopName = settings.text;
+                        _textMapMarker.OwnerID = _samSite.OwnerID;
+                        if (usePermission)
+                        {
+                            _textMapMarker.limitNetworking = true;
+                        }
+                        _textMapMarker.Spawn();
+                        if (usePermission)
+                        {
+                            MapMarker.serverMapMarkers.Remove(_textMapMarker);
+                        }
+                    }
+                }
+                //Attack range map marker
+                if (settings.samSiteRadiusMarker.enabled)
+                {
+                    _radiusMapMarker = GameManager.server.CreateEntity(PREFAB_MARKER, _samSite.transform.position) as MapMarkerGenericRadius;
+                    if (_radiusMapMarker != null)
+                    {
+                        _radiusMapMarker.alpha = settings.samSiteRadiusMarker.alpha;
+                        var color1 = settings.samSiteRadiusMarker.colorl;
+                        if (!ColorUtility.TryParseHtmlString(color1, out _radiusMapMarker.color1))
+                        {
+                            _radiusMapMarker.color1 = Color.black;
+                            _instance.PrintError($"Invalid range map marker color1: {color1}");
+                        }
+                        var color2 = settings.samSiteRadiusMarker.color2;
+                        if (!ColorUtility.TryParseHtmlString(color2, out _radiusMapMarker.color2))
+                        {
+                            _radiusMapMarker.color2 = Color.white;
+                            _instance.PrintError($"Invalid range map marker color2: {color2}");
+                        }
+                        _radiusMapMarker.radius = _samSite.vehicleScanRadius / 145f;
+                        _radiusMapMarker.OwnerID = _samSite.OwnerID;
+                        if (usePermission)
+                        {
+                            _radiusMapMarker.limitNetworking = true;
+                        }
+                        _radiusMapMarker.Spawn();
+                        if (usePermission)
+                        {
+                            MapMarker.serverMapMarkers.Remove(_radiusMapMarker);
+                        }
+                        else
+                        {
+                            _radiusMapMarker.SendUpdate();
+                        }
+                    }
+                }
+
+                //Sam map marker
+                _mapMarker = GameManager.server.CreateEntity(PREFAB_MARKER, _samSite.transform.position) as MapMarkerGenericRadius;
+                if (_mapMarker != null)
+                {
+                    _mapMarker.alpha = settings.alpha;
+                    var color1 = settings.colorl;
+                    if (!ColorUtility.TryParseHtmlString(color1, out _mapMarker.color1))
+                    {
+                        _mapMarker.color1 = Color.black;
+                        _instance.PrintError($"Invalid map marker color1: {color1}");
+                    }
+                    var color2 = settings.color2;
+                    if (!ColorUtility.TryParseHtmlString(color2, out _mapMarker.color2))
+                    {
+                        _mapMarker.color2 = Color.white;
+                        _instance.PrintError($"Invalid map marker color2: {color2}");
+                    }
+                    _mapMarker.radius = settings.radius;
+                    _mapMarker.OwnerID = _samSite.OwnerID;
+                    if (usePermission)
+                    {
+                        _mapMarker.limitNetworking = true;
+                    }
+                    _mapMarker.Spawn();
+                    if (usePermission)
+                    {
+                        MapMarker.serverMapMarkers.Remove(_mapMarker);
+                    }
+                    else
+                    {
+                        _mapMarker.SendUpdate();
                     }
                 }
             }
-            //Sam map marker
-            MapMarkerGenericRadius mapMarker = GameManager.server.CreateEntity(PREFAB_MARKER, samSite.transform.position) as MapMarkerGenericRadius;
-            if (mapMarker != null)
+
+            private void TimedCheck()
             {
-                mapMarker.alpha = isStatic ? configData.staticSamS.samSiteMarker.alpha : configData.playerSamS.samSiteMarker.alpha;
-                var color1 = isStatic ? configData.staticSamS.samSiteMarker.colorl : configData.playerSamS.samSiteMarker.colorl;
-                if (!ColorUtility.TryParseHtmlString(color1, out mapMarker.color1))
+                var canShow = CanSeeMapMarker();
+                if (canShow != _tempCanShow)
                 {
-                    mapMarker.color1 = Color.black;
-                    PrintError($"Invalid map marker color1: {color1}");
+                    if (canShow)
+                    {
+                        Show();
+                    }
+                    else
+                    {
+                        Hide();
+                    }
                 }
-                var color2 = isStatic ? configData.staticSamS.samSiteMarker.color2 : configData.playerSamS.samSiteMarker.color2;
-                if (!ColorUtility.TryParseHtmlString(color2, out mapMarker.color2))
+                _tempCanShow = canShow;
+            }
+
+            private bool CanSeeMapMarker()
+            {
+                if (_setting.hideWhenNoPower)
                 {
-                    mapMarker.color2 = Color.white;
-                    PrintError($"Invalid map marker color2: {color2}");
+                    return _samSite.IsPowered();
                 }
-                mapMarker.radius = isStatic ? configData.staticSamS.samSiteMarker.radius : configData.playerSamS.samSiteMarker.radius;
-                mapMarker.OwnerID = samSite.OwnerID;
-                mapMarkers.Add(mapMarker);
-                mapMarker.Spawn();
-                mapMarker.SendUpdate();
-                if (configData.usePermission)
+                if (_setting.hideWhenNoAmmo)
                 {
-                    MapMarker.serverMapMarkers.Remove(mapMarker);
+                    return _samSite.HasAmmo();
+                }
+                return true;
+            }
+
+            private void Show()
+            {
+                // _instance.PrintError($"Show : {_usePermission} | {_samSite.OwnerID}");
+                if (_usePermission)
+                {
+                    SendSnapshotToPlayers();
+                }
+                else
+                {
+                    EnableMarkers();
                 }
             }
 
-            if (radiusMapMarker != null) radiusMapMarker.SetParent(mapMarker, true);
-            if (machineMapMarker != null) machineMapMarker.SetParent(mapMarker, true);
+            private void Hide()
+            {
+                // _instance.PrintError($"Hide : {_usePermission} | {_samSite.OwnerID}");
+                if (_usePermission)
+                {
+                    LimitedMarkers();
+                }
+                else
+                {
+                    DisableMarkers();
+                }
+            }
 
-            samSiteMarkers.Add(samSite, mapMarker);
+            #region Methods
+
+            private void EnableMarkers()
+            {
+                if (_mapMarker != null)
+                {
+                    if (_mapMarker.limitNetworking)
+                    {
+                        _mapMarker.limitNetworking = false;
+                        _mapMarker.SendNetworkUpdateImmediate();
+                    }
+                    _mapMarker.SendUpdate();
+                }
+                if (_radiusMapMarker != null)
+                {
+                    if (_radiusMapMarker.limitNetworking)
+                    {
+                        _radiusMapMarker.limitNetworking = false;
+                        _radiusMapMarker.SendNetworkUpdateImmediate();
+                    }
+                    _radiusMapMarker.SendUpdate();
+                }
+                if (_textMapMarker != null)
+                {
+                    if (_textMapMarker.limitNetworking)
+                    {
+                        _textMapMarker.limitNetworking = false;
+                        _textMapMarker.SendNetworkUpdateImmediate();
+                    }
+                    _textMapMarker.SendNetworkUpdate();
+                }
+            }
+
+            private void DisableMarkers()
+            {
+                if (_mapMarker != null)
+                {
+                    _mapMarker.limitNetworking = true;
+                }
+                if (_radiusMapMarker != null)
+                {
+                    _radiusMapMarker.limitNetworking = true;
+                }
+                if (_textMapMarker != null)
+                {
+                    _textMapMarker.limitNetworking = true;
+                }
+            }
+
+            private void LimitedMarkers()
+            {
+                if (_mapMarker != null)
+                {
+                    _mapMarker.limitNetworking = false;
+                    _mapMarker.limitNetworking = true;
+                }
+                if (_radiusMapMarker != null)
+                {
+                    _radiusMapMarker.limitNetworking = false;
+                    _radiusMapMarker.limitNetworking = true;
+                }
+                if (_textMapMarker != null)
+                {
+                    _textMapMarker.limitNetworking = false;
+                    _textMapMarker.limitNetworking = true;
+                }
+            }
+
+            private void UnlimitedMarkers(Connection connection)
+            {
+                if (_mapMarker != null)
+                {
+                    _mapMarker.SendAsSnapshot(connection);
+                    _mapMarker.SendUpdate();
+                }
+                if (_radiusMapMarker != null)
+                {
+                    _radiusMapMarker.SendAsSnapshot(connection);
+                    _radiusMapMarker.SendUpdate();
+                }
+                if (_textMapMarker != null)
+                {
+                    _textMapMarker.SendAsSnapshot(connection);
+                }
+            }
+
+            #endregion Methods
+
+            private void OnDestroy()
+            {
+                if (_mapMarker != null && !_mapMarker.IsDestroyed)
+                {
+                    _mapMarker.Kill();
+                }
+                if (_radiusMapMarker != null && !_radiusMapMarker.IsDestroyed)
+                {
+                    _radiusMapMarker.Kill();
+                }
+                if (_textMapMarker != null && !_textMapMarker.IsDestroyed)
+                {
+                    _textMapMarker.Kill();
+                }
+                _mapMarkers?.Remove(this);
+            }
         }
+
+        #endregion MapMarker
 
         #region ConfigurationFile
 
@@ -198,13 +456,16 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Use permission")]
             public bool usePermission = false;
 
+            [JsonProperty(PropertyName = "Time interval to check the show of markers (seconds)")]
+            public float checkInterval = 5f;
+
             [JsonProperty(PropertyName = "Static SAM settings")]
             public SamSiteSettings staticSamS = new SamSiteSettings
             {
                 enabled = true,
-                samSiteMarker = new SamSiteMarker
+                samSiteMarkerSetting = new SamSiteMarkerSetting
                 {
-                    radius = 0.08f,
+                    radius = 0.15f,
                     colorl = "#FF4500",
                     color2 = "#0000FF",
                     alpha = 1f,
@@ -222,7 +483,7 @@ namespace Oxide.Plugins
             public SamSiteSettings playerSamS = new SamSiteSettings
             {
                 enabled = true,
-                samSiteMarker = new SamSiteMarker
+                samSiteMarkerSetting = new SamSiteMarkerSetting
                 {
                     radius = 0.08f,
                     colorl = "#00FF00",
@@ -244,11 +505,17 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Enabled map marker")]
             public bool enabled = true;
 
+            [JsonProperty(PropertyName = "Hide when no power")]
+            public bool hideWhenNoPower = true;
+
+            [JsonProperty(PropertyName = "Hide when no ammo")]
+            public bool hideWhenNoAmmo = true;
+
             [JsonProperty(PropertyName = "SAM map marker")]
-            public SamSiteMarker samSiteMarker = new SamSiteMarker();
+            public SamSiteMarkerSetting samSiteMarkerSetting = new SamSiteMarkerSetting();
         }
 
-        private class SamSiteMarker
+        private class SamSiteMarkerSetting
         {
             [JsonProperty(PropertyName = "Map marker radius")]
             public float radius = 0.08f;
