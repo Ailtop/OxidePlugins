@@ -1,13 +1,12 @@
-﻿using Facepunch;
-using Newtonsoft.Json;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using Facepunch;
+using Newtonsoft.Json;
 using UnityEngine;
-using static SamSite;
 
 namespace Oxide.Plugins
 {
-    [Info("SAM Site Range", "gsuberland/Arainrr", "1.2.6")]
+    [Info("SAM Site Range", "gsuberland/Arainrr", "1.2.7")]
     [Description("Modifies SAM site range.")]
     internal class SAMSiteRange : RustPlugin
     {
@@ -36,12 +35,15 @@ namespace Oxide.Plugins
             False = null;
         }
 
-        private object OnSamSiteTargetScan(SamSite samSite, List<ISamSiteTarget> result)
+        private object OnSamSiteTargetScan(SamSite samSite, List<SamSite.ISamSiteTarget> result)
         {
             float vehicleRange, missileRange;
             if (GetSamSiteScanRange(samSite, out vehicleRange, out missileRange))
             {
-                AddTargetSet(samSite, result, Rust.Layers.Mask.Vehicle_World, vehicleRange);
+                if (!samSite.IsInDefenderMode())
+                {
+                    AddTargetSet(samSite, result, Rust.Layers.Mask.Vehicle_World, vehicleRange);
+                }
                 AddTargetSet(samSite, result, Rust.Layers.Mask.Physics_Projectile, missileRange);
                 return False;
             }
@@ -49,9 +51,9 @@ namespace Oxide.Plugins
             return null;
         }
 
-        private void AddTargetSet(SamSite samSite, List<ISamSiteTarget> allTargets, int layerMask, float scanRadius)
+        private void AddTargetSet(SamSite samSite, List<SamSite.ISamSiteTarget> allTargets, int layerMask, float scanRadius)
         {
-            List<ISamSiteTarget> obj2 = Pool.GetList<ISamSiteTarget>();
+            List<SamSite.ISamSiteTarget> obj2 = Pool.GetList<SamSite.ISamSiteTarget>();
             Vis.Entities(samSite.eyePoint.transform.position, scanRadius, obj2, layerMask, QueryTriggerInteraction.Ignore);
             allTargets.AddRange(obj2);
             Pool.FreeList(ref obj2);
