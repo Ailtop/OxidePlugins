@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.8", ResourceId = 2728)]
+    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.9", ResourceId = 2728)]
     [Description("Creates temporary PvP zones on certain actions/events")]
     public class DynamicPVP : RustPlugin
     {
@@ -216,14 +216,14 @@ namespace Oxide.Plugins
         }
 
         private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), () =>
-          {
-              SaveDebug();
-              if (dataChanged)
-              {
-                  SaveData();
-                  dataChanged = false;
-              }
-          });
+                {
+                    SaveDebug();
+                    if (dataChanged)
+                    {
+                        SaveData();
+                        dataChanged = false;
+                    }
+                });
 
         private void OnPlayerRespawned(BasePlayer player)
         {
@@ -1062,9 +1062,16 @@ namespace Oxide.Plugins
             if (!mappingRemoved) PrintDebug($"ERROR: Mapping NOT removed for zone({zoneID} | {eventName}).", error: true);
             else stringBuilder.Append("Mapping,");
 
+            var players = GetPlayersInZone(zoneID);
             var zoneRemoved = RemoveZone(zoneID, eventName);
             if (zoneRemoved)
             {
+                // Release zone players immediately
+                PrintDebug($"Release zone players : {string.Join(",", players.Select(x => x.displayName))}");
+                foreach (var player in players)
+                {
+                    OnExitZone(zoneID, player);
+                }
                 if (activeDynamicZones.Remove(zoneID))
                 {
                     CheckHooks();
@@ -1189,15 +1196,15 @@ namespace Oxide.Plugins
 
         private bool CreateMapping(string zoneID, string mapping)
         {
-            if (TruePVE != null) return (bool)TruePVE.Call("AddOrUpdateMapping", zoneID, mapping);
-            if (NextGenPVE != null) return (bool)NextGenPVE.Call("AddOrUpdateMapping", zoneID, mapping);
+            if (TruePVE != null) return (bool) TruePVE.Call("AddOrUpdateMapping", zoneID, mapping);
+            if (NextGenPVE != null) return (bool) NextGenPVE.Call("AddOrUpdateMapping", zoneID, mapping);
             return false;
         }
 
         private bool RemoveMapping(string zoneID)
         {
-            if (TruePVE != null) return (bool)TruePVE.Call("RemoveMapping", zoneID);
-            if (NextGenPVE != null) return (bool)NextGenPVE.Call("RemoveMapping", zoneID);
+            if (TruePVE != null) return (bool) TruePVE.Call("RemoveMapping", zoneID);
+            if (NextGenPVE != null) return (bool) NextGenPVE.Call("RemoveMapping", zoneID);
             return false;
         }
 
@@ -1244,9 +1251,9 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private string[] CreateGroupSpawn(Vector3 location, string profileName, string group, int quantity = 0) => (string[])BotReSpawn?.Call("AddGroupSpawn", location, profileName, group, quantity);
+        private string[] CreateGroupSpawn(Vector3 location, string profileName, string group, int quantity = 0) => (string[]) BotReSpawn?.Call("AddGroupSpawn", location, profileName, group, quantity);
 
-        private string[] RemoveGroupSpawn(string group) => (string[])BotReSpawn?.Call("RemoveGroupSpawn", group);
+        private string[] RemoveGroupSpawn(string group) => (string[]) BotReSpawn?.Call("RemoveGroupSpawn", group);
 
         #endregion BotReSpawn  Integration
 
@@ -1283,13 +1290,13 @@ namespace Oxide.Plugins
             Interface.CallHook("OnPlayerAddedToPVPDelay", player.userID, zoneID, baseEventS.pvpDelayTime);
         }
 
-        private bool CreateZone(string zoneID, string[] zoneArgs, Vector3 zoneLocation) => (bool)ZoneManager.Call("CreateOrUpdateZone", zoneID, zoneArgs, zoneLocation);
+        private bool CreateZone(string zoneID, string[] zoneArgs, Vector3 zoneLocation) => (bool) ZoneManager.Call("CreateOrUpdateZone", zoneID, zoneArgs, zoneLocation);
 
         private bool RemoveZone(string zoneID, string eventName = "")
         {
             try
             {
-                return (bool)ZoneManager.Call("EraseZone", zoneID);
+                return (bool) ZoneManager.Call("EraseZone", zoneID);
             }
             catch (Exception exception)
             {
@@ -1298,15 +1305,17 @@ namespace Oxide.Plugins
             }
         }
 
-        private string[] GetZoneIDs() => (string[])ZoneManager.Call("GetZoneIDs");
+        private string[] GetZoneIDs() => (string[]) ZoneManager.Call("GetZoneIDs");
 
-        private string GetZoneName(string zoneID) => (string)ZoneManager.Call("GetZoneName", zoneID);
+        private string GetZoneName(string zoneID) => (string) ZoneManager.Call("GetZoneName", zoneID);
 
-        private ZoneManager.Zone GetZoneByID(string zoneID) => (ZoneManager.Zone)ZoneManager.Call("GetZoneByID", zoneID);
+        private ZoneManager.Zone GetZoneByID(string zoneID) => (ZoneManager.Zone) ZoneManager.Call("GetZoneByID", zoneID);
 
-        private string[] GetPlayerZoneIDs(BasePlayer player) => (string[])ZoneManager.Call("GetPlayerZoneIDs", player);
+        private string[] GetPlayerZoneIDs(BasePlayer player) => (string[]) ZoneManager.Call("GetPlayerZoneIDs", player);
 
-        private bool IsPlayerInZone(LeftZone leftZone, BasePlayer player) => (bool)ZoneManager.Call("IsPlayerInZone", leftZone.zoneID, player);
+        private bool IsPlayerInZone(LeftZone leftZone, BasePlayer player) => (bool) ZoneManager.Call("IsPlayerInZone", leftZone.zoneID, player);
+
+        private List<BasePlayer> GetPlayersInZone(string zoneID) => (List<BasePlayer>) ZoneManager.Call("GetPlayersInZone", zoneID);
 
         #endregion ZoneManager Integration
 
@@ -2181,7 +2190,7 @@ namespace Oxide.Plugins
             {
                 if (configValue is T)
                 {
-                    value = (T)configValue;
+                    value = (T) configValue;
                     return true;
                 }
                 try
