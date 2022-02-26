@@ -1,23 +1,23 @@
-﻿using Facepunch;
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust;
 using Oxide.Game.Rust.Cui;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
 using UnityEngine;
 using VLB;
 using Time = UnityEngine.Time;
 
 namespace Oxide.Plugins
 {
-    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.30", ResourceId = 651)]
+    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.31", ResourceId = 651)]
     [Description("Building and entity removal tool")]
     public class RemoverTool : RustPlugin
     {
@@ -1124,6 +1124,16 @@ namespace Oxide.Plugins
 
         private bool TryRemove(BasePlayer player, BaseEntity targetEntity, RemoveType removeType, bool shouldPay, bool shouldRefund)
         {
+            if (targetEntity == null)
+            {
+                Print(player, Lang("NotFoundOrFar", player.UserIDString));
+                return false;
+            }
+            if (targetEntity.IsDestroyed)
+            {
+                Print(player, Lang("InvalidEntity", player.UserIDString));
+                return false;
+            }
             switch (removeType)
             {
                 case RemoveType.Admin:
@@ -2052,6 +2062,7 @@ namespace Oxide.Plugins
             int current = 0;
             var checkFrom = Pool.Get<Queue<Vector3>>();
             var nearbyEntities = Pool.GetList<T>();
+            removeList.Add(sourceEntity);
             checkFrom.Enqueue(sourceEntity.transform.position);
             while (checkFrom.Count > 0)
             {
@@ -2501,7 +2512,8 @@ namespace Oxide.Plugins
                         var timeLeft = cooldown - (Time.realtimeSinceStartup - lastUse);
                         if (timeLeft > 0)
                         {
-                            Print(player, Lang("Cooldown", player.UserIDString, Math.Ceiling(timeLeft)));
+                            var timeRemaining = timeLeft > 300f ? TimeSpan.FromSeconds(timeLeft).ToShortString() : Mathf.CeilToInt(timeLeft).ToString();
+                            Print(player, Lang("Cooldown", player.UserIDString, timeRemaining));
                             return false;
                         }
                     }
