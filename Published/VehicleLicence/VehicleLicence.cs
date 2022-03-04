@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.25")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.27")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -362,7 +362,7 @@ namespace Oxide.Plugins
 
         private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitInfo)
         {
-            if (entity == null | hitInfo?.damageTypes == null) return;
+            if (entity == null || hitInfo?.damageTypes == null) return;
             if (hitInfo.damageTypes.Has(Rust.DamageType.Decay))
             {
                 if (!vehiclesCache.ContainsKey(entity))
@@ -436,6 +436,21 @@ namespace Oxide.Plugins
         private void OnEntityKill(BaseCombatEntity entity) => CheckEntity(entity);
 
         #endregion Destroy
+
+        #region Reskin
+
+        private object OnEntityReskin(BaseEntity entity, ItemSkinDirectory skin, BasePlayer player)
+        {
+            if (entity == null || player == null) return null;
+            Vehicle vehicle;
+            if (vehiclesCache.TryGetValue(entity, out vehicle))
+            {
+                return False;
+            }
+            return null;
+        }
+
+        #endregion Reskin
 
         #endregion Oxide Hooks
 
@@ -615,7 +630,7 @@ namespace Oxide.Plugins
                         {
                             if (CanRefundFuel(baseVehicleS, isCrash, isUnload))
                             {
-                                fuelSystem = (entity as BaseCrane)?.GetFuelSystem();
+                                fuelSystem = (entity as MagnetCrane)?.GetFuelSystem();
                             }
                         }
                         break;
@@ -794,7 +809,7 @@ namespace Oxide.Plugins
                         break;
 
                     case NormalVehicleType.MagnetCrane:
-                        fuelSystem = (entity as BaseCrane)?.GetFuelSystem();
+                        fuelSystem = (entity as MagnetCrane)?.GetFuelSystem();
                         break;
 
                     case NormalVehicleType.SubmarineSolo:
