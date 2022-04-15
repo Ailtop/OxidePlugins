@@ -6,18 +6,18 @@ using Oxide.Core;
 
 namespace Oxide.Plugins
 {
-    [Info("Everlight", "Wulf/lukespragg/Arainrr", "3.4.16")]
+    [Info("Everlight", "Wulf/lukespragg/Arainrr", "3.4.17")]
     [Description("Allows infinite light from configured objects by not consuming fuel")]
     public class Everlight : RustPlugin
     {
         #region Fields
 
-        private bool enabled = true;
-        private Dictionary<uint, Item> baseOvenFuelItems;
-        private readonly Dictionary<ItemModBurnable, ItemDefinition> itemModBurnables = new Dictionary<ItemModBurnable, ItemDefinition>();
-        private readonly Dictionary<string, EverlightEntry> everlightItems = new Dictionary<string, EverlightEntry>(StringComparer.OrdinalIgnoreCase);
+        private bool _enabled = true;
+        private Dictionary<uint, Item> _baseOvenFuelItems;
+        private readonly Dictionary<ItemModBurnable, ItemDefinition> _itemModBurnables = new Dictionary<ItemModBurnable, ItemDefinition>();
+        private readonly Dictionary<string, EverlightEntry> _everlightItems = new Dictionary<string, EverlightEntry>(StringComparer.OrdinalIgnoreCase);
 
-        private readonly Dictionary<string, EverlightEntry> defaultEverlightItems = new Dictionary<string, EverlightEntry>
+        private readonly Dictionary<string, EverlightEntry> _defaultEverlightItems = new Dictionary<string, EverlightEntry>
         {
             //OnFindBurnable
             ["Barbeque"] = new EverlightEntry("bbq.deployed", new EverlightS(false, false, "everlight.bbq")),
@@ -51,15 +51,39 @@ namespace Oxide.Plugins
             ["Firework"] = new EverlightEntry("firework", new EverlightS(false, false, "everlight.firework")),
             ["Neon Sign"] = new EverlightEntry("neonSign", new EverlightS(false, false, "everlight.neonSign")),
             ["Night Vision Goggles"] = new EverlightEntry("nightvisiongoggles", new EverlightS(false, false, "everlight.nightvisiongoggles")),
+            ["Industrial"] = new EverlightEntry("industrial.wall.lamp.deployed", new EverlightS(false, false, "everlight.industrial")),
+            ["Industrial Green"] = new EverlightEntry("industrial.wall.lamp.green.deployed", new EverlightS(false, false, "everlight.industrialgreen")),
+            ["Industrial Red"] = new EverlightEntry("industrial.wall.lamp.red.deployed", new EverlightS(false, false, "everlight.industrialred")),
         };
 
-        private readonly Dictionary<string, List<string>> hookItems = new Dictionary<string, List<string>>
+        private readonly Dictionary<string, List<string>> _hookItems = new Dictionary<string, List<string>>
         {
-            [nameof(OnItemUse)] = new List<string> { "Miners Hat", "Candle Hat" },
-            [nameof(OnLoseCondition)] = new List<string> { "Night Vision Goggles" },
-            [nameof(OnEntitySpawned)] = new List<string> { "Search Light", "Small Candle Set", "Large Candle Set", "Ceiling Light", "Siren Light", "Flasher Light", "Simple Light", "Strobe Light", "Deluxe Christmas Lights", "Igniter", "Firework", "Neon Sign" },
-            [nameof(OnFindBurnable)] = new List<string> { "Barbeque", "Camp Fire", "Cursed Cauldron", "Chinese Lantern", "Stone Fireplace", "Furnace", "Large Furnace", "Jack O Lantern Angry", "Jack O Lantern Happy", "Lantern", "Skull Fire Pit", "Small Oil Refinery", "Tuna Can Lamp", "Hobo Barrel" },
-            [nameof(OnEntityDistanceCheck)] = new List<string> { "Barbeque", "Camp Fire", "Cursed Cauldron", "Chinese Lantern", "Stone Fireplace", "Furnace", "Large Furnace", "Jack O Lantern Angry", "Jack O Lantern Happy", "Lantern", "Skull Fire Pit", "Small Oil Refinery", "Tuna Can Lamp", "Hobo Barrel" },
+            [nameof(OnItemUse)] = new List<string>
+            {
+                "Miners Hat", "Candle Hat"
+            },
+            [nameof(OnLoseCondition)] = new List<string>
+            {
+                "Night Vision Goggles"
+            },
+            [nameof(OnEntitySpawned)] = new List<string>
+            {
+                "Search Light", "Small Candle Set", "Large Candle Set", "Ceiling Light", "Siren Light", "Flasher Light", 
+                "Simple Light", "Strobe Light", "Deluxe Christmas Lights", "Igniter", "Firework", "Neon Sign", "Industrial",
+                "Industrial Green", "Industrial Red",
+            },
+            [nameof(OnFindBurnable)] = new List<string>
+            {
+                "Barbeque", "Camp Fire", "Cursed Cauldron", "Chinese Lantern", "Stone Fireplace", "Furnace", "Large Furnace", 
+                "Jack O Lantern Angry", "Jack O Lantern Happy", "Lantern", "Skull Fire Pit", "Small Oil Refinery", "Tuna Can Lamp",
+                "Hobo Barrel"
+            },
+            [nameof(OnEntityDistanceCheck)] = new List<string>
+            {
+                "Barbeque", "Camp Fire", "Cursed Cauldron", "Chinese Lantern", "Stone Fireplace", "Furnace", "Large Furnace",
+                "Jack O Lantern Angry", "Jack O Lantern Happy", "Lantern", "Skull Fire Pit", "Small Oil Refinery", "Tuna Can Lamp", 
+                "Hobo Barrel"
+            },
         };
 
         #endregion Fields
@@ -74,33 +98,35 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(OnEntitySpawned));
             //Unsubscribe(nameof(OnFindBurnable));
             Unsubscribe(nameof(OnEntityDistanceCheck));
-            foreach (var entry in configData.everlightList)
+            foreach (var entry in configData.EverlightList)
             {
-                if (!permission.PermissionExists(entry.Value.permission))
-                    permission.RegisterPermission(entry.Value.permission, this);
+                if (!permission.PermissionExists(entry.Value.Permission))
+                {
+                    permission.RegisterPermission(entry.Value.Permission, this);
+                }
             }
         }
 
         private void OnServerInitialized()
         {
-            if (configData.globalS.produceCharcoal)
+            if (configData.Global.ProduceCharcoal)
             {
-                baseOvenFuelItems = new Dictionary<uint, Item>();
+                _baseOvenFuelItems = new Dictionary<uint, Item>();
             }
-            foreach (var entry in defaultEverlightItems)
+            foreach (var entry in _defaultEverlightItems)
             {
-                everlightItems.Add(entry.Value.name, entry.Value);
+                _everlightItems.Add(entry.Value.name, entry.Value);
             }
-            foreach (var entry in hookItems)
+            foreach (var entry in _hookItems)
             {
-                if (entry.Value.Any(x => defaultEverlightItems[x].everlightS.enabled))
+                if (entry.Value.Any(x => _defaultEverlightItems[x].everlightS.Enabled))
                 {
                     Subscribe(entry.Key);
                     if (entry.Key == nameof(OnEntitySpawned))
                     {
-                        foreach (var baseNetworkable in BaseNetworkable.serverEntities)
+                        foreach (var serverEntity in BaseNetworkable.serverEntities)
                         {
-                            OnEntitySpawned(baseNetworkable as BaseCombatEntity);
+                            OnEntitySpawned(serverEntity as BaseCombatEntity);
                         }
                     }
                 }
@@ -115,7 +141,7 @@ namespace Oxide.Plugins
                 var itemModBurnable = itemDefinition.GetComponent<ItemModBurnable>();
                 if (itemModBurnable != null)
                 {
-                    itemModBurnables.Add(itemModBurnable, itemDefinition);
+                    _itemModBurnables.Add(itemModBurnable, itemDefinition);
                 }
             }
         }
@@ -171,40 +197,49 @@ namespace Oxide.Plugins
 
         private void OnLoseCondition(Item item, ref float amount)
         {
-            if (item?.info.shortname != "nightvisiongoggles") return;
+            if (item?.info.shortname != "nightvisiongoggles")
+            {
+                return;
+            }
             var player = item.GetOwnerPlayer();
-            if (player == null || !CanEverlight(item.info.shortname, player.UserIDString)) return;
+            if (player == null || !CanEverlight(item.info.shortname, player.UserIDString))
+            {
+                return;
+            }
             amount = 0;
         }
 
         private object OnFindBurnable(BaseOven baseOven)
         {
             if (baseOven == null || baseOven.net == null) return null;
-            if (!CanEverlight(baseOven.ShortPrefabName, baseOven.OwnerID.ToString())) return null;
+            if (!CanEverlight(baseOven.ShortPrefabName, baseOven.OwnerID.ToString()))
+            {
+                return null;
+            }
 
-            if (configData.globalS.produceCharcoal)
+            if (configData.Global.ProduceCharcoal)
             {
                 Item fuel;
-                if (baseOvenFuelItems.TryGetValue(baseOven.net.ID, out fuel) && fuel.IsValid())
+                if (_baseOvenFuelItems.TryGetValue(baseOven.net.ID, out fuel) && fuel.IsValid())
                 {
                     return fuel;
                 }
             }
 
-            foreach (var entry in itemModBurnables)
+            foreach (var entry in _itemModBurnables)
             {
                 if (baseOven.fuelType == null || entry.Value == baseOven.fuelType)
                 {
                     var fuel = ItemManager.CreateByItemID(entry.Value.itemid);
-                    if (configData.globalS.produceCharcoal)
+                    if (configData.Global.ProduceCharcoal)
                     {
-                        if (!baseOvenFuelItems.ContainsKey(baseOven.net.ID))
+                        if (!_baseOvenFuelItems.ContainsKey(baseOven.net.ID))
                         {
-                            baseOvenFuelItems.Add(baseOven.net.ID, fuel);
+                            _baseOvenFuelItems.Add(baseOven.net.ID, fuel);
                         }
                         else
                         {
-                            baseOvenFuelItems[baseOven.net.ID] = fuel;
+                            _baseOvenFuelItems[baseOven.net.ID] = fuel;
                         }
                     }
                     return fuel;
@@ -216,14 +251,24 @@ namespace Oxide.Plugins
 
         private void OnEntityDistanceCheck(BaseOven baseOven, BasePlayer player, uint id, string debugName, float maximumDistance)
         {
-            if (id != 4167839872u || debugName != "SVSwitch") return;
+            if (id != 4167839872u || debugName != "SVSwitch")
+            {
+                return;
+            }
             if (baseOven.Distance(player.eyes.position) > maximumDistance)
             {
                 return;
             }
-            if (baseOven.IsOn()) return;
+
+            if (baseOven.IsOn())
+            {
+                return;
+            }
             var hasFuel = baseOven.inventory?.itemList?.Any(x => x.info.GetComponent<ItemModBurnable>() != null && (baseOven.fuelType == null || x.info == baseOven.fuelType));
-            if (hasFuel.HasValue && hasFuel.Value) return;
+            if (hasFuel.HasValue && hasFuel.Value)
+            {
+                return;
+            }
             if (Interface.CallHook("OnOvenToggle", baseOven, player) == null && (!baseOven.needsBuildingPrivilegeToUse || player.CanBuild()))
             {
                 if (CanEverlight(baseOven.ShortPrefabName, baseOven.OwnerID.ToString()))
@@ -235,11 +280,20 @@ namespace Oxide.Plugins
 
         private object OnItemUse(Item item, int amount)
         {
-            if (item?.info.shortname != "lowgradefuel") return null;
+            if (item?.info.shortname != "lowgradefuel")
+            {
+                return null;
+            }
             var shortName = item.parent?.parent?.info?.shortname;
-            if (shortName != "hat.candle" && shortName != "hat.miner") return null;
-            var playerID = item.GetRootContainer()?.GetOwnerPlayer()?.UserIDString;
-            if (!CanEverlight(shortName, playerID)) return null;
+            if (shortName != "hat.candle" && shortName != "hat.miner")
+            {
+                return null;
+            }
+            var playerId = item.GetRootContainer()?.GetOwnerPlayer()?.UserIDString;
+            if (!CanEverlight(shortName, playerId))
+            {
+                return null;
+            }
             return 0;
         }
 
@@ -247,14 +301,20 @@ namespace Oxide.Plugins
 
         #region Methods
 
-        private bool CanEverlight(string name, string playerID)
+        private bool CanEverlight(string name, string playerId)
         {
-            if (!enabled || string.IsNullOrEmpty(name)) return false;
-            EverlightEntry everlightEntry;
-            if (everlightItems.TryGetValue(name, out everlightEntry))
+            if (!_enabled || string.IsNullOrEmpty(name))
             {
-                if (!everlightEntry.everlightS.enabled) return false;
-                if (everlightEntry.everlightS.usePermission && (string.IsNullOrEmpty(playerID) || !permission.UserHasPermission(playerID, everlightEntry.everlightS.permission)))
+                return false;
+            }
+            EverlightEntry everlightEntry;
+            if (_everlightItems.TryGetValue(name, out everlightEntry))
+            {
+                if (!everlightEntry.everlightS.Enabled)
+                {
+                    return false;
+                }
+                if (everlightEntry.everlightS.UsePermission && (string.IsNullOrEmpty(playerId) || !permission.UserHasPermission(playerId, everlightEntry.everlightS.Permission)))
                 {
                     return false;
                 }
@@ -265,16 +325,16 @@ namespace Oxide.Plugins
 
         private void UpdateConfig()
         {
-            foreach (var entry in defaultEverlightItems)
+            foreach (var entry in _defaultEverlightItems)
             {
                 EverlightS everlightS;
-                if (configData.everlightList.TryGetValue(entry.Key, out everlightS))
+                if (configData.EverlightList.TryGetValue(entry.Key, out everlightS))
                 {
                     entry.Value.everlightS = everlightS;
                 }
                 else
                 {
-                    configData.everlightList.Add(entry.Key, entry.Value.everlightS);
+                    configData.EverlightList.Add(entry.Key, entry.Value.everlightS);
                 }
             }
             SaveConfig();
@@ -296,14 +356,14 @@ namespace Oxide.Plugins
                 case "0":
                 case "off":
                 case "false":
-                    enabled = false;
+                    _enabled = false;
                     SendReply(arg, "You have disabled this plugin");
                     return;
 
                 case "1":
                 case "on":
                 case "true":
-                    enabled = true;
+                    _enabled = true;
                     SendReply(arg, "You have enabled this plugin");
                     return;
             }
@@ -330,34 +390,34 @@ namespace Oxide.Plugins
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Settings")]
-            public GlobalSettings globalS = new GlobalSettings();
+            public GlobalSettings Global { get; set; } = new GlobalSettings();
 
             [JsonProperty(PropertyName = "Everlight entity list")]
-            public Dictionary<string, EverlightS> everlightList = new Dictionary<string, EverlightS>();
+            public Dictionary<string, EverlightS> EverlightList { get; set; } = new Dictionary<string, EverlightS>();
         }
 
         public class GlobalSettings
         {
             [JsonProperty(PropertyName = "Produce Charcoal")]
-            public bool produceCharcoal;
+            public bool ProduceCharcoal { get; set; }
         }
 
         private class EverlightS
         {
             [JsonProperty(PropertyName = "Enabled")]
-            public bool enabled = false;
+            public bool Enabled { get; set; } = false;
 
             [JsonProperty(PropertyName = "Use permission")]
-            public bool usePermission = false;
+            public bool UsePermission { get; set; } = false;
 
             [JsonProperty(PropertyName = "Permission")]
-            public string permission = string.Empty;
+            public string Permission { get; set; } = string.Empty;
 
             public EverlightS(bool enabled, bool usePermission, string permission)
             {
-                this.enabled = enabled;
-                this.usePermission = usePermission;
-                this.permission = permission;
+                this.Enabled = enabled;
+                this.UsePermission = usePermission;
+                this.Permission = permission;
             }
         }
 
@@ -368,7 +428,9 @@ namespace Oxide.Plugins
             {
                 configData = Config.ReadObject<ConfigData>();
                 if (configData == null)
+                {
                     LoadDefaultConfig();
+                }
             }
             catch (Exception ex)
             {
