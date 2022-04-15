@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Zone PVx Info", "BuzZ[PHOQUE]/Arainrr", "1.1.4")]
+    [Info("Zone PVx Info", "BuzZ[PHOQUE]/Arainrr", "1.1.5")]
     [Description("HUD on PVx name defined Zones")]
     public class ZonePVxInfo : RustPlugin
     {
@@ -377,7 +377,7 @@ namespace Oxide.Plugins
                             OffsetMax = configData.maxOffset
                         }
                     },
-                    "Overlay", UINAME_MAIN
+                    configData.layer, UINAME_MAIN
                 },
                 {
                     new CuiLabel
@@ -436,6 +436,9 @@ namespace Oxide.Plugins
             [JsonConverter(typeof(StringEnumConverter))]
             [JsonProperty(PropertyName = "Server Default PVx (pvp or pve)")]
             public PVxType defaultType = PVxType.PVE;
+
+            [JsonProperty(PropertyName = "UI - Layer")]
+            public string layer = "Hud";
 
             [JsonProperty(PropertyName = "UI - PVP Background Color")]
             public string pvpColor = "0.8 0.2 0.2 0.8";
