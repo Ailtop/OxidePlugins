@@ -5,7 +5,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Reflection;
 using System.Text;
 using Facepunch;
 using Newtonsoft.Json;
@@ -17,7 +16,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.9", ResourceId = 2728)]
+    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.10", ResourceId = 2728)]
     [Description("Creates temporary PvP zones on certain actions/events")]
     public class DynamicPVP : RustPlugin
     {
@@ -25,28 +24,30 @@ namespace Oxide.Plugins
 
         [PluginReference] private readonly Plugin ZoneManager, TruePVE, NextGenPVE, BotReSpawn;
 
-        private const string PERMISSION_ADMIN = "dynamicpvp.admin";
-        private const string PREFAB_SPHERE = "assets/prefabs/visualization/sphere.prefab";
-        private const string ZONE_NAME = "DynamicPVP";
-        private static object True, False;
+        private const string PermissionAdmin = "dynamicpvp.admin";
+        private const string PrefabSphere = "assets/prefabs/visualization/sphere.prefab";
+        private const string ZoneName = "DynamicPVP";
+        private static object _true, _false;
 
-        private readonly Dictionary<string, Timer> eventTimers = new Dictionary<string, Timer>();
-        private readonly Dictionary<ulong, LeftZone> pvpDelays = new Dictionary<ulong, LeftZone>();
-        private readonly Dictionary<string, string> activeDynamicZones = new Dictionary<string, string>();//ID -> EventName
+        private readonly Dictionary<string, Timer> _eventTimers = new Dictionary<string, Timer>();
+        private readonly Dictionary<ulong, LeftZone> _pvpDelays = new Dictionary<ulong, LeftZone>();
+        private readonly Dictionary<string, string> _activeDynamicZones = new Dictionary<string, string>();//ID -> EventName
 
-        private bool dataChanged;
-        private Vector3 oilRigPosition;
-        private Vector3 largeOilRigPosition;
-        private Coroutine createEventsCoroutine;
+        private bool _dataChanged;
+        private Vector3 _oilRigPosition;
+        private Vector3 _largeOilRigPosition;
+        private Coroutine _createEventsCoroutine;
+
+        public static DynamicPVP Instance { get; private set; }
 
         private class LeftZone : Pool.IPooled
         {
-            public string zoneID;
+            public string zoneId;
             public Timer zoneTimer;
 
             public void EnterPool()
             {
-                zoneID = null;
+                zoneId = null;
                 zoneTimer?.Destroy();
                 zoneTimer = null;
             }
@@ -83,11 +84,12 @@ namespace Oxide.Plugins
 
         private void Init()
         {
+            Instance = this;
             LoadData();
-            True = true;
-            False = false;
-            permission.RegisterPermission(PERMISSION_ADMIN, this);
-            AddCovalenceCommand(configData.chatS.command, nameof(CmdDynamicPVP));
+            _true = true;
+            _false = false;
+            permission.RegisterPermission(PermissionAdmin, this);
+            AddCovalenceCommand(configData.Chat.Command, nameof(CmdDynamicPVP));
             Unsubscribe(nameof(OnEntitySpawned));
             Unsubscribe(nameof(OnCargoPlaneSignaled));
             Unsubscribe(nameof(OnCrateHack));
@@ -102,9 +104,9 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(CanEntityTakeDamage));
             Unsubscribe(nameof(OnEnterZone));
             Unsubscribe(nameof(OnExitZone));
-            if (configData.global.logToFile)
+            if (configData.Global.LogToFile)
             {
-                debugStringBuilder = new StringBuilder();
+                _debugStringBuilder = new StringBuilder();
             }
         }
 
@@ -112,51 +114,51 @@ namespace Oxide.Plugins
         {
             //Pool.FillBuffer<LeftZone>();
             DeleteOldDynamicZones();
-            createEventsCoroutine = ServerMgr.Instance.StartCoroutine(CreateMonumentEvents());
-            if (configData.generalEvents.excavatorIgnition.enabled)
+            _createEventsCoroutine = ServerMgr.Instance.StartCoroutine(CreateMonumentEvents());
+            if (configData.GeneralEvents.ExcavatorIgnition.Enabled)
             {
                 Subscribe(nameof(OnDieselEngineToggled));
             }
-            if (configData.generalEvents.patrolHelicopter.enabled || configData.generalEvents.bradleyAPC.enabled)
+            if (configData.GeneralEvents.PatrolHelicopter.Enabled || configData.GeneralEvents.BradleyApc.Enabled)
             {
                 Subscribe(nameof(OnEntityDeath));
             }
-            if (configData.generalEvents.supplySignal.enabled || configData.generalEvents.timedSupply.enabled)
+            if (configData.GeneralEvents.SupplySignal.Enabled || configData.GeneralEvents.TimedSupply.Enabled)
             {
                 Subscribe(nameof(OnCargoPlaneSignaled));
             }
-            if (configData.generalEvents.hackableCrate.enabled && configData.generalEvents.hackableCrate.timerStartWhenUnlocked)
+            if (configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.TimerStartWhenUnlocked)
             {
                 Subscribe(nameof(OnCrateHackEnd));
             }
-            if (configData.generalEvents.timedSupply.enabled && configData.generalEvents.timedSupply.timerStartWhenLooted ||
-                configData.generalEvents.supplySignal.enabled && configData.generalEvents.supplySignal.timerStartWhenLooted ||
-                configData.generalEvents.hackableCrate.enabled && configData.generalEvents.hackableCrate.timerStartWhenLooted)
+            if (configData.GeneralEvents.TimedSupply.Enabled && configData.GeneralEvents.TimedSupply.TimerStartWhenLooted ||
+                configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.TimerStartWhenLooted ||
+                configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.TimerStartWhenLooted)
             {
                 Subscribe(nameof(OnLootEntity));
             }
-            if (configData.generalEvents.hackableCrate.enabled && !configData.generalEvents.hackableCrate.startWhenSpawned)
+            if (configData.GeneralEvents.HackableCrate.Enabled && !configData.GeneralEvents.HackableCrate.StartWhenSpawned)
             {
                 Subscribe(nameof(OnCrateHack));
             }
-            if (configData.generalEvents.timedSupply.enabled && !configData.generalEvents.timedSupply.startWhenSpawned ||
-                configData.generalEvents.supplySignal.enabled && !configData.generalEvents.supplySignal.startWhenSpawned)
+            if (configData.GeneralEvents.TimedSupply.Enabled && !configData.GeneralEvents.TimedSupply.StartWhenSpawned ||
+                configData.GeneralEvents.SupplySignal.Enabled && !configData.GeneralEvents.SupplySignal.StartWhenSpawned)
             {
                 Subscribe(nameof(OnSupplyDropLanded));
             }
-            if (configData.generalEvents.timedSupply.enabled && configData.generalEvents.timedSupply.startWhenSpawned ||
-                configData.generalEvents.supplySignal.enabled && configData.generalEvents.supplySignal.startWhenSpawned ||
-                configData.generalEvents.hackableCrate.enabled && configData.generalEvents.hackableCrate.startWhenSpawned)
+            if (configData.GeneralEvents.TimedSupply.Enabled && configData.GeneralEvents.TimedSupply.StartWhenSpawned ||
+                configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.StartWhenSpawned ||
+                configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.StartWhenSpawned)
             {
                 Subscribe(nameof(OnEntitySpawned));
             }
-            if (configData.generalEvents.timedSupply.enabled && configData.generalEvents.timedSupply.stopWhenKilled ||
-                configData.generalEvents.supplySignal.enabled && configData.generalEvents.supplySignal.stopWhenKilled ||
-                configData.generalEvents.hackableCrate.enabled && configData.generalEvents.hackableCrate.stopWhenKilled)
+            if (configData.GeneralEvents.TimedSupply.Enabled && configData.GeneralEvents.TimedSupply.StopWhenKilled ||
+                configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.StopWhenKilled ||
+                configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.StopWhenKilled)
             {
                 Subscribe(nameof(OnEntityKill));
             }
-            if (configData.generalEvents.cargoShip.enabled)
+            if (configData.GeneralEvents.CargoShip.Enabled)
             {
                 Subscribe(nameof(OnEntityKill));
                 Subscribe(nameof(OnEntitySpawned));
@@ -171,40 +173,37 @@ namespace Oxide.Plugins
 
         private void Unload()
         {
-            if (createEventsCoroutine != null)
+            if (_createEventsCoroutine != null)
             {
-                ServerMgr.Instance.StopCoroutine(createEventsCoroutine);
+                ServerMgr.Instance.StopCoroutine(_createEventsCoroutine);
             }
 
-            if (activeDynamicZones.Count > 0)
+            if (_activeDynamicZones.Count > 0)
             {
-                PrintDebug($"Deleting {activeDynamicZones.Count} active zones.", true);
-                foreach (var entry in activeDynamicZones.ToArray())
+                PrintDebug($"Deleting {_activeDynamicZones.Count} active zones.", true);
+                foreach (var entry in _activeDynamicZones.ToArray())
                 {
                     DeleteDynamicZone(entry.Key);
                 }
             }
 
-            var leftZones = pvpDelays.Values.ToArray();
+            var leftZones = _pvpDelays.Values.ToArray();
             for (var i = leftZones.Length - 1; i >= 0; i--)
             {
                 var value = leftZones[i];
                 Pool.Free(ref value);
             }
 
-            foreach (var evenTimer in eventTimers.Values)
-            {
-                evenTimer?.Destroy();
-            }
-
-            var spheres = zoneSpheres.Values.ToArray();
+            var spheres = _zoneSpheres.Values.ToArray();
             for (var i = spheres.Length - 1; i >= 0; i--)
             {
                 var sphereEntities = spheres[i];
                 foreach (var sphereEntity in sphereEntities)
                 {
                     if (sphereEntity != null && !sphereEntity.IsDestroyed)
+                    {
                         sphereEntity.KillMessage();
+                    }
                 }
                 Pool.FreeList(ref sphereEntities);
             }
@@ -212,22 +211,26 @@ namespace Oxide.Plugins
             SaveData();
             SaveDebug();
             Pool.directory.Remove(typeof(LeftZone));
-            True = False = null;
+            _true = _false = null;
+            Instance = null;
         }
 
         private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), () =>
-                {
-                    SaveDebug();
-                    if (dataChanged)
-                    {
-                        SaveData();
-                        dataChanged = false;
-                    }
-                });
+          {
+              SaveDebug();
+              if (_dataChanged)
+              {
+                  SaveData();
+                  _dataChanged = false;
+              }
+          });
 
         private void OnPlayerRespawned(BasePlayer player)
         {
-            if (player == null || !player.userID.IsSteamId()) return;
+            if (player == null || !player.userID.IsSteamId())
+            {
+                return;
+            }
             TryRemovePVPDelay(player.userID, player.displayName);
         }
 
@@ -235,13 +238,13 @@ namespace Oxide.Plugins
 
         #region Methods
 
-        private void TryRemoveEventTimer(string zoneID)
+        private void TryRemoveEventTimer(string zoneId)
         {
             Timer value;
-            if (eventTimers.TryGetValue(zoneID, out value))
+            if (_eventTimers.TryGetValue(zoneId, out value))
             {
                 value?.Destroy();
-                eventTimers.Remove(zoneID);
+                _eventTimers.Remove(zoneId);
             }
         }
 
@@ -249,28 +252,28 @@ namespace Oxide.Plugins
         {
             PrintDebug($"Adding {player.displayName} to pvp delay.");
             LeftZone leftZone;
-            if (pvpDelays.TryGetValue(player.userID, out leftZone))
+            if (_pvpDelays.TryGetValue(player.userID, out leftZone))
             {
                 leftZone.zoneTimer?.Destroy();
             }
             else
             {
                 leftZone = Pool.Get<LeftZone>();
-                pvpDelays.Add(player.userID, leftZone);
+                _pvpDelays.Add(player.userID, leftZone);
                 CheckHooks(true);
             }
 
             return leftZone;
         }
 
-        private void TryRemovePVPDelay(ulong playerID, string playerName)
+        private void TryRemovePVPDelay(ulong playerId, string playerName)
         {
             PrintDebug($"Removing {playerName} from pvp delay.");
             LeftZone leftZone;
-            if (pvpDelays.TryGetValue(playerID, out leftZone))
+            if (_pvpDelays.TryGetValue(playerId, out leftZone))
             {
-                pvpDelays.Remove(playerID);
-                Interface.CallHook("OnPlayerRemovedFromPVPDelay", playerID, leftZone.zoneID);
+                _pvpDelays.Remove(playerId);
+                Interface.CallHook("OnPlayerRemovedFromPVPDelay", playerId, leftZone.zoneId);
                 Pool.Free(ref leftZone);
                 CheckHooks(true);
             }
@@ -278,7 +281,7 @@ namespace Oxide.Plugins
 
         private bool CheckEntityOwner(BaseEntity baseEntity)
         {
-            if (configData.global.checkEntityOwner && baseEntity.OwnerID.IsSteamId())
+            if (configData.Global.CheckEntityOwner && baseEntity.OwnerID.IsSteamId())
             {
                 PrintDebug($"{baseEntity} is owned by the player({baseEntity.OwnerID}). Skipping event creation.");
                 return false;
@@ -300,7 +303,7 @@ namespace Oxide.Plugins
         {
             if (pvpDelay)
             {
-                if (pvpDelays.Count > 0)
+                if (_pvpDelays.Count > 0)
                 {
                     Subscribe(nameof(CanEntityTakeDamage));
                 }
@@ -311,7 +314,7 @@ namespace Oxide.Plugins
             }
             else
             {
-                if (activeDynamicZones.Count > 0)
+                if (_activeDynamicZones.Count > 0)
                 {
                     Subscribe(nameof(OnEnterZone));
                     Subscribe(nameof(OnExitZone));
@@ -323,12 +326,12 @@ namespace Oxide.Plugins
                 }
 
                 bool hasCommands = false;
-                foreach (var entry in activeDynamicZones)
+                foreach (var entry in _activeDynamicZones)
                 {
-                    var baseEventS = GetBaseEventS(entry.Value);
-                    if (baseEventS != null)
+                    var baseEvent = GetBaseEvent(entry.Value);
+                    if (baseEvent != null)
                     {
-                        if (baseEventS.commandList.Count > 0)
+                        if (baseEvent.CommandList.Count > 0)
                         {
                             hasCommands = true;
                             break;
@@ -348,8 +351,13 @@ namespace Oxide.Plugins
             }
         }
 
-        private BaseEventS GetBaseEventS(string eventName)
+        private BaseEvent GetBaseEvent(string eventName)
         {
+            var externalEvent = Interface.CallHook("OnGetBaseEvent", eventName) as BaseEvent;
+            if (externalEvent != null)
+            {
+                return externalEvent;
+            }
             if (Enum.IsDefined(typeof(GeneralEventType), eventName))
             {
                 GeneralEventType generalEventType;
@@ -357,28 +365,34 @@ namespace Oxide.Plugins
                 {
                     switch (generalEventType)
                     {
-                        case GeneralEventType.Bradley: return configData.generalEvents.bradleyAPC;
-                        case GeneralEventType.HackableCrate: return configData.generalEvents.hackableCrate;
-                        case GeneralEventType.Helicopter: return configData.generalEvents.patrolHelicopter;
-                        case GeneralEventType.SupplyDrop: return configData.generalEvents.timedSupply;
-                        case GeneralEventType.SupplySignal: return configData.generalEvents.supplySignal;
-                        case GeneralEventType.ExcavatorIgnition: return configData.generalEvents.excavatorIgnition;
-                        case GeneralEventType.CargoShip: return configData.generalEvents.cargoShip;
+                        case GeneralEventType.Bradley: return configData.GeneralEvents.BradleyApc;
+                        case GeneralEventType.HackableCrate: return configData.GeneralEvents.HackableCrate;
+                        case GeneralEventType.Helicopter: return configData.GeneralEvents.PatrolHelicopter;
+                        case GeneralEventType.SupplyDrop: return configData.GeneralEvents.TimedSupply;
+                        case GeneralEventType.SupplySignal: return configData.GeneralEvents.SupplySignal;
+                        case GeneralEventType.ExcavatorIgnition: return configData.GeneralEvents.ExcavatorIgnition;
+                        case GeneralEventType.CargoShip: return configData.GeneralEvents.CargoShip;
                         default:
                             PrintDebug($"ERROR: Unknown GeneralEventType: {generalEventType} | {eventName}.", error: true);
                             break;
                     }
                 }
             }
-            AutoEventS autoEventS;
-            if (storedData.autoEvents.TryGetValue(eventName, out autoEventS))
-                return autoEventS;
-            TimedEventS timedEventS;
-            if (storedData.timedEvents.TryGetValue(eventName, out timedEventS))
-                return timedEventS;
-            MonumentEventS monumentEventS;
-            if (configData.monumentEvents.TryGetValue(eventName, out monumentEventS))
-                return monumentEventS;
+            AutoEvent autoEvent;
+            if (storedData.autoEvents.TryGetValue(eventName, out autoEvent))
+            {
+                return autoEvent;
+            }
+            TimedEvent timedEvent;
+            if (storedData.timedEvents.TryGetValue(eventName, out timedEvent))
+            {
+                return timedEvent;
+            }
+            MonumentEvent monumentEvent;
+            if (configData.MonumentEvents.TryGetValue(eventName, out monumentEvent))
+            {
+                return monumentEvent;
+            }
             PrintDebug($"ERROR: Failed to get base event settings for {eventName}.", error: true);
             return null;
         }
@@ -393,16 +407,19 @@ namespace Oxide.Plugins
 
         private void OnDieselEngineToggled(DieselEngine dieselEngine)
         {
-            if (dieselEngine == null || dieselEngine.net == null) return;
-            var zoneID = dieselEngine.net.ID.ToString();
+            if (dieselEngine == null || dieselEngine.net == null)
+            {
+                return;
+            }
+            var zoneId = dieselEngine.net.ID.ToString();
             if (dieselEngine.IsOn())
             {
-                DeleteDynamicZone(zoneID);
+                DeleteDynamicZone(zoneId);
                 HandleGeneralEvent(GeneralEventType.ExcavatorIgnition, dieselEngine, true);
             }
             else
             {
-                HandleDeleteDynamicZone(zoneID);
+                HandleDeleteDynamicZone(zoneId);
             }
         }
 
@@ -412,39 +429,69 @@ namespace Oxide.Plugins
 
         private void OnEntitySpawned(HackableLockedCrate hackableLockedCrate)
         {
-            if (hackableLockedCrate == null || hackableLockedCrate.net == null) return;
-            if (!configData.generalEvents.hackableCrate.enabled || !configData.generalEvents.hackableCrate.startWhenSpawned) return;
+            if (hackableLockedCrate == null || hackableLockedCrate.net == null)
+            {
+                return;
+            }
+
+            if (!configData.GeneralEvents.HackableCrate.Enabled ||
+                !configData.GeneralEvents.HackableCrate.StartWhenSpawned)
+            {
+                return;
+            }
+
             PrintDebug("Trying to create the event when the hackable locked crate is spawned.");
             NextTick(() => LockedCrateEvent(hackableLockedCrate));
         }
 
         private void OnCrateHack(HackableLockedCrate hackableLockedCrate)
         {
-            if (hackableLockedCrate == null || hackableLockedCrate.net == null) return;
+            if (hackableLockedCrate == null || hackableLockedCrate.net == null)
+            {
+                return;
+            }
             PrintDebug("Trying to create the event when the hackable locked crate is starting hack.");
             NextTick(() => LockedCrateEvent(hackableLockedCrate));
         }
 
         private void OnCrateHackEnd(HackableLockedCrate hackableLockedCrate)
         {
-            if (hackableLockedCrate == null || hackableLockedCrate.net == null) return;
-            HandleDeleteDynamicZone(hackableLockedCrate.net.ID.ToString(), configData.generalEvents.hackableCrate.duration, GeneralEventType.HackableCrate.ToString());
+            if (hackableLockedCrate == null || hackableLockedCrate.net == null)
+            {
+                return;
+            }
+            HandleDeleteDynamicZone(hackableLockedCrate.net.ID.ToString(), configData.GeneralEvents.HackableCrate.Duration, GeneralEventType.HackableCrate.ToString());
         }
 
         private void OnLootEntity(BasePlayer player, HackableLockedCrate hackableLockedCrate)
         {
-            if (hackableLockedCrate == null || hackableLockedCrate.net == null) return;
-            if (!configData.generalEvents.hackableCrate.enabled || !configData.generalEvents.hackableCrate.timerStartWhenLooted) return;
-            HandleDeleteDynamicZone(hackableLockedCrate.net.ID.ToString(), configData.generalEvents.hackableCrate.duration, GeneralEventType.HackableCrate.ToString());
+            if (hackableLockedCrate == null || hackableLockedCrate.net == null)
+            {
+                return;
+            }
+            if (!configData.GeneralEvents.HackableCrate.Enabled ||
+                !configData.GeneralEvents.HackableCrate.TimerStartWhenLooted)
+            {
+                return;
+            }
+            HandleDeleteDynamicZone(hackableLockedCrate.net.ID.ToString(), configData.GeneralEvents.HackableCrate.Duration, GeneralEventType.HackableCrate.ToString());
         }
 
         private void OnEntityKill(HackableLockedCrate hackableLockedCrate)
         {
-            if (hackableLockedCrate == null || hackableLockedCrate.net == null) return;
-            if (!configData.generalEvents.hackableCrate.enabled || !configData.generalEvents.hackableCrate.stopWhenKilled) return;
-            var zoneID = hackableLockedCrate.net.ID.ToString();
+            if (hackableLockedCrate == null || hackableLockedCrate.net == null)
+            {
+                return;
+            }
+
+            if (!configData.GeneralEvents.HackableCrate.Enabled ||
+                !configData.GeneralEvents.HackableCrate.StopWhenKilled)
+            {
+                return;
+            }
+            var zoneId = hackableLockedCrate.net.ID.ToString();
             //When the timer starts, don't stop the event immediately
-            if (!eventTimers.ContainsKey(zoneID))
+            if (!_eventTimers.ContainsKey(zoneId))
             {
                 HandleDeleteDynamicZone(hackableLockedCrate.net.ID.ToString());
             }
@@ -456,12 +503,12 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            if (configData.generalEvents.hackableCrate.excludeOilRig && IsOnTheOilRig(hackableLockedCrate))
+            if (configData.GeneralEvents.HackableCrate.ExcludeOilRig && IsOnTheOilRig(hackableLockedCrate))
             {
                 PrintDebug("The hackable locked crate is on the oil rig. Skipping event creation.");
                 return;
             }
-            if (configData.generalEvents.hackableCrate.excludeCargoShip && IsOnTheCargoShip(hackableLockedCrate))
+            if (configData.GeneralEvents.HackableCrate.ExcludeCargoShip && IsOnTheCargoShip(hackableLockedCrate))
             {
                 PrintDebug("The hackable locked crate is on the cargo ship. Skipping event creation.");
                 return;
@@ -469,19 +516,18 @@ namespace Oxide.Plugins
             HandleGeneralEvent(GeneralEventType.HackableCrate, hackableLockedCrate, true);
         }
 
-        private bool IsOnTheCargoShip(HackableLockedCrate hackableLockedCrate) =>
-            hackableLockedCrate.GetComponentInParent<CargoShip>() != null;
+        private bool IsOnTheCargoShip(HackableLockedCrate hackableLockedCrate) => hackableLockedCrate.GetComponentInParent<CargoShip>() != null;
 
         private bool IsOnTheOilRig(HackableLockedCrate hackableLockedCrate)
         {
-            if (oilRigPosition != Vector3.zero &&
-                Vector3Ex.Distance2D(hackableLockedCrate.transform.position, oilRigPosition) < 50f)
+            if (_oilRigPosition != Vector3.zero &&
+                Vector3Ex.Distance2D(hackableLockedCrate.transform.position, _oilRigPosition) < 50f)
             {
                 return true;
             }
 
-            if (largeOilRigPosition != Vector3.zero &&
-                Vector3Ex.Distance2D(hackableLockedCrate.transform.position, largeOilRigPosition) < 50f)
+            if (_largeOilRigPosition != Vector3.zero &&
+                Vector3Ex.Distance2D(hackableLockedCrate.transform.position, _largeOilRigPosition) < 50f)
             {
                 return true;
             }
@@ -494,19 +540,28 @@ namespace Oxide.Plugins
 
         private void OnEntityDeath(BaseHelicopter baseHelicopter, HitInfo info)
         {
-            if (baseHelicopter == null || baseHelicopter.net == null) return;
+            if (baseHelicopter == null || baseHelicopter.net == null)
+            {
+                return;
+            }
             PatrolHelicopterEvent(baseHelicopter);
         }
 
         private void OnEntityDeath(BradleyAPC bradleyApc, HitInfo info)
         {
-            if (bradleyApc == null || bradleyApc.net == null) return;
+            if (bradleyApc == null || bradleyApc.net == null)
+            {
+                return;
+            }
             BradleyApcEvent(bradleyApc);
         }
 
         private void PatrolHelicopterEvent(BaseHelicopter baseHelicopter)
         {
-            if (!configData.generalEvents.patrolHelicopter.enabled) return;
+            if (!configData.GeneralEvents.PatrolHelicopter.Enabled)
+            {
+                return;
+            }
             PrintDebug("Trying to create the event when the helicopter is dead.");
             if (!CheckEntityOwner(baseHelicopter))
             {
@@ -517,7 +572,10 @@ namespace Oxide.Plugins
 
         private void BradleyApcEvent(BradleyAPC bradleyAPC)
         {
-            if (!configData.generalEvents.bradleyAPC.enabled) return;
+            if (!configData.GeneralEvents.BradleyApc.Enabled)
+            {
+                return;
+            }
             PrintDebug("Trying to create the event when the bradley apc is dead.");
             if (!CheckEntityOwner(bradleyAPC))
             {
@@ -536,9 +594,15 @@ namespace Oxide.Plugins
         {
             NextTick(() =>
             {
-                if (supplySignal == null || cargoPlane == null) return;
+                if (supplySignal == null || cargoPlane == null)
+                {
+                    return;
+                }
                 var dropPosition = cargoPlane.dropPosition;
-                if (activeSupplySignals.ContainsKey(dropPosition)) return;
+                if (activeSupplySignals.ContainsKey(dropPosition))
+                {
+                    return;
+                }
                 activeSupplySignals.Add(dropPosition, timer.Once(900f, () => activeSupplySignals.Remove(dropPosition)));
                 PrintDebug($"A supply signal is thrown at {dropPosition}");
             });
@@ -546,42 +610,48 @@ namespace Oxide.Plugins
 
         private void OnEntitySpawned(SupplyDrop supplyDrop)
         {
-            NextTick(() => SupplyDropEvent(supplyDrop, false));
+            NextTick(() => OnSupplyDropEvent(supplyDrop, false));
         }
 
         private void OnSupplyDropLanded(SupplyDrop supplyDrop)
         {
-            if (supplyDrop == null || supplyDrop.net == null) return;
-            if (activeDynamicZones.ContainsKey(supplyDrop.net.ID.ToString()))
+            if (supplyDrop == null || supplyDrop.net == null)
             {
                 return;
             }
-            NextTick(() => SupplyDropEvent(supplyDrop, true));
+            if (_activeDynamicZones.ContainsKey(supplyDrop.net.ID.ToString()))
+            {
+                return;
+            }
+            NextTick(() => OnSupplyDropEvent(supplyDrop, true));
         }
 
         private void OnLootEntity(BasePlayer player, SupplyDrop supplyDrop)
         {
-            if (supplyDrop == null || supplyDrop.net == null) return;
-            var zoneID = supplyDrop.net.ID.ToString();
+            if (supplyDrop == null || supplyDrop.net == null)
+            {
+                return;
+            }
+            var zoneId = supplyDrop.net.ID.ToString();
             string eventName;
-            if (activeDynamicZones.TryGetValue(zoneID, out eventName))
+            if (_activeDynamicZones.TryGetValue(zoneId, out eventName))
             {
                 switch (eventName)
                 {
                     case nameof(GeneralEventType.SupplySignal):
-                        if (!configData.generalEvents.supplySignal.enabled || !configData.generalEvents.supplySignal.timerStartWhenLooted)
+                        if (!configData.GeneralEvents.SupplySignal.Enabled || !configData.GeneralEvents.SupplySignal.TimerStartWhenLooted)
                         {
                             return;
                         }
-                        HandleDeleteDynamicZone(zoneID, configData.generalEvents.supplySignal.duration, eventName);
+                        HandleDeleteDynamicZone(zoneId, configData.GeneralEvents.SupplySignal.Duration, eventName);
                         break;
 
                     case nameof(GeneralEventType.SupplyDrop):
-                        if (!configData.generalEvents.timedSupply.enabled || !configData.generalEvents.timedSupply.timerStartWhenLooted)
+                        if (!configData.GeneralEvents.TimedSupply.Enabled || !configData.GeneralEvents.TimedSupply.TimerStartWhenLooted)
                         {
                             return;
                         }
-                        HandleDeleteDynamicZone(zoneID, configData.generalEvents.timedSupply.duration, eventName);
+                        HandleDeleteDynamicZone(zoneId, configData.GeneralEvents.TimedSupply.Duration, eventName);
                         break;
 
                     default: return;
@@ -591,22 +661,25 @@ namespace Oxide.Plugins
 
         private void OnEntityKill(SupplyDrop supplyDrop)
         {
-            if (supplyDrop == null || supplyDrop.net == null) return;
-            var zoneID = supplyDrop.net.ID.ToString();
+            if (supplyDrop == null || supplyDrop.net == null)
+            {
+                return;
+            }
+            var zoneId = supplyDrop.net.ID.ToString();
             string eventName;
-            if (activeDynamicZones.TryGetValue(zoneID, out eventName))
+            if (_activeDynamicZones.TryGetValue(zoneId, out eventName))
             {
                 switch (eventName)
                 {
                     case nameof(GeneralEventType.SupplySignal):
-                        if (!configData.generalEvents.supplySignal.enabled || !configData.generalEvents.supplySignal.stopWhenKilled)
+                        if (!configData.GeneralEvents.SupplySignal.Enabled || !configData.GeneralEvents.SupplySignal.StopWhenKilled)
                         {
                             return;
                         }
                         break;
 
                     case nameof(GeneralEventType.SupplyDrop):
-                        if (!configData.generalEvents.timedSupply.enabled || !configData.generalEvents.timedSupply.stopWhenKilled)
+                        if (!configData.GeneralEvents.TimedSupply.Enabled || !configData.GeneralEvents.TimedSupply.StopWhenKilled)
                         {
                             return;
                         }
@@ -615,16 +688,19 @@ namespace Oxide.Plugins
                     default: return;
                 }
                 //When the timer starts, don't stop the event immediately
-                if (!eventTimers.ContainsKey(zoneID))
+                if (!_eventTimers.ContainsKey(zoneId))
                 {
-                    HandleDeleteDynamicZone(zoneID);
+                    HandleDeleteDynamicZone(zoneId);
                 }
             }
         }
 
-        private void SupplyDropEvent(SupplyDrop supplyDrop, bool isLanded)
+        private void OnSupplyDropEvent(SupplyDrop supplyDrop, bool isLanded)
         {
-            if (supplyDrop == null || supplyDrop.net == null) return;
+            if (supplyDrop == null || supplyDrop.net == null)
+            {
+                return;
+            }
             PrintDebug($"Trying to create the event when the supply drop is {(isLanded ? "landed" : "spawned")} at {supplyDrop.transform.position}.");
             if (!CheckEntityOwner(supplyDrop))
             {
@@ -636,13 +712,13 @@ namespace Oxide.Plugins
             PrintDebug($"Supply drop is from supply signal: {isFromSupplySignal}");
             if (isFromSupplySignal)
             {
-                if (!configData.generalEvents.supplySignal.enabled)
+                if (!configData.GeneralEvents.SupplySignal.Enabled)
                 {
                     PrintDebug("Event for supply signals disabled. Skipping event creation.");
                     return;
                 }
 
-                if (isLanded ? configData.generalEvents.supplySignal.startWhenSpawned : !configData.generalEvents.supplySignal.startWhenSpawned)
+                if (isLanded ? configData.GeneralEvents.SupplySignal.StartWhenSpawned : !configData.GeneralEvents.SupplySignal.StartWhenSpawned)
                 {
                     PrintDebug($"{(isLanded ? "Landed" : "Spawned")} for supply signals disabled.");
                     return;
@@ -652,12 +728,12 @@ namespace Oxide.Plugins
             }
             else
             {
-                if (!configData.generalEvents.timedSupply.enabled)
+                if (!configData.GeneralEvents.TimedSupply.Enabled)
                 {
                     PrintDebug("Event for timed supply disabled. Skipping event creation.");
                     return;
                 }
-                if (isLanded ? configData.generalEvents.timedSupply.startWhenSpawned : !configData.generalEvents.timedSupply.startWhenSpawned)
+                if (isLanded ? configData.GeneralEvents.TimedSupply.StartWhenSpawned : !configData.GeneralEvents.TimedSupply.StartWhenSpawned)
                 {
                     PrintDebug($"{(isLanded ? "Landed" : "Spawned")} for timed supply disabled.");
                     return;
@@ -676,7 +752,7 @@ namespace Oxide.Plugins
                 {
                     var distance = Vector3Ex.Distance2D(entry.Key, position);
                     PrintDebug($"Found a supply signal at {entry.Key} located {distance}m away.");
-                    if (distance <= configData.global.compareRadius)
+                    if (distance <= configData.Global.CompareRadius)
                     {
                         action = () =>
                         {
@@ -701,8 +777,14 @@ namespace Oxide.Plugins
 
         private void OnEntitySpawned(CargoShip cargoShip)
         {
-            if (cargoShip == null || cargoShip.net == null) return;
-            if (!configData.generalEvents.cargoShip.enabled) return;
+            if (cargoShip == null || cargoShip.net == null)
+            {
+                return;
+            }
+            if (!configData.GeneralEvents.CargoShip.Enabled)
+            {
+                return;
+            }
             PrintDebug("Trying to create the event when the cargo ship is spawned.");
             if (!CheckEntityOwner(cargoShip))
             {
@@ -719,8 +801,14 @@ namespace Oxide.Plugins
 
         private void OnEntityKill(CargoShip cargoShip)
         {
-            if (cargoShip == null || cargoShip.net == null) return;
-            if (!configData.generalEvents.cargoShip.enabled) return;
+            if (cargoShip == null || cargoShip.net == null)
+            {
+                return;
+            }
+            if (!configData.GeneralEvents.CargoShip.Enabled)
+            {
+                return;
+            }
             HandleDeleteDynamicZone(cargoShip.net.ID.ToString());
         }
 
@@ -734,32 +822,31 @@ namespace Oxide.Plugins
         {
             var changed = false;
             var createdEvents = new List<string>();
-            var landmarks = typeof(TerrainPath).GetField("Landmarks", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public)?.GetValue(TerrainMeta.Path) as List<LandmarkInfo>;
-            foreach (var landmarkInfo in landmarks)
+            foreach (var landmarkInfo in TerrainMeta.Path.Landmarks)
             {
                 if (!landmarkInfo.shouldDisplayOnMap) continue;
                 var monumentName = landmarkInfo.displayPhrase.english.Replace("\n", "");
                 if (string.IsNullOrEmpty(monumentName)) continue;
                 switch (landmarkInfo.name)
                 {
-                    case "OilrigAI": oilRigPosition = landmarkInfo.transform.position; break;
-                    case "OilrigAI2": largeOilRigPosition = landmarkInfo.transform.position; break;
+                    case "OilrigAI": _oilRigPosition = landmarkInfo.transform.position; break;
+                    case "OilrigAI2": _largeOilRigPosition = landmarkInfo.transform.position; break;
                     case "assets/bundled/prefabs/autospawn/monument/harbor/harbor_1.prefab": monumentName += " A"; break;
                     case "assets/bundled/prefabs/autospawn/monument/harbor/harbor_2.prefab": monumentName += " B"; break;
                         //case "assets/bundled/prefabs/autospawn/monument/harbor/fishing_village_b.prefab": monumentName += " A"; break;
                         //case "assets/bundled/prefabs/autospawn/monument/harbor/fishing_village_c.prefab": monumentName += " B"; break;
                 }
-                MonumentEventS monumentEventS;
-                if (!configData.monumentEvents.TryGetValue(monumentName, out monumentEventS))
+                MonumentEvent monumentEvent;
+                if (!configData.MonumentEvents.TryGetValue(monumentName, out monumentEvent))
                 {
                     changed = true;
-                    monumentEventS = new MonumentEventS();
-                    configData.monumentEvents.Add(monumentName, monumentEventS);
+                    monumentEvent = new MonumentEvent();
+                    configData.MonumentEvents.Add(monumentName, monumentEvent);
                     Puts($"A new monument {monumentName} was found and added to the config.");
                 }
-                if (monumentEventS.enabled)
+                if (monumentEvent.Enabled)
                 {
-                    if (HandleMonumentEvent(monumentName, landmarkInfo.transform, monumentEventS))
+                    if (HandleMonumentEvent(monumentName, landmarkInfo.transform, monumentEvent))
                     {
                         createdEvents.Add(monumentName);
                     }
@@ -779,9 +866,9 @@ namespace Oxide.Plugins
             createdEvents.Clear();
             foreach (var entry in storedData.autoEvents)
             {
-                if (entry.Value.autoStart)
+                if (entry.Value.AutoStart)
                 {
-                    if (CreateDynamicZone(entry.Key, entry.Value.position, entry.Value.zoneID))
+                    if (CreateDynamicZone(entry.Key, entry.Value.Position, entry.Value.ZoneId))
                     {
                         createdEvents.Add(entry.Key);
                     }
@@ -792,7 +879,7 @@ namespace Oxide.Plugins
             {
                 PrintDebug($"{createdEvents.Count}({string.Join(", ", createdEvents)}) auto events were successfully created.", true);
             }
-            createEventsCoroutine = null;
+            _createEventsCoroutine = null;
         }
 
         #endregion Monument Event
@@ -805,33 +892,42 @@ namespace Oxide.Plugins
 
         private object CheckCommand(BasePlayer player, string command, bool isChat)
         {
-            if (player == null || string.IsNullOrEmpty(command)) return null;
+            if (player == null || string.IsNullOrEmpty(command))
+            {
+                return null;
+            }
             command = command.ToLower().TrimStart('/');
-            if (string.IsNullOrEmpty(command)) return null;
+            if (string.IsNullOrEmpty(command))
+            {
+                return null;
+            }
 
-            string[] result = GetPlayerZoneIDs(player);
-            if (result == null || result.Length == 0 || result.Length == 1 && string.IsNullOrEmpty(result[0])) return null;
+            string[] result = GetPlayerZoneIds(player);
+            if (result == null || result.Length == 0 || result.Length == 1 && string.IsNullOrEmpty(result[0]))
+            {
+                return null;
+            }
 
-            foreach (var zoneID in result)
+            foreach (var zoneId in result)
             {
                 string eventName;
-                if (activeDynamicZones.TryGetValue(zoneID, out eventName))
+                if (_activeDynamicZones.TryGetValue(zoneId, out eventName))
                 {
-                    PrintDebug($"Checking command: {command} , zoneID: {zoneID}");
-                    var baseEventS = GetBaseEventS(eventName);
-                    if (baseEventS == null || baseEventS.commandList.Count <= 0) continue;
+                    PrintDebug($"Checking command: {command} , zoneId: {zoneId}");
+                    var baseEvent = GetBaseEvent(eventName);
+                    if (baseEvent == null || baseEvent.CommandList.Count <= 0) continue;
 
-                    var commandExist = baseEventS.commandList.Any(entry =>
+                    var commandExist = baseEvent.CommandList.Any(entry =>
                        isChat
                            ? entry.StartsWith("/") && entry.Substring(1).Equals(command)
                            : !entry.StartsWith("/") && command.Contains(entry));
 
-                    if (baseEventS.useBlacklistCommands)
+                    if (baseEvent.UseBlacklistCommands)
                     {
                         if (commandExist)
                         {
                             PrintDebug($"Use blacklist, Blocked command: {command}", true);
-                            return False;
+                            return _false;
                         }
                     }
                     else
@@ -839,7 +935,7 @@ namespace Oxide.Plugins
                         if (!commandExist)
                         {
                             PrintDebug($"Use whitelist, Blocked command: {command}", true);
-                            return False;
+                            return _false;
                         }
                     }
                 }
@@ -855,50 +951,56 @@ namespace Oxide.Plugins
 
         private void HandleParentedEntityEvent(string eventName, BaseEntity parentEntity, bool delay = true)
         {
-            if (parentEntity == null || parentEntity.net == null) return;
-            var baseEventS = GetBaseEventS(eventName);
-            if (baseEventS == null) return;
-            if (delay && baseEventS.eventStartDelay > 0f)
+            if (parentEntity == null || parentEntity.net == null)
             {
-                timer.Once(baseEventS.eventStartDelay, () => HandleParentedEntityEvent(eventName, parentEntity, false));
+                return;
+            }
+            var baseEvent = GetBaseEvent(eventName);
+            if (baseEvent == null)
+            {
+                return;
+            }
+            if (delay && baseEvent.EventStartDelay > 0f)
+            {
+                timer.Once(baseEvent.EventStartDelay, () => HandleParentedEntityEvent(eventName, parentEntity, false));
                 return;
             }
             PrintDebug($"Trying to create parented entity event {eventName} on entity({parentEntity}).");
-            var zoneID = parentEntity.net.ID.ToString();
-            var iParentZone = baseEventS.GetDynamicZoneS() as IParentZone;
-            if (CreateDynamicZone(eventName, parentEntity.transform.position, zoneID, delay: false))
+            var zoneId = parentEntity.net.ID.ToString();
+            var parentZone = baseEvent.GetDynamicZone() as IParentZone;
+            if (CreateDynamicZone(eventName, parentEntity.transform.position, zoneId, delay: false))
             {
                 timer.Once(0.25f, () =>
                  {
-                     var zone = GetZoneByID(zoneID);
-                     PrintDebug($"Gets the zone({zoneID} | {zone}) created by the {eventName} event.", true);
+                     var zone = GetZoneById(zoneId);
+                     PrintDebug($"Gets the zone({zoneId} | {zone}) created by the {eventName} event.", true);
                      if (parentEntity != null && zone != null)
                      {
                          var zoneTransform = zone.transform;
                          zoneTransform.SetParent(parentEntity.transform);
                          zoneTransform.rotation = parentEntity.transform.rotation;
-                         zoneTransform.position = iParentZone != null ? parentEntity.transform.TransformPoint(iParentZone.center) : parentEntity.transform.position;
-                         PrintDebug($"The zone({zoneID} | {eventName}) was parented to entity({parentEntity}).", true);
+                         zoneTransform.position = parentZone != null ? parentEntity.transform.TransformPoint(parentZone.Center) : parentEntity.transform.position;
+                         PrintDebug($"The zone({zoneId} | {eventName}) was parented to entity({parentEntity}).", true);
                      }
                      else
                      {
-                         PrintDebug($"ERROR: The zone({zoneID} | {zone} | {parentEntity}) created by the {eventName} event is empty.", error: true);
-                         DeleteDynamicZone(zoneID);
+                         PrintDebug($"ERROR: The zone({zoneId} | {zone} | {parentEntity}) created by the {eventName} event is empty.", error: true);
+                         DeleteDynamicZone(zoneId);
                      }
                  });
             }
         }
 
-        private bool HandleMonumentEvent(string eventName, Transform transform, MonumentEventS monumentEventS)
+        private bool HandleMonumentEvent(string eventName, Transform transform, MonumentEvent monumentEvent)
         {
-            var position = monumentEventS.transformPosition != Vector3.zero ? transform.TransformPoint(monumentEventS.transformPosition) : transform.position;
-            return CreateDynamicZone(eventName, position, monumentEventS.zoneID, monumentEventS.GetDynamicZoneS().ZoneSettings(transform));
+            var position = monumentEvent.TransformPosition != Vector3.zero ? transform.TransformPoint(monumentEvent.TransformPosition) : transform.position;
+            return CreateDynamicZone(eventName, position, monumentEvent.ZoneId, monumentEvent.GetDynamicZone().ZoneSettings(transform));
         }
 
-        private bool HandleGeneralEvent(GeneralEventType generalEventType, BaseEntity baseEntity, bool useEntityID)
+        private bool HandleGeneralEvent(GeneralEventType generalEventType, BaseEntity baseEntity, bool useEntityId)
         {
             var eventName = generalEventType.ToString();
-            if (useEntityID && activeDynamicZones.ContainsKey(baseEntity.net.ID.ToString()))
+            if (useEntityId && _activeDynamicZones.ContainsKey(baseEntity.net.ID.ToString()))
             {
                 PrintDebug($"The event({eventName} | {baseEntity.net.ID}) created by entity({baseEntity}) already exists");
                 return false;
@@ -907,81 +1009,107 @@ namespace Oxide.Plugins
             {
                 return false;
             }
-            var baseEventS = GetBaseEventS(eventName);
-            if (baseEventS == null) return false;
+            var baseEvent = GetBaseEvent(eventName);
+            if (baseEvent == null)
+            {
+                return false;
+            }
             var position = baseEntity.transform.position;
             position.y = TerrainMeta.HeightMap.GetHeight(position);
-            return CreateDynamicZone(eventName, position, useEntityID ? baseEntity.net.ID.ToString() : null, baseEventS.GetDynamicZoneS().ZoneSettings(baseEntity.transform));
+            return CreateDynamicZone(eventName, position, useEntityId ? baseEntity.net.ID.ToString() : null, baseEvent.GetDynamicZone().ZoneSettings(baseEntity.transform));
         }
 
-        private bool CreateDynamicZone(string eventName, Vector3 position, string zoneID = "", string[] zoneSettings = null, bool delay = true)
+        private bool CreateDynamicZone(string eventName, Vector3 position, string zoneId = "", string[] zoneSettings = null, bool delay = true)
         {
             if (position == Vector3.zero)
             {
                 PrintDebug($"ERROR: Invalid location, zone({eventName}) creation failed. Skipping event creation.", error: true);
                 return false;
             }
-            var baseEventS = GetBaseEventS(eventName);
-            if (baseEventS == null) return false;
-            if (delay && baseEventS.eventStartDelay > 0f)
+            var baseEvent = GetBaseEvent(eventName);
+            if (baseEvent == null)
             {
-                timer.Once(baseEventS.eventStartDelay, () => CreateDynamicZone(eventName, position, zoneID, zoneSettings, false));
+                return false;
+            }
+            if (delay && baseEvent.EventStartDelay > 0f)
+            {
+                timer.Once(baseEvent.EventStartDelay, () => CreateDynamicZone(eventName, position, zoneId, zoneSettings, false));
                 return false;
             }
 
             float duration = -1;
-            var iTimedEvent = baseEventS as ITimedEvent;
-            if (iTimedEvent != null)
+            var timedEvent = baseEvent as ITimedEvent;
+            if (timedEvent != null)
             {
-                var iTimedDisable = baseEventS as ITimedDisable;
-                if (iTimedDisable == null || !iTimedDisable.IsTimedDisabled())
+                var timedDisable = baseEvent as ITimedDisable;
+                if (timedDisable == null || !timedDisable.IsTimedDisabled())
                 {
-                    duration = iTimedEvent.duration;
+                    duration = timedEvent.Duration;
                 }
             }
 
-            if (string.IsNullOrEmpty(zoneID))
+            if (string.IsNullOrEmpty(zoneId))
             {
-                zoneID = DateTime.Now.ToString("HHmmssffff");
+                zoneId = DateTime.Now.ToString("HHmmssffff");
             }
 
-            var dynamicZoneS = baseEventS.GetDynamicZoneS();
-            zoneSettings = zoneSettings ?? dynamicZoneS.ZoneSettings();
+            var dynamicZone = baseEvent.GetDynamicZone();
+            zoneSettings = zoneSettings ?? dynamicZone.ZoneSettings();
 
-            PrintDebug($"Trying create zone: {eventName}({zoneID} | {position}) {(dynamicZoneS is ISphereZone ? $"(Radius: {(dynamicZoneS as ISphereZone).radius}m)" : $"(Size: {(dynamicZoneS as ICubeZone)?.size})")} {(dynamicZoneS is IParentZone ? $"(Center: {(dynamicZoneS as IParentZone).center}) " : null)}(Duration: {duration}s).");
-            var zoneAdded = CreateZone(zoneID, zoneSettings, position);
+            PrintDebug($"Trying create zone: {eventName}({zoneId} | {position}) {(dynamicZone is ISphereZone ? $"(Radius: {(dynamicZone as ISphereZone).Radius}m)" : $"(Size: {(dynamicZone as ICubeZone)?.Size})")} {(dynamicZone is IParentZone ? $"(Center: {(dynamicZone as IParentZone).Center}) " : null)}(Duration: {duration}s).");
+            var zoneAdded = CreateZone(zoneId, zoneSettings, position);
             if (zoneAdded)
             {
-                if (!activeDynamicZones.ContainsKey(zoneID))
+                if (!_activeDynamicZones.ContainsKey(zoneId))
                 {
-                    activeDynamicZones.Add(zoneID, eventName);
+                    _activeDynamicZones.Add(zoneId, eventName);
                     CheckHooks();
                 }
 
                 var stringBuilder = Pool.Get<StringBuilder>();
-                var iSphereZone = dynamicZoneS as ISphereZone;
-                var iDomeEvent = baseEventS as IDomeEvent;
-                if (DomeCreateAllowed(iDomeEvent, iSphereZone))
+
+                var domeEvent = baseEvent as IDomeEvent;
+                var sphereZone = dynamicZone as ISphereZone;
+                if (DomeCreateAllowed(domeEvent, sphereZone))
                 {
-                    var domeAdded = CreateDome(zoneID, position, iSphereZone.radius, iDomeEvent.domesDarkness);
-                    if (!domeAdded) PrintDebug($"ERROR: Dome NOT added for zone({zoneID}).", error: true);
-                    else stringBuilder.Append("Dome,");
+                    var domeAdded = CreateDome(zoneId, position, sphereZone.Radius, domeEvent.DomesDarkness);
+                    if (!domeAdded)
+                    {
+                        PrintDebug($"ERROR: Dome NOT added for zone({zoneId}).", error: true);
+                    }
+                    else
+                    {
+                        stringBuilder.Append("Dome,");
+                    }
                 }
 
-                var iBotReSpawnEventS = baseEventS as IBotReSpawnEvent;
-                if (BotReSpawnAllowed(iBotReSpawnEventS))
+                var botEvent = baseEvent as IBotEvent;
+                if (BotReSpawnAllowed(botEvent))
                 {
-                    var botsSpawned = SpawnBots(position, iBotReSpawnEventS.botProfileName, zoneID);
-                    if (!botsSpawned) PrintDebug($"ERROR: Bot NOT spawned for zone({zoneID}).", error: true);
-                    else stringBuilder.Append("Bots,");
+                    var botsSpawned = SpawnBots(position, botEvent.BotProfileName, zoneId);
+                    if (!botsSpawned)
+                    {
+                        PrintDebug($"ERROR: Bot NOT spawned for zone({zoneId}).", error: true);
+                    }
+                    else
+                    {
+                        stringBuilder.Append("Bots,");
+                    }
                 }
 
-                var mappingAdded = CreateMapping(zoneID, baseEventS.mapping);
-                if (!mappingAdded) PrintDebug($"ERROR: Mapping Not added for zone({zoneID}).", error: true);
-                else stringBuilder.Append("Mapping,");
+                var mappingAdded = CreateMapping(zoneId, baseEvent.Mapping);
+                if (!mappingAdded)
+                {
+                    PrintDebug($"ERROR: Mapping Not added for zone({zoneId}).", error: true);
+                }
+                else
+                {
+                    stringBuilder.Append("Mapping,");
+                }
 
-                PrintDebug($"Created zone({zoneID} | {eventName}) ({stringBuilder.ToString().TrimEnd(',')}).", true);
-                HandleDeleteDynamicZone(zoneID, duration, eventName);
+                PrintDebug($"Created zone({zoneId} | {eventName}) ({stringBuilder.ToString().TrimEnd(',')}).", true);
+                HandleDeleteDynamicZone(zoneId, duration, eventName);
+
                 stringBuilder.Clear();
                 Pool.Free(ref stringBuilder);
                 return true;
@@ -991,116 +1119,149 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private void HandleDeleteDynamicZone(string zoneID, float duration, string eventName)
+        private void HandleDeleteDynamicZone(string zoneId, float duration, string eventName)
         {
             if (duration > 0f)
             {
-                TryRemoveEventTimer(zoneID);
-                PrintDebug($"The zone({zoneID} | {eventName}) will be deleted after {duration} seconds.", true);
-                eventTimers.Add(zoneID, timer.Once(duration, () => HandleDeleteDynamicZone(zoneID)));
+                TryRemoveEventTimer(zoneId);
+                PrintDebug($"The zone({zoneId} | {eventName}) will be deleted after {duration} seconds.", true);
+                _eventTimers.Add(zoneId, timer.Once(duration, () => HandleDeleteDynamicZone(zoneId)));
             }
         }
 
-        private void HandleDeleteDynamicZone(string zoneID)
+        private void HandleDeleteDynamicZone(string zoneId)
         {
             string eventName;
-            if (string.IsNullOrEmpty(zoneID) || !activeDynamicZones.TryGetValue(zoneID, out eventName))
+            if (string.IsNullOrEmpty(zoneId) || !_activeDynamicZones.TryGetValue(zoneId, out eventName))
             {
-                PrintDebug($"ERROR: Invalid zoneID: {zoneID}.", error: true);
+                PrintDebug($"ERROR: Invalid zoneID: {zoneId}.", error: true);
                 return;
             }
-            var baseEventS = GetBaseEventS(eventName);
-            if (baseEventS == null) return;
-            if (baseEventS.eventStopDelay > 0f)
+            if (Interface.CallHook("OnDeleteDynamicPVP", zoneId, eventName) != null)
             {
-                TryRemoveEventTimer(zoneID);
-                if (baseEventS.GetDynamicZoneS() is IParentZone)
+                return;
+            }
+            var baseEvent = GetBaseEvent(eventName);
+            if (baseEvent == null)
+            {
+                return;
+            }
+            if (baseEvent.EventStopDelay > 0f)
+            {
+                TryRemoveEventTimer(zoneId);
+                if (baseEvent.GetDynamicZone() is IParentZone)
                 {
-                    var zone = GetZoneByID(zoneID);
+                    var zone = GetZoneById(zoneId);
                     if (zone != null)
                     {
                         zone.transform.SetParent(null, true);
                     }
                 }
-                eventTimers.Add(zoneID, timer.Once(baseEventS.eventStopDelay, () => DeleteDynamicZone(zoneID)));
+                _eventTimers.Add(zoneId, timer.Once(baseEvent.EventStopDelay, () => DeleteDynamicZone(zoneId)));
             }
             else
             {
-                DeleteDynamicZone(zoneID);
+                DeleteDynamicZone(zoneId);
             }
         }
 
-        private bool DeleteDynamicZone(string zoneID)
+        private bool DeleteDynamicZone(string zoneId)
         {
             string eventName;
-            if (string.IsNullOrEmpty(zoneID) || !activeDynamicZones.TryGetValue(zoneID, out eventName))
+            if (string.IsNullOrEmpty(zoneId) || !_activeDynamicZones.TryGetValue(zoneId, out eventName))
             {
-                PrintDebug($"ERROR: Invalid zoneID: {zoneID}.", error: true);
+                PrintDebug($"ERROR: Invalid zoneID: {zoneId}.", error: true);
                 return false;
             }
 
-            TryRemoveEventTimer(zoneID);
+            TryRemoveEventTimer(zoneId);
+            var baseEvent = GetBaseEvent(eventName);
+            if (baseEvent == null)
+            {
+                return false;
+            }
+
             var stringBuilder = Pool.Get<StringBuilder>();
-            var baseEventS = GetBaseEventS(eventName);
-            if (baseEventS == null) return false;
-            var dynamicZoneS = baseEventS.GetDynamicZoneS();
-            if (DomeCreateAllowed(baseEventS as IDomeEvent, dynamicZoneS as ISphereZone))
+            var dynamicZone = baseEvent.GetDynamicZone();
+            if (DomeCreateAllowed(baseEvent as IDomeEvent, dynamicZone as ISphereZone))
             {
-                var domeRemoved = RemoveDome(zoneID);
-                if (!domeRemoved) PrintDebug($"ERROR: Dome NOT removed for zone({zoneID} | {eventName}).", error: true);
-                else stringBuilder.Append("Dome,");
+                var domeRemoved = RemoveDome(zoneId);
+                if (!domeRemoved)
+                {
+                    PrintDebug($"ERROR: Dome NOT removed for zone({zoneId} | {eventName}).", error: true);
+                }
+                else
+                {
+                    stringBuilder.Append("Dome,");
+                }
             }
 
-            if (BotReSpawnAllowed(baseEventS as IBotReSpawnEvent))
+            if (BotReSpawnAllowed(baseEvent as IBotEvent))
             {
-                var botsRemoved = KillBots(zoneID);
-                if (!botsRemoved) PrintDebug($"ERROR: Bot NOT killed for zone({zoneID} | {eventName}).", error: true);
-                else stringBuilder.Append("Bots,");
+                var botsRemoved = KillBots(zoneId);
+                if (!botsRemoved)
+                {
+                    PrintDebug($"ERROR: Bot NOT killed for zone({zoneId} | {eventName}).", error: true);
+                }
+                else
+                {
+                    stringBuilder.Append("Bots,");
+                }
             }
 
-            var mappingRemoved = RemoveMapping(zoneID);
-            if (!mappingRemoved) PrintDebug($"ERROR: Mapping NOT removed for zone({zoneID} | {eventName}).", error: true);
-            else stringBuilder.Append("Mapping,");
+            var mappingRemoved = RemoveMapping(zoneId);
+            if (!mappingRemoved)
+            {
+                PrintDebug($"ERROR: Mapping NOT removed for zone({zoneId} | {eventName}).", error: true);
+            }
+            else
+            {
+                stringBuilder.Append("Mapping,");
+            }
 
-            var players = GetPlayersInZone(zoneID);
-            var zoneRemoved = RemoveZone(zoneID, eventName);
+            var players = GetPlayersInZone(zoneId);
+            var zoneRemoved = RemoveZone(zoneId, eventName);
             if (zoneRemoved)
             {
                 // Release zone players immediately
                 PrintDebug($"Release zone players : {string.Join(",", players.Select(x => x.displayName))}");
                 foreach (var player in players)
                 {
-                    OnExitZone(zoneID, player);
+                    OnExitZone(zoneId, player);
                 }
-                if (activeDynamicZones.Remove(zoneID))
+                if (_activeDynamicZones.Remove(zoneId))
                 {
                     CheckHooks();
                 }
-                PrintDebug($"Deleted zone({zoneID} | {eventName}) ({stringBuilder.ToString().TrimEnd(',')}).", true);
-                stringBuilder.Clear();
-                Pool.Free(ref stringBuilder);
-                return true;
+                PrintDebug($"Deleted zone({zoneId} | {eventName}) ({stringBuilder.ToString().TrimEnd(',')}).", true);
             }
-            PrintDebug($"ERROR: Delete zone({zoneID} | {eventName} | {stringBuilder.ToString().TrimEnd(',')}) failed.", error: true);
+            else
+            {
+                PrintDebug($"ERROR: Delete zone({zoneId} | {eventName} | {stringBuilder.ToString().TrimEnd(',')}) failed.", error: true);
+            }
+
             stringBuilder.Clear();
             Pool.Free(ref stringBuilder);
-            return false;
+            return zoneRemoved;
         }
 
         private void DeleteOldDynamicZones()
         {
-            var zoneIDs = GetZoneIDs();
-            if (zoneIDs == null || zoneIDs.Length <= 0) return;
-            int attempts = 0, successes = 0;
-            foreach (var zoneID in zoneIDs)
+            var zoneIds = GetZoneIds();
+            if (zoneIds == null || zoneIds.Length <= 0)
             {
-                string zoneName = GetZoneName(zoneID);
-                if (zoneName == ZONE_NAME)
+                return;
+            }
+            int attempts = 0, successes = 0;
+            foreach (var zoneId in zoneIds)
+            {
+                string zoneName = GetZoneName(zoneId);
+                if (zoneName == ZoneName)
                 {
                     attempts++;
-                    var zoneRemoved = RemoveZone(zoneID);
+                    var zoneRemoved = RemoveZone(zoneId);
                     if (zoneRemoved) successes++;
-                    RemoveMapping(zoneID);
+                    RemoveMapping(zoneId);
                 }
             }
             PrintDebug($"Deleted {successes} of {attempts} existing DynamicPVP zones", true);
@@ -1110,31 +1271,41 @@ namespace Oxide.Plugins
 
         #region ZoneDome Integration
 
-        private readonly Dictionary<string, List<SphereEntity>> zoneSpheres = new Dictionary<string, List<SphereEntity>>();
+        private readonly Dictionary<string, List<SphereEntity>> _zoneSpheres = new Dictionary<string, List<SphereEntity>>();
 
-        private static bool DomeCreateAllowed(IDomeEvent iDomeEventS, ISphereZone iSphereZone) => iDomeEventS != null && iDomeEventS.domesEnabled && iSphereZone?.radius > 0f;
+        private static bool DomeCreateAllowed(IDomeEvent domeEvent, ISphereZone sphereZone) => domeEvent != null && domeEvent.DomesEnabled && sphereZone?.Radius > 0f;
 
-        private bool CreateDome(string zoneID, Vector3 position, float radius, int darkness)
+        private bool CreateDome(string zoneId, Vector3 position, float radius, int darkness)
         {
-            if (radius <= 0) return false;
+            if (radius <= 0)
+            {
+                return false;
+            }
             var sphereEntities = Pool.GetList<SphereEntity>();
             for (int i = 0; i < darkness; i++)
             {
-                var sphereEntity = GameManager.server.CreateEntity(PREFAB_SPHERE, position) as SphereEntity;
-                if (sphereEntity == null) { PrintDebug("ERROR: sphere entity is null", error: true); return false; }
+                var sphereEntity = GameManager.server.CreateEntity(PrefabSphere, position) as SphereEntity;
+                if (sphereEntity == null)
+                {
+                    PrintDebug("ERROR: sphere entity is null", error: true);
+                    return false;
+                }
                 sphereEntity.enableSaving = false;
                 sphereEntity.Spawn();
                 sphereEntity.LerpRadiusTo(radius * 2f, radius);
                 sphereEntities.Add(sphereEntity);
             }
-            zoneSpheres.Add(zoneID, sphereEntities);
+            _zoneSpheres.Add(zoneId, sphereEntities);
             return true;
         }
 
-        private bool RemoveDome(string zoneID)
+        private bool RemoveDome(string zoneId)
         {
             List<SphereEntity> sphereEntities;
-            if (!zoneSpheres.TryGetValue(zoneID, out sphereEntities)) return false;
+            if (!_zoneSpheres.TryGetValue(zoneId, out sphereEntities))
+            {
+                return false;
+            }
             foreach (var sphereEntity in sphereEntities)
             {
                 sphereEntity.LerpRadiusTo(0, sphereEntity.currentRadius);
@@ -1148,7 +1319,7 @@ namespace Oxide.Plugins
                         sphereEntity.KillMessage();
                     }
                 }
-                zoneSpheres.Remove(zoneID);
+                _zoneSpheres.Remove(zoneId);
                 Pool.FreeList(ref sphereEntities);
             });
             return true;
@@ -1160,20 +1331,26 @@ namespace Oxide.Plugins
 
         private object CanEntityTakeDamage(BasePlayer victim, HitInfo info)
         {
-            if (info == null || victim == null || !victim.userID.IsSteamId()) return null;
-            var attacker = info.InitiatorPlayer ?? (info.Initiator != null && info.Initiator.OwnerID.IsSteamId() ? BasePlayer.FindByID(info.Initiator.OwnerID) : null);//The attacker cannot be fully captured
-            if (attacker == null || !attacker.userID.IsSteamId()) return null;
-            LeftZone victimLeftZone;
-            if (pvpDelays.TryGetValue(victim.userID, out victimLeftZone))
+            if (info == null || victim == null || !victim.userID.IsSteamId())
             {
-                if (configData.global.pvpDelayFlags.HasFlag(PVPDelayFlags.ZonePlayersCanDamageDelayedPlayers) && !string.IsNullOrEmpty(victimLeftZone.zoneID) && IsPlayerInZone(victimLeftZone, attacker))//ZonePlayer attack DelayedPlayer
+                return null;
+            }
+            var attacker = info.InitiatorPlayer ?? (info.Initiator != null && info.Initiator.OwnerID.IsSteamId() ? BasePlayer.FindByID(info.Initiator.OwnerID) : null);//The attacker cannot be fully captured
+            if (attacker == null || !attacker.userID.IsSteamId())
+            {
+                return null;
+            }
+            LeftZone victimLeftZone;
+            if (_pvpDelays.TryGetValue(victim.userID, out victimLeftZone))
+            {
+                if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.ZonePlayersCanDamageDelayedPlayers) && !string.IsNullOrEmpty(victimLeftZone.zoneId) && IsPlayerInZone(victimLeftZone, attacker))//ZonePlayer attack DelayedPlayer
                 {
-                    return True;
+                    return _true;
                 }
                 LeftZone attackerLeftZone;
-                if (configData.global.pvpDelayFlags.HasFlag(PVPDelayFlags.DelayedPlayersCanDamageDelayedPlayers) && pvpDelays.TryGetValue(attacker.userID, out attackerLeftZone) && victimLeftZone.zoneID == attackerLeftZone.zoneID)//DelayedPlayer attack DelayedPlayer
+                if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.DelayedPlayersCanDamageDelayedPlayers) && _pvpDelays.TryGetValue(attacker.userID, out attackerLeftZone) && victimLeftZone.zoneId == attackerLeftZone.zoneId)//DelayedPlayer attack DelayedPlayer
                 {
-                    return True;
+                    return _true;
                 }
 
                 return null;
@@ -1181,11 +1358,11 @@ namespace Oxide.Plugins
             else
             {
                 LeftZone attackerLeftZone;
-                if (pvpDelays.TryGetValue(attacker.userID, out attackerLeftZone))
+                if (_pvpDelays.TryGetValue(attacker.userID, out attackerLeftZone))
                 {
-                    if (configData.global.pvpDelayFlags.HasFlag(PVPDelayFlags.DelayedPlayersCanDamageZonePlayers) && !string.IsNullOrEmpty(attackerLeftZone.zoneID) && IsPlayerInZone(attackerLeftZone, victim))//DelayedPlayer attack ZonePlayer
+                    if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.DelayedPlayersCanDamageZonePlayers) && !string.IsNullOrEmpty(attackerLeftZone.zoneId) && IsPlayerInZone(attackerLeftZone, victim))//DelayedPlayer attack ZonePlayer
                     {
-                        return True;
+                        return _true;
                     }
 
                     return null;
@@ -1194,155 +1371,225 @@ namespace Oxide.Plugins
             return null;
         }
 
-        private bool CreateMapping(string zoneID, string mapping)
+        private bool CreateMapping(string zoneId, string mapping)
         {
-            if (TruePVE != null) return (bool) TruePVE.Call("AddOrUpdateMapping", zoneID, mapping);
-            if (NextGenPVE != null) return (bool) NextGenPVE.Call("AddOrUpdateMapping", zoneID, mapping);
+            if (TruePVE != null)
+            {
+                return (bool)TruePVE.Call("AddOrUpdateMapping", zoneId, mapping);
+            }
+            if (NextGenPVE != null)
+            {
+                return (bool)NextGenPVE.Call("AddOrUpdateMapping", zoneId, mapping);
+            }
             return false;
         }
 
-        private bool RemoveMapping(string zoneID)
+        private bool RemoveMapping(string zoneId)
         {
-            if (TruePVE != null) return (bool) TruePVE.Call("RemoveMapping", zoneID);
-            if (NextGenPVE != null) return (bool) NextGenPVE.Call("RemoveMapping", zoneID);
+            if (TruePVE != null)
+            {
+                return (bool)TruePVE.Call("RemoveMapping", zoneId);
+            }
+
+            if (NextGenPVE != null)
+            {
+                return (bool)NextGenPVE.Call("RemoveMapping", zoneId);
+            }
             return false;
         }
 
         #endregion TruePVE/NextGenPVE Integration
 
-        #region BotReSpawn  Integration
+        #region BotReSpawn/MonBots Integration
 
-        private bool BotReSpawnAllowed(IBotReSpawnEvent iBotReSpawnEventS)
+        private bool BotReSpawnAllowed(IBotEvent botEvent)
         {
-            if (BotReSpawn == null || iBotReSpawnEventS == null || string.IsNullOrEmpty(iBotReSpawnEventS.botProfileName)) return false;
-            return iBotReSpawnEventS.botsEnabled;
+            if (botEvent == null || string.IsNullOrEmpty(botEvent.BotProfileName))
+            {
+                return false;
+            }
+            if (BotReSpawn == null)
+            {
+                return false;
+            }
+            return botEvent.BotsEnabled;
         }
 
-        private bool SpawnBots(Vector3 zoneLocation, string zoneProfile, string zoneGroupID)
+        private bool SpawnBots(Vector3 location, string profileName, string groupId)
         {
-            var result = CreateGroupSpawn(zoneLocation, zoneProfile, zoneGroupID);
-            if (result == null || result.Length < 2)
+            var result = CreateGroupSpawn(location, profileName, groupId);
+            if (result == null)
             {
                 PrintDebug("AddGroupSpawn returned invalid response.");
                 return false;
             }
-            switch (result[0])
+
+            if (BotReSpawn != null)
             {
-                case "true": return true;
-                case "false": return false;
-                case "error": PrintDebug($"ERROR: AddGroupSpawn failed: {result[1]}", error: true); return false;
+                if (result.Length < 2)
+                {
+                    PrintDebug("AddGroupSpawn returned invalid response.");
+                    return false;
+                }
+                switch (result[0])
+                {
+                    case "true": return true;
+                    case "false": return false;
+                    case "error": PrintDebug($"ERROR: AddGroupSpawn failed: {result[1]}", error: true); return false;
+                }
             }
             return false;
         }
 
-        private bool KillBots(string zoneGroupID)
+        private bool KillBots(string groupId)
         {
-            var result = RemoveGroupSpawn(zoneGroupID);
-            if (result == null || result.Length < 2)
+            var result = RemoveGroupSpawn(groupId);
+            if (result == null)
             {
                 PrintDebug("RemoveGroupSpawn returned invalid response.");
                 return false;
             }
-            if (result[0] == "error")
+
+            if (BotReSpawn != null)
             {
-                PrintDebug($"ERROR: RemoveGroupSpawn failed: {result[1]}", error: true);
-                return false;
+                if (result.Length < 2)
+                {
+                    PrintDebug("RemoveGroupSpawn returned invalid response.");
+                    return false;
+                }
+                if (result[0] == "error")
+                {
+                    PrintDebug($"ERROR: RemoveGroupSpawn failed: {result[1]}", error: true);
+                    return false;
+                }
             }
             return true;
         }
 
-        private string[] CreateGroupSpawn(Vector3 location, string profileName, string group, int quantity = 0) => (string[]) BotReSpawn?.Call("AddGroupSpawn", location, profileName, group, quantity);
+        private string[] CreateGroupSpawn(Vector3 location, string profileName, string groupId, int quantity = 0)
+        {
+            if (BotReSpawn != null)
+            {
+                return (string[])BotReSpawn?.Call("AddGroupSpawn", location, profileName, groupId, quantity);
+            }
+            return null;
+        }
 
-        private string[] RemoveGroupSpawn(string group) => (string[]) BotReSpawn?.Call("RemoveGroupSpawn", group);
+        private string[] RemoveGroupSpawn(string groupId)
+        {
+            if (BotReSpawn != null)
+            {
+                return (string[])BotReSpawn?.Call("RemoveGroupSpawn", groupId);
+            }
+            return null;
+        }
 
-        #endregion BotReSpawn  Integration
+        #endregion BotReSpawn/MonBots Integration
 
         #region ZoneManager Integration
 
-        private void OnEnterZone(string zoneID, BasePlayer player)
+        private void OnEnterZone(string zoneId, BasePlayer player)
         {
-            if (player == null || !player.userID.IsSteamId()) return;
+            if (player == null || !player.userID.IsSteamId())
+            {
+                return;
+            }
             string eventName;
-            if (!activeDynamicZones.TryGetValue(zoneID, out eventName)) return;
-            PrintDebug($"{player.displayName} has entered a pvp zone({zoneID} | {eventName}).", true);
+            if (!_activeDynamicZones.TryGetValue(zoneId, out eventName))
+            {
+                return;
+            }
+            PrintDebug($"{player.displayName} has entered a pvp zone({zoneId} | {eventName}).", true);
 
             TryRemovePVPDelay(player.userID, player.displayName);
         }
 
-        private void OnExitZone(string zoneID, BasePlayer player)
+        private void OnExitZone(string zoneId, BasePlayer player)
         {
-            if (player == null || !player.userID.IsSteamId()) return;
+            if (player == null || !player.userID.IsSteamId())
+            {
+                return;
+            }
             string eventName;
-            if (!activeDynamicZones.TryGetValue(zoneID, out eventName)) return;
-            PrintDebug($"{player.displayName} has left a pvp zone({zoneID} | {eventName}).", true);
+            if (!_activeDynamicZones.TryGetValue(zoneId, out eventName))
+            {
+                return;
+            }
+            PrintDebug($"{player.displayName} has left a pvp zone({zoneId} | {eventName}).", true);
 
-            var baseEventS = GetBaseEventS(eventName);
-            if (!baseEventS.pvpDelayEnabled || baseEventS.pvpDelayTime <= 0) return;
+            var baseEvent = GetBaseEvent(eventName);
+            if (!baseEvent.PvpDelayEnabled || baseEvent.PvpDelayTime <= 0)
+            {
+                return;
+            }
 
-            var playerID = player.userID;
+            var playerId = player.userID;
             var playerName = player.displayName;
             var leftZone = GetOrAddPVPDelay(player);
-            leftZone.zoneID = zoneID;
-            leftZone.zoneTimer = timer.Once(baseEventS.pvpDelayTime, () =>
+            leftZone.zoneId = zoneId;
+            leftZone.zoneTimer = timer.Once(baseEvent.PvpDelayTime, () =>
             {
-                TryRemovePVPDelay(playerID, playerName);
+                TryRemovePVPDelay(playerId, playerName);
             });
-            Interface.CallHook("OnPlayerAddedToPVPDelay", player.userID, zoneID, baseEventS.pvpDelayTime);
+            Interface.CallHook("OnPlayerAddedToPVPDelay", player.userID, zoneId, baseEvent.PvpDelayTime);
         }
 
-        private bool CreateZone(string zoneID, string[] zoneArgs, Vector3 zoneLocation) => (bool) ZoneManager.Call("CreateOrUpdateZone", zoneID, zoneArgs, zoneLocation);
+        private bool CreateZone(string zoneId, string[] zoneArgs, Vector3 location) => (bool)ZoneManager.Call("CreateOrUpdateZone", zoneId, zoneArgs, location);
 
-        private bool RemoveZone(string zoneID, string eventName = "")
+        private bool RemoveZone(string zoneId, string eventName = "")
         {
             try
             {
-                return (bool) ZoneManager.Call("EraseZone", zoneID);
+                return (bool)ZoneManager.Call("EraseZone", zoneId);
             }
             catch (Exception exception)
             {
-                PrintDebug($"ERROR: EraseZone failed. {exception}");
+                PrintDebug($"ERROR: EraseZone({eventName}) failed. {exception}");
                 return true;
             }
         }
 
-        private string[] GetZoneIDs() => (string[]) ZoneManager.Call("GetZoneIDs");
+        private string[] GetZoneIds() => (string[])ZoneManager.Call("GetZoneIDs");
 
-        private string GetZoneName(string zoneID) => (string) ZoneManager.Call("GetZoneName", zoneID);
+        private string GetZoneName(string zoneId) => (string)ZoneManager.Call("GetZoneName", zoneId);
 
-        private ZoneManager.Zone GetZoneByID(string zoneID) => (ZoneManager.Zone) ZoneManager.Call("GetZoneByID", zoneID);
+        private ZoneManager.Zone GetZoneById(string zoneId) => (ZoneManager.Zone)ZoneManager.Call("GetZoneByID", zoneId);
 
-        private string[] GetPlayerZoneIDs(BasePlayer player) => (string[]) ZoneManager.Call("GetPlayerZoneIDs", player);
+        private string[] GetPlayerZoneIds(BasePlayer player) => (string[])ZoneManager.Call("GetPlayerZoneIDs", player);
 
-        private bool IsPlayerInZone(LeftZone leftZone, BasePlayer player) => (bool) ZoneManager.Call("IsPlayerInZone", leftZone.zoneID, player);
+        private bool IsPlayerInZone(LeftZone leftZone, BasePlayer player) => (bool)ZoneManager.Call("IsPlayerInZone", leftZone.zoneId, player);
 
-        private List<BasePlayer> GetPlayersInZone(string zoneID) => (List<BasePlayer>) ZoneManager.Call("GetPlayersInZone", zoneID);
+        private List<BasePlayer> GetPlayersInZone(string zoneId) => (List<BasePlayer>)ZoneManager.Call("GetPlayersInZone", zoneId);
 
         #endregion ZoneManager Integration
 
         #region Debug
 
-        private StringBuilder debugStringBuilder;
+        private StringBuilder _debugStringBuilder;
 
         private void PrintDebug(string message, bool warning = false, bool error = false)
         {
-            if (configData.global.debugEnabled)
+            if (configData.Global.DebugEnabled)
             {
                 if (error) PrintError(message);
                 else if (warning) PrintWarning(message);
                 else Puts(message);
             }
 
-            if (configData.global.logToFile)
+            if (configData.Global.LogToFile)
             {
-                debugStringBuilder.AppendLine($"[{DateTime.Now.ToString(CultureInfo.InstalledUICulture)}] | {message}");
+                _debugStringBuilder.AppendLine($"[{DateTime.Now.ToString(CultureInfo.InstalledUICulture)}] | {message}");
             }
         }
 
         private void SaveDebug()
         {
-            if (!configData.global.logToFile) return;
-            var debugText = debugStringBuilder.ToString().Trim();
-            debugStringBuilder.Clear();
+            if (!configData.Global.LogToFile)
+            {
+                return;
+            }
+            var debugText = _debugStringBuilder.ToString().Trim();
+            _debugStringBuilder.Clear();
             if (!string.IsNullOrEmpty(debugText))
             {
                 LogToFile("debug", debugText, this);
@@ -1353,28 +1600,28 @@ namespace Oxide.Plugins
 
         #region API
 
-        private string[] AllDynamicPVPZones() => activeDynamicZones.Keys.ToArray();
+        private string[] AllDynamicPVPZones() => _activeDynamicZones.Keys.ToArray();
 
-        private bool IsDynamicPVPZone(string zoneID) => activeDynamicZones.ContainsKey(zoneID);
+        private bool IsDynamicPVPZone(string zoneId) => _activeDynamicZones.ContainsKey(zoneId);
 
         private bool EventDataExists(string eventName) => storedData.EventDataExists(eventName);
 
-        private bool IsPlayerInPVPDelay(ulong playerID) => pvpDelays.ContainsKey(playerID);
+        private bool IsPlayerInPVPDelay(ulong playerId) => _pvpDelays.ContainsKey(playerId);
 
-        private string GetPlayerPVPDelayedZoneID(ulong playerID)
+        private string GetPlayerPVPDelayedZoneID(ulong playerId)
         {
             LeftZone leftZone;
-            if (!pvpDelays.TryGetValue(playerID, out leftZone))
+            if (!_pvpDelays.TryGetValue(playerId, out leftZone))
             {
                 return null;
             }
-            return leftZone.zoneID;
+            return leftZone.zoneId;
         }
 
-        private string GetEventName(string zoneID)
+        private string GetEventName(string zoneId)
         {
             string eventName;
-            if (activeDynamicZones.TryGetValue(zoneID, out eventName))
+            if (_activeDynamicZones.TryGetValue(zoneId, out eventName))
             {
                 return eventName;
             }
@@ -1383,61 +1630,87 @@ namespace Oxide.Plugins
 
         private bool CreateOrUpdateEventData(string eventName, string eventData, bool isTimed = false)
         {
-            if (string.IsNullOrEmpty(eventName) || string.IsNullOrEmpty(eventData)) return false;
+            if (string.IsNullOrEmpty(eventName) || string.IsNullOrEmpty(eventData))
+            {
+                return false;
+            }
             if (EventDataExists(eventName)) RemoveEventData(eventName);
             if (isTimed)
             {
-                TimedEventS timedEventS;
-                try { timedEventS = JsonConvert.DeserializeObject<TimedEventS>(eventData); } catch { return false; }
-                storedData.timedEvents.Add(eventName, timedEventS);
+                TimedEvent timedEvent;
+                try
+                {
+                    timedEvent = JsonConvert.DeserializeObject<TimedEvent>(eventData);
+                }
+                catch
+                {
+                    return false;
+                }
+                storedData.timedEvents.Add(eventName, timedEvent);
             }
             else
             {
-                AutoEventS autoEventS;
-                try { autoEventS = JsonConvert.DeserializeObject<AutoEventS>(eventData); } catch { return false; }
-                storedData.autoEvents.Add(eventName, autoEventS);
-                if (autoEventS.autoStart)
+                AutoEvent autoEvent;
+                try
                 {
-                    CreateDynamicZone(eventName, autoEventS.position, autoEventS.zoneID);
+                    autoEvent = JsonConvert.DeserializeObject<AutoEvent>(eventData);
+                }
+                catch
+                {
+                    return false;
+                }
+                storedData.autoEvents.Add(eventName, autoEvent);
+                if (autoEvent.AutoStart)
+                {
+                    CreateDynamicZone(eventName, autoEvent.Position, autoEvent.ZoneId);
                 }
             }
-            dataChanged = true;
+            _dataChanged = true;
             return true;
         }
 
         private bool CreateEventData(string eventName, Vector3 position, bool isTimed)
         {
-            if (EventDataExists(eventName)) return false;
+            if (EventDataExists(eventName))
+            {
+                return false;
+            }
             if (isTimed)
             {
-                var timedEventS = new TimedEventS();
-                storedData.timedEvents.Add(eventName, timedEventS);
+                var timedEvent = new TimedEvent();
+                storedData.timedEvents.Add(eventName, timedEvent);
             }
             else
             {
-                var autoEventS = new AutoEventS { position = position };
-                storedData.autoEvents.Add(eventName, autoEventS);
+                var autoEvent = new AutoEvent { Position = position };
+                storedData.autoEvents.Add(eventName, autoEvent);
             }
-            dataChanged = true;
+            _dataChanged = true;
             return true;
         }
 
         private bool RemoveEventData(string eventName, bool forceClose = true)
         {
-            if (!EventDataExists(eventName)) return false;
+            if (!EventDataExists(eventName))
+            {
+                return false;
+            }
             storedData.RemoveEventData(eventName);
             if (forceClose) ForceCloseZones(eventName);
-            dataChanged = true;
+            _dataChanged = true;
             return true;
         }
 
         private bool StartEvent(string eventName, Vector3 position)
         {
-            if (!EventDataExists(eventName)) return false;
-            var autoEventS = GetBaseEventS(eventName) as AutoEventS;
-            if (autoEventS != null)
+            if (!EventDataExists(eventName))
             {
-                CreateDynamicZone(eventName, position == default(Vector3) ? autoEventS.position : position, autoEventS.zoneID);
+                return false;
+            }
+            var autoEvent = GetBaseEvent(eventName) as AutoEvent;
+            if (autoEvent != null)
+            {
+                CreateDynamicZone(eventName, position == default(Vector3) ? autoEvent.Position : position, autoEvent.ZoneId);
             }
             else
             {
@@ -1446,20 +1719,19 @@ namespace Oxide.Plugins
             return true;
         }
 
-        // private bool UpdateEventDataValue()
-        // {
-        // }
-
         private bool StopEvent(string eventName)
         {
-            if (!EventDataExists(eventName)) return false;
+            if (!EventDataExists(eventName))
+            {
+                return false;
+            }
             return ForceCloseZones(eventName);
         }
 
         private bool ForceCloseZones(string eventName)
         {
             bool closed = false;
-            foreach (var entry in activeDynamicZones.ToArray())
+            foreach (var entry in _activeDynamicZones.ToArray())
             {
                 if (entry.Value == eventName)
                 {
@@ -1478,14 +1750,14 @@ namespace Oxide.Plugins
 
         private void CmdDynamicPVP(IPlayer iPlayer, string command, string[] args)
         {
-            if (!iPlayer.IsAdmin && !iPlayer.HasPermission(PERMISSION_ADMIN))
+            if (!iPlayer.IsAdmin && !iPlayer.HasPermission(PermissionAdmin))
             {
                 Print(iPlayer, Lang("NotAllowed", iPlayer.Id));
                 return;
             }
             if (args == null || args.Length < 1)
             {
-                Print(iPlayer, Lang("SyntaxError", iPlayer.Id, configData.chatS.command));
+                Print(iPlayer, Lang("SyntaxError", iPlayer.Id, configData.Chat.Command));
                 return;
             }
             if (args[0].ToLower() == "list")
@@ -1502,12 +1774,12 @@ namespace Oxide.Plugins
                 foreach (var entry in storedData.autoEvents)
                 {
                     i++;
-                    stringBuilder.AppendLine(Lang("AutoEvent", iPlayer.Id, i, entry.Key, entry.Value.autoStart, entry.Value.position));
+                    stringBuilder.AppendLine(Lang("AutoEvent", iPlayer.Id, i, entry.Key, entry.Value.AutoStart, entry.Value.Position));
                 }
                 foreach (var entry in storedData.timedEvents)
                 {
                     i++;
-                    stringBuilder.AppendLine(Lang("TimedEvent", iPlayer.Id, i, entry.Key, entry.Value.duration));
+                    stringBuilder.AppendLine(Lang("TimedEvent", iPlayer.Id, i, entry.Key, entry.Value.Duration));
                 }
                 Print(iPlayer, stringBuilder.ToString());
                 return;
@@ -1553,67 +1825,67 @@ namespace Oxide.Plugins
                 case "edit":
                     if (args.Length >= 3)
                     {
-                        AutoEventS autoEventS;
-                        if (storedData.autoEvents.TryGetValue(eventName, out autoEventS))
+                        AutoEvent autoEvent;
+                        if (storedData.autoEvents.TryGetValue(eventName, out autoEvent))
                         {
                             switch (args[2].ToLower())
                             {
                                 case "1":
                                 case "true":
-                                    autoEventS.autoStart = true;
+                                    autoEvent.AutoStart = true;
                                     Print(iPlayer, Lang("AutoEventAutoStart", iPlayer.Id, eventName, true));
-                                    dataChanged = true;
+                                    _dataChanged = true;
                                     return;
 
                                 case "0":
                                 case "false":
-                                    autoEventS.autoStart = false;
+                                    autoEvent.AutoStart = false;
                                     Print(iPlayer, Lang("AutoEventAutoStart", iPlayer.Id, eventName, false));
-                                    dataChanged = true;
+                                    _dataChanged = true;
                                     return;
 
                                 case "move":
-                                    autoEventS.position = position;
+                                    autoEvent.Position = position;
                                     Print(iPlayer, Lang("AutoEventMove", iPlayer.Id, eventName));
-                                    dataChanged = true;
+                                    _dataChanged = true;
                                     return;
                             }
                         }
                         else
                         {
-                            TimedEventS timedEventS;
-                            if (storedData.timedEvents.TryGetValue(eventName, out timedEventS))
+                            TimedEvent timedEvent;
+                            if (storedData.timedEvents.TryGetValue(eventName, out timedEvent))
                             {
                                 float duration;
                                 if (float.TryParse(args[2], out duration))
                                 {
-                                    timedEventS.duration = duration;
+                                    timedEvent.Duration = duration;
                                     Print(iPlayer, Lang("TimedEventDuration", iPlayer.Id, eventName, duration));
-                                    dataChanged = true;
+                                    _dataChanged = true;
                                     return;
                                 }
                             }
                         }
                     }
-                    Print(iPlayer, Lang("SyntaxError", iPlayer.Id, configData.chatS.command));
+                    Print(iPlayer, Lang("SyntaxError", iPlayer.Id, configData.Chat.Command));
                     return;
 
                 case "h":
                 case "help":
                     StringBuilder stringBuilder = new StringBuilder();
                     stringBuilder.AppendLine();
-                    stringBuilder.AppendLine(Lang("Syntax", iPlayer.Id, configData.chatS.command));
-                    stringBuilder.AppendLine(Lang("Syntax1", iPlayer.Id, configData.chatS.command));
-                    stringBuilder.AppendLine(Lang("Syntax2", iPlayer.Id, configData.chatS.command));
-                    stringBuilder.AppendLine(Lang("Syntax3", iPlayer.Id, configData.chatS.command));
-                    stringBuilder.AppendLine(Lang("Syntax4", iPlayer.Id, configData.chatS.command));
-                    stringBuilder.AppendLine(Lang("Syntax5", iPlayer.Id, configData.chatS.command));
-                    stringBuilder.AppendLine(Lang("Syntax6", iPlayer.Id, configData.chatS.command));
+                    stringBuilder.AppendLine(Lang("Syntax", iPlayer.Id, configData.Chat.Command));
+                    stringBuilder.AppendLine(Lang("Syntax1", iPlayer.Id, configData.Chat.Command));
+                    stringBuilder.AppendLine(Lang("Syntax2", iPlayer.Id, configData.Chat.Command));
+                    stringBuilder.AppendLine(Lang("Syntax3", iPlayer.Id, configData.Chat.Command));
+                    stringBuilder.AppendLine(Lang("Syntax4", iPlayer.Id, configData.Chat.Command));
+                    stringBuilder.AppendLine(Lang("Syntax5", iPlayer.Id, configData.Chat.Command));
+                    stringBuilder.AppendLine(Lang("Syntax6", iPlayer.Id, configData.Chat.Command));
                     Print(iPlayer, stringBuilder.ToString());
                     return;
 
                 default:
-                    Print(iPlayer, Lang("SyntaxError", iPlayer.Id, configData.chatS.command));
+                    Print(iPlayer, Lang("SyntaxError", iPlayer.Id, configData.Chat.Command));
                     return;
             }
         }
@@ -1627,239 +1899,239 @@ namespace Oxide.Plugins
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Global Settings")]
-            public GlobalSettings global = new GlobalSettings();
+            public GlobalSettings Global { get; set; } = new GlobalSettings();
 
             [JsonProperty(PropertyName = "Chat Settings")]
-            public ChatSettings chatS = new ChatSettings();
+            public ChatSettings Chat { get; set; } = new ChatSettings();
 
             [JsonProperty(PropertyName = "General Event Settings")]
-            public GeneralEventSettings generalEvents = new GeneralEventSettings();
+            public GeneralEventSettings GeneralEvents { get; set; } = new GeneralEventSettings();
 
             [JsonProperty(PropertyName = "Monument Event Settings")]
-            public Dictionary<string, MonumentEventS> monumentEvents = new Dictionary<string, MonumentEventS>();
+            public Dictionary<string, MonumentEvent> MonumentEvents { get; set; } = new Dictionary<string, MonumentEvent>();
 
             [JsonProperty(PropertyName = "Version")]
-            public VersionNumber version;
+            public VersionNumber Version { get; set; }
         }
 
         private class GlobalSettings
         {
             [JsonProperty(PropertyName = "Enable Debug Mode")]
-            public bool debugEnabled;
+            public bool DebugEnabled { get; set; }
 
             [JsonProperty(PropertyName = "Log Debug To File")]
-            public bool logToFile;
+            public bool LogToFile { get; set; }
 
             [JsonProperty(PropertyName = "Compare Radius (Used to determine if it is a SupplySignal)")]
-            public float compareRadius = 2f;
+            public float CompareRadius { get; set; } = 2f;
 
             [JsonProperty(PropertyName = "If the entity has an owner, don't create a PVP zone")]
-            public bool checkEntityOwner = true;
+            public bool CheckEntityOwner { get; set; } = true;
 
             [JsonProperty(PropertyName = "PVP Delay Flags")]
-            public PVPDelayFlags pvpDelayFlags = PVPDelayFlags.ZonePlayersCanDamageDelayedPlayers | PVPDelayFlags.DelayedPlayersCanDamageDelayedPlayers | PVPDelayFlags.DelayedPlayersCanDamageZonePlayers;
+            public PVPDelayFlags PvpDelayFlags { get; set; } = PVPDelayFlags.ZonePlayersCanDamageDelayedPlayers | PVPDelayFlags.DelayedPlayersCanDamageDelayedPlayers | PVPDelayFlags.DelayedPlayersCanDamageZonePlayers;
         }
 
-        public class ChatSettings
+        private class ChatSettings
         {
             [JsonProperty(PropertyName = "Command")]
-            public string command = "dynpvp";
+            public string Command { get; set; } = "dynpvp";
 
             [JsonProperty(PropertyName = "Chat Prefix")]
-            public string prefix = "[DynamicPVP]: ";
+            public string Prefix { get; set; } = "[DynamicPVP]: ";
 
             [JsonProperty(PropertyName = "Chat Prefix Color")]
-            public string prefixColor = "#00FFFF";
+            public string PrefixColor { get; set; } = "#00FFFF";
 
             [JsonProperty(PropertyName = "Chat SteamID Icon")]
-            public ulong steamIDIcon = 0;
+            public ulong SteamIdIcon { get; set; } = 0;
         }
 
         private class GeneralEventSettings
         {
             [JsonProperty(PropertyName = "Bradley Event")]
-            public TimedEventS bradleyAPC = new TimedEventS();
+            public TimedEvent BradleyApc { get; set; } = new TimedEvent();
 
             [JsonProperty(PropertyName = "Patrol Helicopter Event")]
-            public TimedEventS patrolHelicopter = new TimedEventS();
+            public TimedEvent PatrolHelicopter { get; set; } = new TimedEvent();
 
             [JsonProperty(PropertyName = "Supply Signal Event")]
-            public SupplyDropEventS supplySignal = new SupplyDropEventS();
+            public SupplyDropEvent SupplySignal { get; set; } = new SupplyDropEvent();
 
             [JsonProperty(PropertyName = "Timed Supply Event")]
-            public SupplyDropEventS timedSupply = new SupplyDropEventS();
+            public SupplyDropEvent TimedSupply { get; set; } = new SupplyDropEvent();
 
             [JsonProperty(PropertyName = "Hackable Crate Event")]
-            public HackableCrateEventS hackableCrate = new HackableCrateEventS();
+            public HackableCrateEvent HackableCrate { get; set; } = new HackableCrateEvent();
 
             [JsonProperty(PropertyName = "Excavator Ignition Event")]
-            public MonumentEventS excavatorIgnition = new MonumentEventS();
+            public MonumentEvent ExcavatorIgnition { get; set; } = new MonumentEvent();
 
             [JsonProperty(PropertyName = "Cargo Ship Event")]
-            public CargoShipEventS cargoShip = new CargoShipEventS();
+            public CargoShipEvent CargoShip { get; set; } = new CargoShipEvent();
         }
 
         #region Event
 
-        private abstract class BaseEventS
+        public abstract class BaseEvent
         {
             [JsonProperty(PropertyName = "Enable Event", Order = 1)]
-            public bool enabled;
+            public bool Enabled { get; set; }
 
             [JsonProperty(PropertyName = "Enable PVP Delay", Order = 2)]
-            public bool pvpDelayEnabled;
+            public bool PvpDelayEnabled { get; set; }
 
             [JsonProperty(PropertyName = "PVP Delay Time", Order = 3)]
-            public float pvpDelayTime = 10f;
+            public float PvpDelayTime { get; set; } = 10f;
 
             [JsonProperty(PropertyName = "Delay In Starting Event", Order = 6)]
-            public float eventStartDelay;
+            public float EventStartDelay { get; set; }
 
             [JsonProperty(PropertyName = "Delay In Stopping Event", Order = 7)]
-            public float eventStopDelay;
+            public float EventStopDelay { get; set; }
 
             [JsonProperty(PropertyName = "TruePVE Mapping", Order = 8)]
-            public string mapping = "exclude";
+            public string Mapping { get; set; } = "exclude";
 
             // [JsonProperty(PropertyName = "Do not create a new zone when in the same event type of pvp zone", Order = 9)]
             // public bool dontCreateWhenInSameType = false;
 
             [JsonProperty(PropertyName = "Use Blacklist Commands (If false, a whitelist is used)", Order = 10)]
-            public bool useBlacklistCommands = true;
+            public bool UseBlacklistCommands { get; set; } = true;
 
             [JsonProperty(PropertyName = "Command List (If there is a '/' at the front, it is a chat command)", Order = 11)]
-            public List<string> commandList = new List<string>();
+            public List<string> CommandList { get; set; } = new List<string>();
 
-            public abstract BaseDynamicZoneS GetDynamicZoneS();
+            public abstract BaseDynamicZone GetDynamicZone();
         }
 
-        private class DomeMixedEventS : BaseEventS, IDomeEvent
+        public class DomeMixedEvent : BaseEvent, IDomeEvent
         {
-            public bool domesEnabled { get; set; } = true;
-            public int domesDarkness { get; set; } = 8;
+            public bool DomesEnabled { get; set; } = true;
+            public int DomesDarkness { get; set; } = 8;
 
             [JsonProperty(PropertyName = "Dynamic PVP Zone Settings", Order = 20)]
-            public SphereCubeDynamicZoneS dynamicZoneS { get; set; } = new SphereCubeDynamicZoneS();
+            public SphereCubeDynamicZone DynamicZone { get; set; } = new SphereCubeDynamicZone();
 
-            public override BaseDynamicZoneS GetDynamicZoneS()
+            public override BaseDynamicZone GetDynamicZone()
             {
-                return dynamicZoneS;
+                return DynamicZone;
             }
         }
 
-        private class BotDomeMixedEventS : DomeMixedEventS, IBotReSpawnEvent
+        public class BotDomeMixedEvent : DomeMixedEvent, IBotEvent
         {
-            public bool botsEnabled { get; set; }
-            public string botProfileName { get; set; } = string.Empty;
+            public bool BotsEnabled { get; set; }
+            public string BotProfileName { get; set; } = string.Empty;
         }
 
-        private class MonumentEventS : DomeMixedEventS
+        public class MonumentEvent : DomeMixedEvent
         {
             [JsonProperty(PropertyName = "Zone ID", Order = 21)]
-            public string zoneID = string.Empty;
+            public string ZoneId { get; set; } = string.Empty;
 
             [JsonProperty(PropertyName = "Transform Position", Order = 22)]
-            public Vector3 transformPosition;
+            public Vector3 TransformPosition { get; set; }
         }
 
-        private class AutoEventS : BotDomeMixedEventS
+        public class AutoEvent : BotDomeMixedEvent
         {
             [JsonProperty(PropertyName = "Auto Start", Order = 23)]
-            public bool autoStart;
+            public bool AutoStart { get; set; }
 
             [JsonProperty(PropertyName = "Zone ID", Order = 24)]
-            public string zoneID = string.Empty;
+            public string ZoneId { get; set; } = string.Empty;
 
             [JsonProperty(PropertyName = "Position", Order = 25)]
-            public Vector3 position;
+            public Vector3 Position { get; set; }
         }
 
-        private class TimedEventS : BotDomeMixedEventS, ITimedEvent
+        public class TimedEvent : BotDomeMixedEvent, ITimedEvent
         {
-            public float duration { get; set; } = 600f;
+            public float Duration { get; set; } = 600f;
         }
 
-        private class HackableCrateEventS : TimedEventS, ITimedDisable
+        public class HackableCrateEvent : TimedEvent, ITimedDisable
         {
             [JsonProperty(PropertyName = "Start Event When Spawned (If false, the event starts when unlocking)", Order = 24)]
-            public bool startWhenSpawned = true;
+            public bool StartWhenSpawned { get; set; } = true;
 
             [JsonProperty(PropertyName = "Stop Event When Killed", Order = 25)]
-            public bool stopWhenKilled;
+            public bool StopWhenKilled { get; set; }
 
             [JsonProperty(PropertyName = "Event Timer Starts When Looted", Order = 26)]
-            public bool timerStartWhenLooted;
+            public bool TimerStartWhenLooted { get; set; }
 
             [JsonProperty(PropertyName = "Event Timer Starts When Unlocked", Order = 27)]
-            public bool timerStartWhenUnlocked;
+            public bool TimerStartWhenUnlocked { get; set; }
 
             [JsonProperty(PropertyName = "Excluding Hackable Crate On OilRig", Order = 28)]
-            public bool excludeOilRig = true;
+            public bool ExcludeOilRig { get; set; } = true;
 
             [JsonProperty(PropertyName = "Excluding Hackable Crate on Cargo Ship", Order = 29)]
-            public bool excludeCargoShip = true;
+            public bool ExcludeCargoShip { get; set; } = true;
 
-            public bool IsTimedDisabled() => stopWhenKilled || timerStartWhenLooted || timerStartWhenUnlocked;
+            public bool IsTimedDisabled() => StopWhenKilled || TimerStartWhenLooted || TimerStartWhenUnlocked;
         }
 
-        private class SupplyDropEventS : TimedEventS, ITimedDisable
+        public class SupplyDropEvent : TimedEvent, ITimedDisable
         {
             [JsonProperty(PropertyName = "Start Event When Spawned (If false, the event starts when landed)", Order = 24)]
-            public bool startWhenSpawned = true;
+            public bool StartWhenSpawned { get; set; } = true;
 
             [JsonProperty(PropertyName = "Stop Event When Killed", Order = 25)]
-            public bool stopWhenKilled;
+            public bool StopWhenKilled { get; set; }
 
             [JsonProperty(PropertyName = "Event Timer Starts When Looted", Order = 26)]
-            public bool timerStartWhenLooted;
+            public bool TimerStartWhenLooted { get; set; }
 
-            public bool IsTimedDisabled() => stopWhenKilled || timerStartWhenLooted;
+            public bool IsTimedDisabled() => StopWhenKilled || TimerStartWhenLooted;
         }
 
-        private class CargoShipEventS : BaseEventS
+        public class CargoShipEvent : BaseEvent
         {
             [JsonProperty(PropertyName = "Dynamic PVP Zone Settings", Order = 20)]
-            public CubeParentDynamicZoneS dynamicZoneS { get; set; } = new CubeParentDynamicZoneS
+            public CubeParentDynamicZone DynamicZone { get; set; } = new CubeParentDynamicZone
             {
-                size = new Vector3(25.9f, 43.3f, 152.8f),
-                center = new Vector3(0f, 21.6f, 6.6f),
+                Size = new Vector3(25.9f, 43.3f, 152.8f),
+                Center = new Vector3(0f, 21.6f, 6.6f),
             };
 
-            public override BaseDynamicZoneS GetDynamicZoneS()
+            public override BaseDynamicZone GetDynamicZone()
             {
-                return dynamicZoneS;
+                return DynamicZone;
             }
         }
 
         #region Interface
 
-        private interface ITimedDisable
+        public interface ITimedDisable
         {
             bool IsTimedDisabled();
         }
 
-        private interface ITimedEvent
+        public interface ITimedEvent
         {
             [JsonProperty(PropertyName = "Event Duration", Order = 23)]
-            float duration { get; set; }
+            float Duration { get; set; }
         }
 
-        private interface IBotReSpawnEvent
+        public interface IBotEvent
         {
             [JsonProperty(PropertyName = "Enable Bots (Need BotSpawn Plugin)", Order = 21)]
-            bool botsEnabled { get; set; }
+            bool BotsEnabled { get; set; }
 
             [JsonProperty(PropertyName = "BotSpawn Profile Name", Order = 22)]
-            string botProfileName { get; set; }
+            string BotProfileName { get; set; }
         }
 
-        private interface IDomeEvent
+        public interface IDomeEvent
         {
             [JsonProperty(PropertyName = "Enable Domes", Order = 4)]
-            bool domesEnabled { get; set; }
+            bool DomesEnabled { get; set; }
 
             [JsonProperty(PropertyName = "Domes Darkness", Order = 5)]
-            int domesDarkness { get; set; }
+            int DomesDarkness { get; set; }
         }
 
         #endregion Interface
@@ -1868,37 +2140,37 @@ namespace Oxide.Plugins
 
         #region Zone
 
-        private abstract class BaseDynamicZoneS
+        public abstract class BaseDynamicZone
         {
             [JsonProperty(PropertyName = "Zone Comfort", Order = 10)]
-            public float comfort;
+            public float Comfort { get; set; }
 
             [JsonProperty(PropertyName = "Zone Radiation", Order = 11)]
-            public float radiation;
+            public float Radiation { get; set; }
 
             [JsonProperty(PropertyName = "Zone Temperature", Order = 12)]
-            public float temperature;
+            public float Temperature { get; set; }
 
             [JsonProperty(PropertyName = "Enable Safe Zone", Order = 13)]
-            public bool safeZone;
+            public bool SafeZone { get; set; }
 
             [JsonProperty(PropertyName = "Eject Spawns", Order = 14)]
-            public string ejectSpawns = string.Empty;
+            public string EjectSpawns { get; set; } = string.Empty;
 
             [JsonProperty(PropertyName = "Zone Parent ID", Order = 15)]
-            public string parentid = string.Empty;
+            public string ParentId { get; set; } = string.Empty;
 
             [JsonProperty(PropertyName = "Enter Message", Order = 16)]
-            public string enterMessage = "Entering a PVP area!";
+            public string EnterMessage { get; set; } = "Entering a PVP area!";
 
             [JsonProperty(PropertyName = "Leave Message", Order = 17)]
-            public string leaveMessage = "Leaving a PVP area.";
+            public string LeaveMessage { get; set; } = "Leaving a PVP area.";
 
             [JsonProperty(PropertyName = "Permission Required To Enter Zone", Order = 18)]
-            public string permission = string.Empty;
+            public string Permission { get; set; } = string.Empty;
 
             [JsonProperty(PropertyName = "Extra Zone Flags", Order = 20)]
-            public List<string> extraZoneFlags = new List<string>();
+            public List<string> ExtraZoneFlags { get; set; } = new List<string>();
 
             private string[] _zoneSettings;
 
@@ -1907,53 +2179,53 @@ namespace Oxide.Plugins
             protected void GetBaseZoneSettings(List<string> zoneSettings)
             {
                 zoneSettings.Add("name");
-                zoneSettings.Add(ZONE_NAME);
-                if (comfort > 0f)
+                zoneSettings.Add(ZoneName);
+                if (Comfort > 0f)
                 {
                     zoneSettings.Add("comfort");
-                    zoneSettings.Add(comfort.ToString(CultureInfo.InvariantCulture));
+                    zoneSettings.Add(Comfort.ToString(CultureInfo.InvariantCulture));
                 }
-                if (radiation > 0f)
+                if (Radiation > 0f)
                 {
                     zoneSettings.Add("radiation");
-                    zoneSettings.Add(radiation.ToString(CultureInfo.InvariantCulture));
+                    zoneSettings.Add(Radiation.ToString(CultureInfo.InvariantCulture));
                 }
-                if (temperature != 0f)
+                if (Temperature != 0f)
                 {
                     zoneSettings.Add("temperature");
-                    zoneSettings.Add(temperature.ToString(CultureInfo.InvariantCulture));
+                    zoneSettings.Add(Temperature.ToString(CultureInfo.InvariantCulture));
                 }
-                if (safeZone)
+                if (SafeZone)
                 {
                     zoneSettings.Add("safezone");
-                    zoneSettings.Add(safeZone.ToString());
+                    zoneSettings.Add(SafeZone.ToString());
                 }
-                if (!string.IsNullOrEmpty(enterMessage))
+                if (!string.IsNullOrEmpty(EnterMessage))
                 {
                     zoneSettings.Add("enter_message");
-                    zoneSettings.Add(enterMessage);
+                    zoneSettings.Add(EnterMessage);
                 }
-                if (!string.IsNullOrEmpty(leaveMessage))
+                if (!string.IsNullOrEmpty(LeaveMessage))
                 {
                     zoneSettings.Add("leave_message");
-                    zoneSettings.Add(leaveMessage);
+                    zoneSettings.Add(LeaveMessage);
                 }
-                if (!string.IsNullOrEmpty(ejectSpawns))
+                if (!string.IsNullOrEmpty(EjectSpawns))
                 {
                     zoneSettings.Add("ejectspawns");
-                    zoneSettings.Add(ejectSpawns);
+                    zoneSettings.Add(EjectSpawns);
                 }
-                if (!string.IsNullOrEmpty(permission))
+                if (!string.IsNullOrEmpty(Permission))
                 {
                     zoneSettings.Add("permission");
-                    zoneSettings.Add(permission);
+                    zoneSettings.Add(Permission);
                 }
-                if (!string.IsNullOrEmpty(parentid))
+                if (!string.IsNullOrEmpty(ParentId))
                 {
                     zoneSettings.Add("parentid");
-                    zoneSettings.Add(parentid);
+                    zoneSettings.Add(ParentId);
                 }
-                foreach (var flag in extraZoneFlags)
+                foreach (var flag in ExtraZoneFlags)
                 {
                     if (string.IsNullOrEmpty(flag)) continue;
                     zoneSettings.Add(flag);
@@ -1964,44 +2236,40 @@ namespace Oxide.Plugins
             protected abstract string[] GetZoneSettings(Transform transform = null);
         }
 
-        private class SphereDynamicZoneS : BaseDynamicZoneS, ISphereZone
+        public class SphereDynamicZone : BaseDynamicZone, ISphereZone
         {
-            public float radius { get; set; } = 100;
+            public float Radius { get; set; } = 100;
 
             protected override string[] GetZoneSettings(Transform transform = null)
             {
-                var zoneSettings = new List<string> {
-                    "radius", radius.ToString(CultureInfo.InvariantCulture)
-                };
+                var zoneSettings = new List<string> { "radius", Radius.ToString(CultureInfo.InvariantCulture) };
                 GetBaseZoneSettings(zoneSettings);
                 var array = zoneSettings.ToArray();
                 return array;
             }
         }
 
-        private class CubeDynamicZoneS : BaseDynamicZoneS, ICubeZone
+        public class CubeDynamicZone : BaseDynamicZone, ICubeZone
         {
-            public Vector3 size { get; set; }
-            public float rotation { get; set; }
-            public bool fixedRotation { get; set; }
+            public Vector3 Size { get; set; }
+            public float Rotation { get; set; }
+            public bool FixedRotation { get; set; }
 
             public override string[] ZoneSettings(Transform transform = null)
             {
-                return transform == null || fixedRotation ? base.ZoneSettings(transform) : GetZoneSettings(transform);
+                return transform == null || FixedRotation ? base.ZoneSettings(transform) : GetZoneSettings(transform);
             }
 
             protected override string[] GetZoneSettings(Transform transform = null)
             {
-                var zoneSettings = new List<string> {
-                    "size", $"{size.x} {size.y} {size.z}",
-                };
-                if (transform == null || fixedRotation)
+                var zoneSettings = new List<string> { "size", $"{Size.x} {Size.y} {Size.z}" };
+                if (transform == null || FixedRotation)
                 {
-                    zoneSettings.Add(rotation.ToString(CultureInfo.InvariantCulture));
+                    zoneSettings.Add(Rotation.ToString(CultureInfo.InvariantCulture));
                 }
                 else
                 {
-                    zoneSettings.Add((transform.rotation.eulerAngles.y + rotation).ToString(CultureInfo.InvariantCulture));
+                    zoneSettings.Add((transform.rotation.eulerAngles.y + Rotation).ToString(CultureInfo.InvariantCulture));
                 }
                 GetBaseZoneSettings(zoneSettings);
                 var array = zoneSettings.ToArray();
@@ -2009,38 +2277,38 @@ namespace Oxide.Plugins
             }
         }
 
-        private class SphereCubeDynamicZoneS : BaseDynamicZoneS, ICubeZone, ISphereZone
+        public class SphereCubeDynamicZone : BaseDynamicZone, ICubeZone, ISphereZone
         {
-            public float radius { get; set; }
-            public Vector3 size { get; set; }
-            public float rotation { get; set; }
-            public bool fixedRotation { get; set; }
+            public float Radius { get; set; }
+            public Vector3 Size { get; set; }
+            public float Rotation { get; set; }
+            public bool FixedRotation { get; set; }
 
             public override string[] ZoneSettings(Transform transform = null)
             {
-                return transform == null || fixedRotation || radius > 0f ? base.ZoneSettings(transform) : GetZoneSettings(transform);
+                return transform == null || FixedRotation || Radius > 0f ? base.ZoneSettings(transform) : GetZoneSettings(transform);
             }
 
             protected override string[] GetZoneSettings(Transform transform = null)
             {
                 var zoneSettings = new List<string>();
-                if (radius > 0f)
+                if (Radius > 0f)
                 {
                     zoneSettings.Add("radius");
-                    zoneSettings.Add(radius.ToString(CultureInfo.InvariantCulture));
+                    zoneSettings.Add(Radius.ToString(CultureInfo.InvariantCulture));
                 }
                 else
                 {
                     zoneSettings.Add("size");
-                    zoneSettings.Add($"{size.x} {size.y} {size.z}");
+                    zoneSettings.Add($"{Size.x} {Size.y} {Size.z}");
                     zoneSettings.Add("rotation");
-                    if (transform == null || fixedRotation)
+                    if (transform == null || FixedRotation)
                     {
-                        zoneSettings.Add(rotation.ToString(CultureInfo.InvariantCulture));
+                        zoneSettings.Add(Rotation.ToString(CultureInfo.InvariantCulture));
                     }
                     else
                     {
-                        zoneSettings.Add((transform.rotation.eulerAngles.y + rotation).ToString(CultureInfo.InvariantCulture));
+                        zoneSettings.Add((transform.rotation.eulerAngles.y + Rotation).ToString(CultureInfo.InvariantCulture));
                     }
                 }
                 GetBaseZoneSettings(zoneSettings);
@@ -2049,28 +2317,18 @@ namespace Oxide.Plugins
             }
         }
 
-        private class SphereParentDynamicZoneS : SphereDynamicZoneS, IParentZone
+        public class SphereParentDynamicZone : SphereDynamicZone, IParentZone
         {
-            public Vector3 center { get; set; }
+            public Vector3 Center { get; set; }
         }
 
-        private class CubeParentDynamicZoneS : CubeDynamicZoneS, IParentZone
+        public class CubeParentDynamicZone : CubeDynamicZone, IParentZone
         {
-            public Vector3 center { get; set; }
+            public Vector3 Center { get; set; }
 
             protected override string[] GetZoneSettings(Transform transform = null)
             {
-                var zoneSettings = new List<string> {
-                    "size", $"{size.x} {size.y} {size.z}",
-                };
-                //if (transform == null || fixedRotation)
-                //{
-                //    zoneSettings.Add(rotation.ToString(CultureInfo.InvariantCulture));
-                //}
-                //else
-                //{
-                //    zoneSettings.Add((transform.rotation.eulerAngles.y + rotation).ToString(CultureInfo.InvariantCulture));
-                //}
+                var zoneSettings = new List<string> { "size", $"{Size.x} {Size.y} {Size.z}", };
                 GetBaseZoneSettings(zoneSettings);
                 var array = zoneSettings.ToArray();
                 return array;
@@ -2082,25 +2340,25 @@ namespace Oxide.Plugins
         public interface ISphereZone
         {
             [JsonProperty(PropertyName = "Zone Radius", Order = 0)]
-            float radius { get; set; }
+            float Radius { get; set; }
         }
 
         public interface ICubeZone
         {
             [JsonProperty(PropertyName = "Zone Size", Order = 1)]
-            Vector3 size { get; set; }
+            Vector3 Size { get; set; }
 
             [JsonProperty(PropertyName = "Zone Rotation", Order = 2)]
-            float rotation { get; set; }
+            float Rotation { get; set; }
 
             [JsonProperty(PropertyName = "Fixed Rotation", Order = 3)]
-            bool fixedRotation { get; set; }
+            bool FixedRotation { get; set; }
         }
 
         public interface IParentZone
         {
             [JsonProperty(PropertyName = "Transform Position", Order = 5)]
-            Vector3 center { get; set; }
+            Vector3 Center { get; set; }
         }
 
         #endregion Interface
@@ -2134,16 +2392,16 @@ namespace Oxide.Plugins
         {
             PrintWarning("Creating a new configuration file");
             configData = new ConfigData();
-            configData.version = Version;
+            configData.Version = Version;
         }
 
         protected override void SaveConfig() => Config.WriteObject(configData);
 
         private void UpdateConfigValues()
         {
-            if (configData.version < Version)
+            if (configData.Version < Version)
             {
-                if (configData.version <= default(VersionNumber))
+                if (configData.Version <= default(VersionNumber))
                 {
                     //string prefix, prefixColor;
                     //if (GetConfigValue(out prefix, "Chat Settings", "Chat Prefix") && GetConfigValue(out prefixColor, "Chat Settings", "Chat Prefix Color"))
@@ -2152,34 +2410,34 @@ namespace Oxide.Plugins
                     //}
                 }
 
-                if (configData.version <= new VersionNumber(4, 2, 0))
+                if (configData.Version <= new VersionNumber(4, 2, 0))
                 {
-                    configData.global.compareRadius = 2f;
+                    configData.Global.CompareRadius = 2f;
                 }
 
-                if (configData.version <= new VersionNumber(4, 2, 4))
+                if (configData.Version <= new VersionNumber(4, 2, 4))
                 {
                     LoadData();
                     SaveData();
                 }
 
-                if (configData.version <= new VersionNumber(4, 2, 6))
+                if (configData.Version <= new VersionNumber(4, 2, 6))
                 {
                     bool value;
                     if (GetConfigValue(out value, "General Event Settings", "Supply Signal Event", "Supply Drop Event Start When Spawned (If false, the event starts when landed)"))
                     {
-                        configData.generalEvents.supplySignal.startWhenSpawned = value;
+                        configData.GeneralEvents.SupplySignal.StartWhenSpawned = value;
                     }
                     if (GetConfigValue(out value, "General Event Settings", "Timed Supply Event", "Supply Drop Event Start When Spawned (If false, the event starts when landed)"))
                     {
-                        configData.generalEvents.timedSupply.startWhenSpawned = value;
+                        configData.GeneralEvents.TimedSupply.StartWhenSpawned = value;
                     }
                     if (GetConfigValue(out value, "General Event Settings", "Hackable Crate Event", "Hackable Crate Event Start When Spawned (If false, the event starts when unlocking)"))
                     {
-                        configData.generalEvents.hackableCrate.startWhenSpawned = value;
+                        configData.GeneralEvents.HackableCrate.StartWhenSpawned = value;
                     }
                 }
-                configData.version = Version;
+                configData.Version = Version;
             }
         }
 
@@ -2190,7 +2448,7 @@ namespace Oxide.Plugins
             {
                 if (configValue is T)
                 {
-                    value = (T) configValue;
+                    value = (T)configValue;
                     return true;
                 }
                 try
@@ -2216,8 +2474,8 @@ namespace Oxide.Plugins
 
         private class StoredData
         {
-            public readonly Dictionary<string, TimedEventS> timedEvents = new Dictionary<string, TimedEventS>();
-            public readonly Dictionary<string, AutoEventS> autoEvents = new Dictionary<string, AutoEventS>();
+            public readonly Dictionary<string, TimedEvent> timedEvents = new Dictionary<string, TimedEvent>();
+            public readonly Dictionary<string, AutoEvent> autoEvents = new Dictionary<string, AutoEvent>();
 
             public bool EventDataExists(string eventName) => timedEvents.ContainsKey(eventName) || autoEvents.ContainsKey(eventName);
 
@@ -2256,20 +2514,26 @@ namespace Oxide.Plugins
 
         private void Print(IPlayer iPlayer, string message)
         {
-            if (iPlayer == null) return;
-            if (iPlayer.Id == "server_console") iPlayer.Reply(message, configData.chatS.prefix);
+            if (iPlayer == null)
+            {
+                return;
+            }
+            if (iPlayer.Id == "server_console") iPlayer.Reply(message, configData.Chat.Prefix);
             else
             {
                 var player = iPlayer.Object as BasePlayer;
-                if (player != null) Player.Message(player, message, $"<color={configData.chatS.prefixColor}>{configData.chatS.prefix}</color>", configData.chatS.steamIDIcon);
-                else iPlayer.Reply(message, $"<color={configData.chatS.prefixColor}>{configData.chatS.prefix}</color>");
+                if (player != null) Player.Message(player, message, $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>", configData.Chat.SteamIdIcon);
+                else iPlayer.Reply(message, $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>");
             }
         }
 
         private void Print(BasePlayer player, string message)
         {
-            if (string.IsNullOrEmpty(message)) return;
-            Player.Message(player, message, string.IsNullOrEmpty(configData.chatS.prefix) ? null : $"<color={configData.chatS.prefixColor}>{configData.chatS.prefix}</color>", configData.chatS.steamIDIcon);
+            if (string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+            Player.Message(player, message, string.IsNullOrEmpty(configData.Chat.Prefix) ? null : $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>", configData.Chat.SteamIdIcon);
         }
 
         private string Lang(string key, string id = null, params object[] args)
