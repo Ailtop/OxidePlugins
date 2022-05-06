@@ -79,13 +79,19 @@ namespace Oxide.Plugins
                     spawnPopulation.ScaleWithServerPopulation = false;
                     spawnPopulation.EnforcePopulationLimits = true;
                     spawnPopulation.ScaleWithLargeMaps = true;
+                    var targetDensity = populationSetting.targetCount / densityToMaxPopulation;
                     var convarControlledSpawnPopulation = spawnPopulation as ConvarControlledSpawnPopulation;
                     if (convarControlledSpawnPopulation != null)
                     {
+                        var controlledSpawnPopulationRailRing = convarControlledSpawnPopulation as ConvarControlledSpawnPopulationRailRing;
+                        if (controlledSpawnPopulationRailRing != null && controlledSpawnPopulationRailRing.IsWagon)
+                        {
+                            targetDensity /= TrainCar.wagons_per_engine;
+                        }
                         ConsoleSystem.Command command = ConsoleSystem.Index.Server.Find(convarControlledSpawnPopulation.PopulationConvar);
-                        command?.Set(populationSetting.targetCount / densityToMaxPopulation);
+                        command?.Set(targetDensity);
                     }
-                    else spawnPopulation._targetDensity = populationSetting.targetCount / densityToMaxPopulation;
+                    else spawnPopulation._targetDensity = targetDensity;
                 }
             }
             SpawnHandler.Instance.EnforceLimits(true);
