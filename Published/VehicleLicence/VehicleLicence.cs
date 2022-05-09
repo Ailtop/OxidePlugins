@@ -1,4 +1,4 @@
-﻿// #define DEBUG
+﻿#define DEBUG
 
 using System;
 using System.Collections.Generic;
@@ -1165,13 +1165,9 @@ namespace Oxide.Plugins
         {
             var colliders = Pool.GetList<Collider>();
             Vis.Colliders(position, 0.5f, colliders);
-            if (colliders.Any(x => x.gameObject.layer == (int)Rust.Layer.Water))
-            {
-                Pool.FreeList(ref colliders);
-                return true;
-            }
+            bool flag = colliders.Any(x => x.gameObject.layer == (int)Rust.Layer.Water);
             Pool.FreeList(ref colliders);
-            return WaterLevel.Test(position);
+            return flag || WaterLevel.Test(position);
         }
 
         private static void MoveToPosition(BasePlayer player, Vector3 position)
@@ -1180,6 +1176,44 @@ namespace Oxide.Plugins
             player.ForceUpdateTriggers();
             //if (player.HasParent()) player.SetParent(null, true, true);
             player.SendNetworkUpdateImmediate();
+        }
+
+        private static bool TryMoveToTrainTrackNearby(TrainCar trainCar)
+        {
+            float distResult; TrainTrackSpline splineResult;
+            if (TrainTrackSpline.TryFindTrackNearby(trainCar.GetFrontWheelPos(), 2f, out splineResult, out distResult) && splineResult.HasClearTrackSpaceNear(trainCar))
+            {
+                if (trainCar.rigidBody.IsSleeping())
+                {
+                    trainCar.rigidBody.WakeUp();
+                }
+                trainCar.initialSpawnTime = Time.time - 1f;
+                trainCar.completeTrain.lastMovingTime = Time.time;
+
+                trainCar.FrontWheelSplineDist = distResult;
+                Vector3 tangent;
+                Vector3 positionAndTangent = splineResult.GetPositionAndTangent(trainCar.FrontWheelSplineDist, trainCar.transform.forward, out tangent);
+                trainCar.SetTheRestFromFrontWheelData(ref splineResult, positionAndTangent, tangent, trainCar.localTrackSelection);
+                trainCar.FrontTrackSection = splineResult;
+
+                // trainEngine.Invoke(() =>
+                // {
+                //     Interface.Oxide.LogError($"{trainEngine.completeTrain.ranUpdateTick} | {trainEngine.rigidBody.IsSleeping()} | {trainEngine.completeTrain.disposed}");
+                //     // if (trainEngine.rigidBody.IsSleeping())
+                //     // {
+                //     //     trainEngine.rigidBody.WakeUp();
+                //     // }
+                //     // trainEngine.completeTrain.lastMovingTime = Time.time;
+                //     // trainEngine.rigidBody.MoveRotation(Quaternion.identity);
+                //     // trainEngine.FrontTrainCarTick(trainEngine.localTrackSelection, Time.fixedDeltaTime);
+                //     // trainEngine.rigidBody.AddForce(Vector3.forward, ForceMode.Impulse);
+                //     // trainEngine.completeTrain.ranUpdateTick = false;);
+                //     // trainEngine.completeTrain.UpdateTick(Time.fixedDeltaTime);
+                // }, 0.25f);
+                return true;
+            }
+
+            return false;
         }
 
         #endregion Helpers
@@ -1319,11 +1353,6 @@ namespace Oxide.Plugins
                     {
                         var firstCmd = entry.Value.Commands[0];
                         stringBuilder.AppendLine(Lang("HelpLicence5", player.UserIDString, firstCmd, entry.Value.DisplayName));
-                    }
-                    if (!string.IsNullOrEmpty(configData.chat.customKillCommandPrefix))
-                    {
-                        var firstCmd = entry.Value.Commands[0];
-                        stringBuilder.AppendLine(Lang("HelpLicence6", player.UserIDString, configData.chat.customKillCommandPrefix + firstCmd, entry.Value.DisplayName));
                     }
                 }
             }
@@ -1511,7 +1540,7 @@ namespace Oxide.Plugins
                 Print(player, Lang("NoResourcesToPurchaseVehicle", player.UserIDString, settings.DisplayName, resources));
                 return false;
             }
-            vehicles.Add(vehicleType, new Vehicle());
+            vehicles.Add(vehicleType, Vehicle.Create(player.userID, vehicleType));
             SaveData();
             Print(player, Lang("VehiclePurchased", player.UserIDString, settings.DisplayName, configData.chat.spawnCommand));
             return true;
@@ -1793,7 +1822,7 @@ namespace Oxide.Plugins
                 reason = Lang("PlayerMountedOnVehicle", player.UserIDString, settings.DisplayName);
                 return false;
             }
-            if (!CanPlayerAction(player, vehicle.VehicleType, settings, out reason, ref position, ref rotation))
+            if (!CanPlayerAction(player, vehicle.VehicleType, settings, out reason, ref position, ref rotation, vehicle.Entity))
             {
                 return false;
             }
@@ -2011,12 +2040,10 @@ namespace Oxide.Plugins
                 reason = Lang("MountedOrParented", player.UserIDString, settings.DisplayName);
                 return false;
             }
-            Vector3 lookingAt = Vector3.zero;
-            if (!CheckPosition(player, settings, out reason, ref lookingAt, entity))
+            if (!settings.TryGetVehicleParams(player, vehicleType, entity, out reason, ref position, ref rotation))
             {
                 return false;
             }
-            FindVehicleSpawnPositionAndRotation(player, settings, vehicleType, lookingAt, out position, out rotation);
             reason = null;
             return true;
         }
@@ -2089,179 +2116,6 @@ namespace Oxide.Plugins
             reason = null;
             return true;
         }
-
-        private bool CheckPosition(BasePlayer player, BaseVehicleSettings settings, out string reason, ref Vector3 lookingAt, BaseEntity entity = null)
-        {
-            var checkWater = settings.IsWaterVehicle;
-            var isWorkCart = settings is WorkCartSettings;
-            if (checkWater || configData.global.spawnLookingAt || isWorkCart)
-            {
-                lookingAt = GetGroundPositionLookingAt(player, settings.Distance, !isWorkCart);
-                if (checkWater && !IsInWater(lookingAt))
-                {
-                    reason = Lang("NotLookingAtWater", player.UserIDString, settings.DisplayName);
-                    return false;
-                }
-                if (configData.global.spawnLookingAt && settings.MinDistanceForPlayers > 0)
-                {
-                    var nearbyPlayers = Pool.GetList<BasePlayer>();
-                    Vis.Entities(lookingAt, settings.MinDistanceForPlayers, nearbyPlayers, Rust.Layers.Mask.Player_Server);
-                    bool flag = nearbyPlayers.Any(x => x.userID.IsSteamId() && x != player);
-                    Pool.FreeList(ref nearbyPlayers);
-                    if (flag)
-                    {
-                        reason = Lang("PlayersOnNearby", player.UserIDString, settings.DisplayName);
-                        return false;
-                    }
-                }
-
-                if (isWorkCart)
-                {
-                    float distResult;
-                    TrainTrackSpline splineResult;
-                    if (!TrainTrackSpline.TryFindTrackNearby(lookingAt, settings.Distance, out splineResult, out distResult))
-                    {
-                        reason = Lang("TooFarTrainTrack", player.UserIDString);
-                        return false;
-                    }
-                    //splineResult.HasClearTrackSpaceNear(entity as TrainEngine)
-                    var position = splineResult.GetPosition(distResult);
-                    if (!HasClearTrackSpaceNear(splineResult, position, entity as TrainTrackSpline.ITrainTrackUser))
-                    {
-                        reason = Lang("TooCloseTrainBarricadeOrWorkCart", player.UserIDString);
-                        return false;
-                    }
-                    lookingAt = position;
-                    reason = null;
-                    return true;
-                }
-            }
-            reason = null;
-            return true;
-        }
-
-        private void FindVehicleSpawnPositionAndRotation(BasePlayer player, BaseVehicleSettings settings, string vehicleType, Vector3 lookingAt, out Vector3 spawnPos, out Quaternion spawnRot)
-        {
-            var checkWater = settings.IsWaterVehicle;
-            var isWorkCart = settings is WorkCartSettings;
-            if (isWorkCart)
-            {
-                spawnPos = lookingAt;
-                var rotation = player.eyes.HeadForward().WithY(0);
-                spawnRot = rotation != Vector3.zero ? Quaternion.LookRotation(rotation) : Quaternion.identity;
-                return;
-            }
-            if (configData.global.spawnLookingAt)
-            {
-                bool needGetGround = true;
-                spawnPos = lookingAt == Vector3.zero ? GetGroundPositionLookingAt(player, settings.Distance) : lookingAt;
-                if (checkWater)
-                {
-                    RaycastHit hit;
-                    if (Physics.Raycast(spawnPos, Vector3.up, out hit, 100, LAYER_GROUND) && hit.GetEntity() is StabilityEntity)
-                    {
-                        //At the dock
-                        needGetGround = false;
-                    }
-                }
-                else
-                {
-                    var buildingBlocks = Pool.GetList<BuildingBlock>();
-                    Vis.Entities(spawnPos, 2f, buildingBlocks, Rust.Layers.Mask.Construction);
-                    if (buildingBlocks.Count > 0)
-                    {
-                        var pos = spawnPos;
-                        var closestBuildingBlock = buildingBlocks
-                            .Where(x => !x.ShortPrefabName.Contains("wall"))
-                            .OrderBy(x => (x.transform.position - pos).magnitude).FirstOrDefault();
-                        if (closestBuildingBlock != null)
-                        {
-                            var worldSpaceBounds = closestBuildingBlock.WorldSpaceBounds();
-                            spawnPos = worldSpaceBounds.position;
-                            spawnPos.y += worldSpaceBounds.extents.y;
-                            needGetGround = false;
-                        }
-                    }
-                    Pool.FreeList(ref buildingBlocks);
-                }
-                if (needGetGround)
-                {
-                    spawnPos = GetGroundPosition(spawnPos);
-                }
-            }
-            else
-            {
-                var minDistance = Mathf.Min(settings.MinDistanceForPlayers, 2.5f);
-                var distance = Mathf.Max(settings.Distance, minDistance);
-                spawnPos = player.transform.position;
-                var nearbyPlayers = Pool.GetList<BasePlayer>();
-                var sourcePos = checkWater ? (lookingAt == Vector3.zero ? GetGroundPositionLookingAt(player, settings.Distance) : lookingAt) : spawnPos;
-                for (int i = 0; i < 100; i++)
-                {
-                    spawnPos.x = sourcePos.x + UnityEngine.Random.Range(minDistance, distance) * (UnityEngine.Random.value >= 0.5f ? 1 : -1);
-                    spawnPos.z = sourcePos.z + UnityEngine.Random.Range(minDistance, distance) * (UnityEngine.Random.value >= 0.5f ? 1 : -1);
-                    spawnPos = GetGroundPosition(spawnPos);
-                    nearbyPlayers.Clear();
-                    Vis.Entities(spawnPos, minDistance, nearbyPlayers, Rust.Layers.Mask.Player_Server);
-                    if (!nearbyPlayers.Any(x => x.userID.IsSteamId()))
-                    {
-                        break;
-                    }
-                }
-                Pool.FreeList(ref nearbyPlayers);
-            }
-
-            var normalized = (spawnPos - player.transform.position).normalized;
-            var angle = normalized != Vector3.zero ? Quaternion.LookRotation(normalized).eulerAngles.y : UnityEngine.Random.Range(0f, 360f);
-            var rot = vehicleType == nameof(NormalVehicleType.HotAirBalloon) ? 180f : 90f;
-            spawnRot = Quaternion.Euler(Vector3.up * (angle + rot));
-            if (vehicleType != nameof(NormalVehicleType.RidableHorse)) spawnPos += Vector3.up * 0.3f;
-        }
-
-        #region HasClearTrackSpace
-
-        public bool HasClearTrackSpaceNear(TrainTrackSpline trainTrackSpline, Vector3 position, TrainTrackSpline.ITrainTrackUser asker)
-        {
-            if (!HasClearTrackSpace(trainTrackSpline, position, asker))
-            {
-                return false;
-            }
-            if (trainTrackSpline.HasNextTrack)
-            {
-                foreach (var nextTrack in trainTrackSpline.nextTracks)
-                {
-                    if (!HasClearTrackSpace(nextTrack.track, position, asker))
-                    {
-                        return false;
-                    }
-                }
-            }
-            if (trainTrackSpline.HasPrevTrack)
-            {
-                foreach (var prevTrack in trainTrackSpline.prevTracks)
-                {
-                    if (!HasClearTrackSpace(prevTrack.track, position, asker))
-                    {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-
-        private bool HasClearTrackSpace(TrainTrackSpline trainTrackSpline, Vector3 position, TrainTrackSpline.ITrainTrackUser asker)
-        {
-            foreach (var trackUser in trainTrackSpline.trackUsers)
-            {
-                if (trackUser != asker && Vector3.SqrMagnitude(trackUser.Position - position) < 144f)
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        #endregion HasClearTrackSpace
 
         #endregion Command Helpers
 
@@ -3191,8 +3045,9 @@ namespace Oxide.Plugins
 
             private ConfigData configData => Instance.configData;
 
+            protected virtual bool IsWaterVehicle => false;
+            protected virtual bool IsTrainVehicle => false;
             protected virtual bool IsNormalVehicle => true;
-            public virtual bool IsWaterVehicle => false;
 
             protected virtual EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -3416,6 +3271,194 @@ namespace Oxide.Plugins
             }
 
             #endregion Permission
+
+            #region TryGetVehicleParams
+
+            public virtual bool TryGetVehicleParams(BasePlayer player, string vehicleType, BaseEntity entity, out string reason, ref Vector3 spawnPos, ref Quaternion spawnRot)
+            {
+                Vector3 original; Quaternion rotation;
+                if (!TryGetValidPositionAndRotation(player, entity, out reason, out original, out rotation))
+                {
+                    return false;
+                }
+
+                FindVehicleSpawnPositionAndRotation(player, vehicleType, original, rotation, out spawnPos, out spawnRot);
+                return true;
+            }
+
+            protected virtual Vector3 GetOriginalPosition(BasePlayer player)
+            {
+                if (configData.global.spawnLookingAt || IsWaterVehicle || IsTrainVehicle)
+                {
+                    return GetGroundPositionLookingAt(player, Distance, !IsTrainVehicle);
+                }
+
+                return player.transform.position;
+            }
+
+            protected virtual bool TryGetValidPositionAndRotation(BasePlayer player, BaseEntity entity, out string reason, out Vector3 original, out Quaternion rotation)
+            {
+                original = GetOriginalPosition(player);
+                rotation = Quaternion.identity;
+                if (MinDistanceForPlayers > 0)
+                {
+                    var nearbyPlayers = Pool.GetList<BasePlayer>();
+                    Vis.Entities(original, MinDistanceForPlayers, nearbyPlayers, Rust.Layers.Mask.Player_Server);
+                    bool flag = nearbyPlayers.Any(x => x.userID.IsSteamId() && x != player);
+                    Pool.FreeList(ref nearbyPlayers);
+                    if (flag)
+                    {
+                        reason = Instance.Lang("PlayersOnNearby", player.UserIDString, DisplayName);
+                        return false;
+                    }
+                }
+                if (IsWaterVehicle && !IsInWater(original))
+                {
+                    reason = Instance.Lang("NotLookingAtWater", player.UserIDString, DisplayName);
+                    return false;
+                }
+                reason = null;
+                return true;
+            }
+
+            protected virtual void FindVehicleSpawnPositionAndRotation(BasePlayer player, string vehicleType, Vector3 original, Quaternion rotation, out Vector3 spawnPos, out Quaternion spawnRot)
+            {
+                spawnPos = original;
+                // if (IsTrainVehicle)
+                // {
+                //     spawnRot = rotation;
+                //     // var rotation = player.eyes.HeadForward().WithY(0);
+                //     // spawnRot = rotation != Vector3.zero ? Quaternion.LookRotation(rotation) : Quaternion.identity;
+                //     return;
+                // }
+                if (configData.global.spawnLookingAt)
+                {
+                    bool needGetGround = true;
+                    if (IsWaterVehicle)
+                    {
+                        RaycastHit hit;
+                        if (Physics.Raycast(spawnPos, Vector3.up, out hit, 100, LAYER_GROUND) && hit.GetEntity() is StabilityEntity)
+                        {
+                            needGetGround = false;//At the dock
+                        }
+                    }
+                    else
+                    {
+                        if (TryGetCenterOfFloorNearby(ref spawnPos))
+                        {
+                            needGetGround = false;//At the floor
+                        }
+                    }
+                    if (needGetGround)
+                    {
+                        spawnPos = GetGroundPosition(spawnPos);
+                    }
+                }
+                else
+                {
+                    GetPositionWithNoPlayersNearby(player, ref spawnPos);
+                }
+
+                var normalized = (spawnPos - player.transform.position).normalized;
+                var angle = normalized != Vector3.zero ? Quaternion.LookRotation(normalized).eulerAngles.y : UnityEngine.Random.Range(0f, 360f);
+                var rot = vehicleType == nameof(NormalVehicleType.HotAirBalloon) ? 180f : 90f;
+                spawnRot = Quaternion.Euler(Vector3.up * (angle + rot));
+
+                if (vehicleType != nameof(NormalVehicleType.RidableHorse))
+                {
+                    spawnPos += Vector3.up * 0.3f;
+                }
+            }
+
+            private void GetPositionWithNoPlayersNearby(BasePlayer player, ref Vector3 spawnPos)
+            {
+                var minDistance = Mathf.Min(MinDistanceForPlayers, 2.5f);
+                var maxDistance = Mathf.Max(Distance, minDistance);
+
+                var players = new BasePlayer[1];
+                var sourcePos = spawnPos;
+                for (int i = 0; i < 10; i++)
+                {
+                    spawnPos.x = sourcePos.x + UnityEngine.Random.Range(minDistance, maxDistance) * (UnityEngine.Random.value >= 0.5f ? 1 : -1);
+                    spawnPos.z = sourcePos.z + UnityEngine.Random.Range(minDistance, maxDistance) * (UnityEngine.Random.value >= 0.5f ? 1 : -1);
+
+                    if (BaseEntity.Query.Server.GetPlayersInSphere(spawnPos, minDistance, players, p => p.userID.IsSteamId() && p != player) == 0)
+                    {
+                        break;
+                    }
+                }
+                spawnPos = GetGroundPosition(spawnPos);
+            }
+
+            private bool TryGetCenterOfFloorNearby(ref Vector3 spawnPos)
+            {
+                var buildingBlocks = Pool.GetList<BuildingBlock>();
+                Vis.Entities(spawnPos, 2f, buildingBlocks, Rust.Layers.Mask.Construction);
+                if (buildingBlocks.Count > 0)
+                {
+                    var position = spawnPos;
+                    var closestBuildingBlock = buildingBlocks
+                        .Where(x => !x.ShortPrefabName.Contains("wall"))
+                        .OrderBy(x => (x.transform.position - position).magnitude).FirstOrDefault();
+                    if (closestBuildingBlock != null)
+                    {
+                        var worldSpaceBounds = closestBuildingBlock.WorldSpaceBounds();
+                        spawnPos = worldSpaceBounds.position;
+                        spawnPos.y += worldSpaceBounds.extents.y;
+                        Pool.FreeList(ref buildingBlocks);
+                        return true;
+                    }
+                }
+                Pool.FreeList(ref buildingBlocks);
+                return false;
+            }
+
+            #region HasClearTrackSpace
+
+            protected bool HasClearTrackSpaceNear(TrainTrackSpline trainTrackSpline, Vector3 position, TrainTrackSpline.ITrainTrackUser asker = null)
+            {
+                if (!HasClearTrackSpace(trainTrackSpline, position, asker))
+                {
+                    return false;
+                }
+                if (trainTrackSpline.HasNextTrack)
+                {
+                    foreach (var nextTrack in trainTrackSpline.nextTracks)
+                    {
+                        if (!HasClearTrackSpace(nextTrack.track, position, asker))
+                        {
+                            return false;
+                        }
+                    }
+                }
+                if (trainTrackSpline.HasPrevTrack)
+                {
+                    foreach (var prevTrack in trainTrackSpline.prevTracks)
+                    {
+                        if (!HasClearTrackSpace(prevTrack.track, position, asker))
+                        {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+
+            private bool HasClearTrackSpace(TrainTrackSpline trainTrackSpline, Vector3 position, TrainTrackSpline.ITrainTrackUser asker)
+            {
+                foreach (var trackUser in trainTrackSpline.trackUsers)
+                {
+                    if (trackUser != asker && Vector3.SqrMagnitude(trackUser.Position - position) < 144f)
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            #endregion HasClearTrackSpace
+
+            #endregion TryGetVehicleParams
         }
 
         public abstract class FuelVehicleSettings : BaseVehicleSettings, IFuelVehicle
@@ -3584,7 +3627,7 @@ namespace Oxide.Plugins
 
         public class RowboatSettings : InvFuelVehicleSettings
         {
-            public override bool IsWaterVehicle => true;
+            protected override bool IsWaterVehicle => true;
 
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -3648,6 +3691,8 @@ namespace Oxide.Plugins
 
         public class WorkCartSettings : FuelVehicleSettings
         {
+            protected override bool IsTrainVehicle => true;
+
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
                 return (entity as TrainEngine)?.GetFuelSystem();
@@ -3660,27 +3705,38 @@ namespace Oxide.Plugins
                 var trainEngine = vehicle.Entity as TrainEngine;
                 if (trainEngine != null)
                 {
-                    trainEngine.initialSpawnTime = Time.time - 1f;
-
-                    float distResult; TrainTrackSpline splineResult;
-                    if (TrainTrackSpline.TryFindTrackNearby(trainEngine.GetFrontWheelPos(), 2f, out splineResult, out distResult) && splineResult.HasClearTrackSpaceNear(trainEngine))
-                    {
-                        trainEngine.FrontWheelSplineDist = distResult;
-                        Vector3 tangent;
-                        Vector3 positionAndTangent = splineResult.GetPositionAndTangent(trainEngine.FrontWheelSplineDist, trainEngine.transform.forward, out tangent);
-                        trainEngine.SetTheRestFromFrontWheelData(ref splineResult, positionAndTangent, tangent, trainEngine.localTrackSelection);
-                        trainEngine.FrontTrackSection = splineResult;
-
-                        trainEngine.Invoke(() =>
-                        {
-                            trainEngine.completeTrain.UpdateTick(Time.fixedDeltaTime);
-                        }, 0.25f);
-                    }
-                    else
+                    if (!TryMoveToTrainTrackNearby(trainEngine))
                     {
                         trainEngine.Kill();
                     }
                 }
+            }
+
+            protected override bool TryGetValidPositionAndRotation(BasePlayer player, BaseEntity entity, out string reason, out Vector3 original, out Quaternion rotation)
+            {
+                if (base.TryGetValidPositionAndRotation(player, entity, out reason, out original, out rotation))
+                {
+                    float distResult;
+                    TrainTrackSpline splineResult;
+                    if (!TrainTrackSpline.TryFindTrackNearby(original, Distance, out splineResult, out distResult))
+                    {
+                        reason = Instance.Lang("TooFarTrainTrack", player.UserIDString);
+                        return false;
+                    }
+                    //splineResult.HasClearTrackSpaceNear(entity as TrainEngine)
+                    var position = splineResult.GetPosition(distResult);
+                    if (!HasClearTrackSpaceNear(splineResult, position, entity as TrainTrackSpline.ITrainTrackUser))
+                    {
+                        reason = Instance.Lang("TooCloseTrainBarricadeOrWorkCart", player.UserIDString);
+                        return false;
+                    }
+
+                    // Vector3 tangent;
+                    // splineResult.GetPositionAndTangent(distResult, entity != null ? entity.transform.forward : player.eyes.HeadForward(), out tangent);
+                    // rotation = Quaternion.Euler(tangent);
+                    original = position;
+                }
+                return true;
             }
         }
 
@@ -3694,7 +3750,7 @@ namespace Oxide.Plugins
 
         public class SubmarineSoloSettings : InvFuelVehicleSettings
         {
-            public override bool IsWaterVehicle => true;
+            protected override bool IsWaterVehicle => true;
 
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -4083,6 +4139,7 @@ namespace Oxide.Plugins
             #endregion Prefabs
 
             protected override bool IsNormalVehicle => false;
+            protected override bool IsTrainVehicle => true;
 
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -4093,28 +4150,12 @@ namespace Oxide.Plugins
             {
                 base.PostRecallVehicle(player, vehicle, position, rotation);
 
-                var trainEngine = vehicle.Entity as TrainEngine;
-                if (trainEngine != null)
+                var trainCar = vehicle.Entity as TrainCar;
+                if (trainCar != null)
                 {
-                    trainEngine.initialSpawnTime = Time.time - 1f;
-
-                    float distResult; TrainTrackSpline splineResult;
-                    if (TrainTrackSpline.TryFindTrackNearby(trainEngine.GetFrontWheelPos(), 2f, out splineResult, out distResult) && splineResult.HasClearTrackSpaceNear(trainEngine))
+                    if (!TryMoveToTrainTrackNearby(trainCar))
                     {
-                        trainEngine.FrontWheelSplineDist = distResult;
-                        Vector3 tangent;
-                        Vector3 positionAndTangent = splineResult.GetPositionAndTangent(trainEngine.FrontWheelSplineDist, trainEngine.transform.forward, out tangent);
-                        trainEngine.SetTheRestFromFrontWheelData(ref splineResult, positionAndTangent, tangent, trainEngine.localTrackSelection);
-                        trainEngine.FrontTrackSection = splineResult;
-
-                        trainEngine.Invoke(() =>
-                        {
-                            trainEngine.completeTrain.UpdateTick(Time.fixedDeltaTime);
-                        }, 0.25f);
-                    }
-                    else
-                    {
-                        trainEngine.Kill();
+                        trainCar.Kill();
                     }
                 }
             }
@@ -4134,6 +4175,53 @@ namespace Oxide.Plugins
                     }
                 }
             }
+
+            protected override bool TryGetValidPositionAndRotation(BasePlayer player, BaseEntity entity, out string reason, out Vector3 original, out Quaternion rotation)
+            {
+                if (base.TryGetValidPositionAndRotation(player, entity, out reason, out original, out rotation))
+                {
+                    float distResult;
+                    TrainTrackSpline splineResult;
+                    if (!TrainTrackSpline.TryFindTrackNearby(original, Distance, out splineResult, out distResult))
+                    {
+                        reason = Instance.Lang("TooFarTrainTrack", player.UserIDString);
+                        return false;
+                    }
+
+                    //splineResult.HasClearTrackSpaceNear(entity as TrainEngine)
+                    var position = splineResult.GetPosition(distResult);
+                    if (!HasClearTrackSpaceNear(splineResult, position, entity as TrainTrackSpline.ITrainTrackUser))
+                    {
+                        reason = Instance.Lang("TooCloseTrainBarricadeOrWorkCart", player.UserIDString);
+                        return false;
+                    }
+
+                    // Vector3 tangent;
+                    // splineResult.GetPositionAndTangent(distResult, entity != null ? entity.transform.forward : player.transform.forward, out tangent);
+                    // rotation = Quaternion.Euler(tangent);
+                    original = position;
+                }
+                return true;
+            }
+
+            // private bool TrySpawn(Vector3 spawnPos)
+            // {
+            // foreach (var prefab in Prefabs)
+            // {
+            //     var workcart = GameManager.server.CreateEntity(prefab, spawnPos) as TrainEngine;
+            //     workcart.Spawn();
+            //     Instance.NextTick(() =>
+            //     {
+            //         var position = workcart.GetRearOfTrainPos();
+            //         var workwagon = GameManager.server.CreateEntity(TrainWagonA, position) as TrainCar;
+            //         var bounds = workwagon.bounds;
+            //         position += workcart.transform.rotation * (bounds.center - Vector3.forward * (bounds.extents.z - 0.5f));
+            //         position = GetGroundPosition(position);
+            //         workwagon.transform.position = position;
+            //         workwagon.Spawn();
+            //     });
+            // }
+            // }
         }
 
         #endregion VehicleSettings
@@ -4345,7 +4433,7 @@ namespace Oxide.Plugins
                 {
                     return false;
                 }
-                vehicles.Add(vehicleType, new Vehicle());
+                vehicles.Add(vehicleType, Vehicle.Create(playerId, vehicleType));
                 Instance.SaveData();
                 return true;
             }
@@ -4389,7 +4477,7 @@ namespace Oxide.Plugins
                 {
                     if (!vehicles.ContainsKey(vehicleType))
                     {
-                        vehicles.Add(vehicleType, new Vehicle());
+                        vehicles.Add(vehicleType, Vehicle.Create(playerId, vehicleType));
                         changed = true;
                     }
                 }
@@ -4402,7 +4490,7 @@ namespace Oxide.Plugins
                 {
                     if (!entry.Value.ContainsKey(vehicleType))
                     {
-                        entry.Value.Add(vehicleType, new Vehicle());
+                        entry.Value.Add(vehicleType, Vehicle.Create(entry.Key, vehicleType));
                     }
                 }
             }
@@ -4430,11 +4518,9 @@ namespace Oxide.Plugins
         [JsonObject(MemberSerialization.OptIn)]
         public class Vehicle
         {
-            [JsonProperty("entityID")]
-            public uint EntityId { get; set; }
+            [JsonProperty("entityID")] public uint EntityId { get; set; }
 
-            [JsonProperty("lastDeath")]
-            public double LastDeath { get; set; }
+            [JsonProperty("lastDeath")] public double LastDeath { get; set; }
 
             public ulong PlayerId { get; set; }
             public BaseEntity Entity { get; set; }
@@ -4463,6 +4549,14 @@ namespace Oxide.Plugins
             {
                 EntityId = 0;
                 LastDeath = 0;
+            }
+
+            public static Vehicle Create(ulong playerId, string vehicleType)
+            {
+                var vehicle = new Vehicle();
+                vehicle.VehicleType = vehicleType;
+                vehicle.PlayerId = playerId;
+                return vehicle;
             }
         }
 
@@ -4542,7 +4636,6 @@ namespace Oxide.Plugins
                 ["HelpLicence3"] = "<color=#4DFF4D>/{0}</color> -- To recall a vehicle",
                 ["HelpLicence4"] = "<color=#4DFF4D>/{0}</color> -- To kill a vehicle",
                 ["HelpLicence5"] = "<color=#4DFF4D>/{0}</color> -- To buy, spawn or recall a <color=#009EFF>{1}</color>",
-                ["HelpLicence6"] = "<color=#4DFF4D>/{0}</color> -- To kill a <color=#009EFF>{1}</color>",
 
                 ["PriceFormat"] = "<color=#FF1919>{0}</color> x{1}",
                 ["HelpBuy"] = "<color=#4DFF4D>/{0} {1}</color> -- To buy a <color=#009EFF>{2}</color>",
@@ -4603,7 +4696,6 @@ namespace Oxide.Plugins
                 ["HelpLicence3"] = "<color=#4DFF4D>/{0}</color> -- 召回一辆载具",
                 ["HelpLicence4"] = "<color=#4DFF4D>/{0}</color> -- 摧毁一辆载具",
                 ["HelpLicence5"] = "<color=#4DFF4D>/{0}</color> -- 购买，生成，召回一辆 <color=#009EFF>{1}</color>",
-                ["HelpLicence6"] = "<color=#4DFF4D>/{0}</color> -- 摧毁一辆 <color=#009EFF>{1}</color>",
 
                 ["PriceFormat"] = "<color=#FF1919>{0}</color> x{1}",
                 ["HelpBuy"] = "<color=#4DFF4D>/{0} {1}</color> -- 购买一辆 <color=#009EFF>{2}</color>",
@@ -4650,8 +4742,8 @@ namespace Oxide.Plugins
                 ["RecallWasBlocked"] = "有其他插件阻止您召回 <color=#009EFF>{0}</color>.",
                 ["SpawnWasBlocked"] = "有其他插件阻止您生成 <color=#009EFF>{0}</color>.",
                 ["VehiclesLimit"] = "您在同一时间内最多可以拥有 <color=#009EFF>{0}</color> 辆载具",
-                ["TooFarTrainTrack"] = "您距离地铁轨道太远了",
-                ["TooCloseTrainBarricadeOrWorkCart"] = "您距离地轨障碍物或其它地铁太近了",
+                ["TooFarTrainTrack"] = "您距离铁路轨道太远了",
+                ["TooCloseTrainBarricadeOrWorkCart"] = "您距离铁轨障碍物或其它火车太近了",
                 ["NotSpawnedOrRecalled"] = "由于某些原因，您的 <color=#009EFF>{0}</color> 载具无法生成或召回",
 
                 ["CantUse"] = "您不能使用它，这个 {0} 属于 {1}"
@@ -4664,7 +4756,6 @@ namespace Oxide.Plugins
                 ["HelpLicence3"] = "<color=#4DFF4D>/{0}</color> -- Вызвать транспорт",
                 ["HelpLicence4"] = "<color=#4DFF4D>/{0}</color> -- Уничтожить транспорт",
                 ["HelpLicence5"] = "<color=#4DFF4D>/{0}</color> -- Купить, создать, или вызвать <color=#009EFF>{1}</color>",
-                ["HelpLicence6"] = "<color=#4DFF4D>/{0}</color> -- Уничтожить <color=#009EFF>{1}</color>",
 
                 ["PriceFormat"] = "<color=#FF1919>{0}</color> x{1}",
                 ["HelpBuy"] = "<color=#4DFF4D>/{0} {1}</color> -- Купить <color=#009EFF>{2}</color>.",
