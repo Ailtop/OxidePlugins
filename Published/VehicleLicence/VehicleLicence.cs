@@ -3608,9 +3608,12 @@ namespace Oxide.Plugins
             bool RefundModuleOnCrash { get; set; }
         }
 
+#if TRAIN_ADVANCED
         public interface ITrainVehicle
         {
         }
+
+#endif
 
         #endregion Interface
 
