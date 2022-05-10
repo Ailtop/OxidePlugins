@@ -1,4 +1,5 @@
-﻿#define DEBUG
+﻿// #define DEBUG
+// #define TRAIN_ADVANCED
 
 using System;
 using System.Collections.Generic;
@@ -16,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.8.0")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.30")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -80,6 +81,7 @@ namespace Oxide.Plugins
             Chinook,
             RidableHorse,
             WorkCart,
+            WorkCartAboveGround,
             MagnetCrane,
             SubmarineSolo,
             SubmarineDuo,
@@ -94,6 +96,8 @@ namespace Oxide.Plugins
             Large
         }
 
+#if TRAIN_ADVANCED
+
         public enum TrainComponentType
         {
             Engine,
@@ -102,6 +106,8 @@ namespace Oxide.Plugins
             C,
             D,
         }
+
+#endif
 
         #endregion Fields
 
@@ -124,10 +130,13 @@ namespace Oxide.Plugins
             {
                 allVehicleSettings.Add(entry.Key, entry.Value);
             }
+
+#if TRAIN_ADVANCED
             foreach (var entry in configData.trainVehicles)
             {
                 allVehicleSettings.Add(entry.Key, entry.Value);
             }
+#endif
 
             foreach (var entry in allVehicleSettings)
             {
@@ -876,6 +885,7 @@ namespace Oxide.Plugins
                 case NormalVehicleType.Chinook: return configData.normalVehicles.chinook;
                 case NormalVehicleType.RidableHorse: return configData.normalVehicles.ridableHorse;
                 case NormalVehicleType.WorkCart: return configData.normalVehicles.workCart;
+                case NormalVehicleType.WorkCartAboveGround: return configData.normalVehicles.workCartAboveGround;
                 case NormalVehicleType.MagnetCrane: return configData.normalVehicles.magnetCrane;
                 case NormalVehicleType.SubmarineSolo: return configData.normalVehicles.submarineSolo;
                 case NormalVehicleType.SubmarineDuo: return configData.normalVehicles.submarineDuo;
@@ -1041,6 +1051,7 @@ namespace Oxide.Plugins
                     case NormalVehicleType.Chinook: return PREFAB_CHINOOK;
                     case NormalVehicleType.RidableHorse: return PREFAB_RIDABLEHORSE;
                     case NormalVehicleType.WorkCart: return PREFAB_WORKCART;
+                    case NormalVehicleType.WorkCartAboveGround: return PREFAB_WORKCART_ABOVEGROUND;
                     case NormalVehicleType.MagnetCrane: return PREFAB_MAGNET_CRANE;
                     case NormalVehicleType.SubmarineSolo: return PREFAB_SUBMARINE_SOLO;
                     case NormalVehicleType.SubmarineDuo: return PREFAB_SUBMARINE_DUO;
@@ -1064,6 +1075,8 @@ namespace Oxide.Plugins
             return null;
         }
 
+#if TRAIN_ADVANCED
+
         private static string GetTrainVehiclePrefab(TrainComponentType componentType)
         {
             switch (componentType)
@@ -1076,6 +1089,8 @@ namespace Oxide.Plugins
                 default: return null;
             }
         }
+
+#endif
 
         private static bool GetDismountPosition(BaseVehicle baseVehicle, BasePlayer player, out Vector3 result)
         {
@@ -1195,21 +1210,6 @@ namespace Oxide.Plugins
                 Vector3 positionAndTangent = splineResult.GetPositionAndTangent(trainCar.FrontWheelSplineDist, trainCar.transform.forward, out tangent);
                 trainCar.SetTheRestFromFrontWheelData(ref splineResult, positionAndTangent, tangent, trainCar.localTrackSelection);
                 trainCar.FrontTrackSection = splineResult;
-
-                // trainEngine.Invoke(() =>
-                // {
-                //     Interface.Oxide.LogError($"{trainEngine.completeTrain.ranUpdateTick} | {trainEngine.rigidBody.IsSleeping()} | {trainEngine.completeTrain.disposed}");
-                //     // if (trainEngine.rigidBody.IsSleeping())
-                //     // {
-                //     //     trainEngine.rigidBody.WakeUp();
-                //     // }
-                //     // trainEngine.completeTrain.lastMovingTime = Time.time;
-                //     // trainEngine.rigidBody.MoveRotation(Quaternion.identity);
-                //     // trainEngine.FrontTrainCarTick(trainEngine.localTrackSelection, Time.fixedDeltaTime);
-                //     // trainEngine.rigidBody.AddForce(Vector3.forward, ForceMode.Impulse);
-                //     // trainEngine.completeTrain.ranUpdateTick = false;);
-                //     // trainEngine.completeTrain.UpdateTick(Time.fixedDeltaTime);
-                // }, 0.25f);
                 return true;
             }
 
@@ -1647,7 +1647,7 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            if (!CanPlayerAction(player, vehicle.VehicleType, settings, out reason, ref position, ref rotation))
+            if (!CanPlayerAction(player, vehicle, settings, out reason, ref position, ref rotation))
             {
                 return false;
             }
@@ -1822,7 +1822,7 @@ namespace Oxide.Plugins
                 reason = Lang("PlayerMountedOnVehicle", player.UserIDString, settings.DisplayName);
                 return false;
             }
-            if (!CanPlayerAction(player, vehicle.VehicleType, settings, out reason, ref position, ref rotation, vehicle.Entity))
+            if (!CanPlayerAction(player, vehicle, settings, out reason, ref position, ref rotation))
             {
                 return false;
             }
@@ -2023,7 +2023,7 @@ namespace Oxide.Plugins
                                      select Lang("PriceFormat", player.UserIDString, GetItemDisplayName(language, p.Key, p.Value.displayName), p.Value.amount));
         }
 
-        private bool CanPlayerAction(BasePlayer player, string vehicleType, BaseVehicleSettings settings, out string reason, ref Vector3 position, ref Quaternion rotation, BaseEntity entity = null)
+        private bool CanPlayerAction(BasePlayer player, Vehicle vehicle, BaseVehicleSettings settings, out string reason, ref Vector3 position, ref Quaternion rotation)
         {
             if (configData.global.preventBuildingBlocked && player.IsBuildingBlocked())
             {
@@ -2035,12 +2035,12 @@ namespace Oxide.Plugins
                 reason = Lang("PlayerInSafeZone", player.UserIDString, settings.DisplayName);
                 return false;
             }
-            if (configData.global.preventMountedOrParented && HasMountedOrParented(player, vehicleType))
+            if (configData.global.preventMountedOrParented && HasMountedOrParented(player, settings))
             {
                 reason = Lang("MountedOrParented", player.UserIDString, settings.DisplayName);
                 return false;
             }
-            if (!settings.TryGetVehicleParams(player, vehicleType, entity, out reason, ref position, ref rotation))
+            if (!settings.TryGetVehicleParams(player, vehicle, out reason, ref position, ref rotation))
             {
                 return false;
             }
@@ -2048,7 +2048,7 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private bool HasMountedOrParented(BasePlayer player, string vehicleType)
+        private bool HasMountedOrParented(BasePlayer player, BaseVehicleSettings settings)
         {
             if (player.GetMountedVehicle() != null)
             {
@@ -2057,11 +2057,12 @@ namespace Oxide.Plugins
             var parentEntity = player.GetParentEntity();
             if (parentEntity != null)
             {
-                if (configData.global.spawnLookingAt && LandOnCargoShip != null && parentEntity is CargoShip &&
-                    (vehicleType == nameof(NormalVehicleType.MiniCopter) ||
-                     vehicleType == nameof(NormalVehicleType.TransportHelicopter)))
+                if (configData.global.spawnLookingAt)
                 {
-                    return false;
+                    if (LandOnCargoShip != null && parentEntity is CargoShip && settings.IsFightVehicle)
+                    {
+                        return false;
+                    }
                 }
                 return true;
             }
@@ -2076,9 +2077,7 @@ namespace Oxide.Plugins
                 var timeLeft = Math.Ceiling(cooldown - (TimeEx.currentTimestamp - (isSpawnCooldown ? vehicle.LastDeath : vehicle.LastRecall)));
                 if (timeLeft > 0)
                 {
-                    var bypassPrices = isSpawnCooldown
-                        ? settings.BypassSpawnCooldownPrices
-                        : settings.BypassRecallCooldownPrices;
+                    var bypassPrices = isSpawnCooldown ? settings.BypassSpawnCooldownPrices : settings.BypassRecallCooldownPrices;
                     if (bypassCooldown && bypassPrices.Count > 0)
                     {
                         string resources;
@@ -2385,6 +2384,8 @@ namespace Oxide.Plugins
                 },
             };
 
+#if  TRAIN_ADVANCED
+
             [JsonProperty(PropertyName = "Train Vehicle Settings", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public Dictionary<string, TrainVehicleSettings> trainVehicles = new Dictionary<string, TrainVehicleSettings>
             {
@@ -2470,6 +2471,8 @@ namespace Oxide.Plugins
                     }
                 },
             };
+
+#endif
 
             [JsonProperty(PropertyName = "Version")]
             public VersionNumber version;
@@ -2837,6 +2840,35 @@ namespace Oxide.Plugins
                 },
             };
 
+            [JsonProperty(PropertyName = "Work Cart Above Ground Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public WorkCartSettings workCartAboveGround = new WorkCartSettings
+            {
+                Purchasable = true,
+                DisplayName = "Work Cart Above Ground",
+                Distance = 12,
+                MinDistanceForPlayers = 6,
+                UsePermission = true,
+                Permission = "vehiclelicence.workcartaboveground",
+                Commands = new List<string>
+                {
+                    "cartground", "workcartground"
+                },
+                PurchasePrices = new Dictionary<string, PriceInfo>
+                {
+                    ["scrap"] = new PriceInfo { amount = 2000, displayName = "Scrap" }
+                },
+                SpawnCooldown = 1800,
+                RecallCooldown = 30,
+                CooldownPermissions = new Dictionary<string, CooldownPermission>
+                {
+                    ["vehiclelicence.vip"] = new CooldownPermission
+                    {
+                        spawnCooldown = 900,
+                        recallCooldown = 10,
+                    }
+                },
+            };
+
             [JsonProperty(PropertyName = "Magnet Crane Vehicle", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public MagnetCraneSettings magnetCrane = new MagnetCraneSettings
             {
@@ -3045,9 +3077,10 @@ namespace Oxide.Plugins
 
             private ConfigData configData => Instance.configData;
 
-            protected virtual bool IsWaterVehicle => false;
-            protected virtual bool IsTrainVehicle => false;
-            protected virtual bool IsNormalVehicle => true;
+            public virtual bool IsWaterVehicle => false;
+            public virtual bool IsTrainVehicle => false;
+            public virtual bool IsNormalVehicle => true;
+            public virtual bool IsFightVehicle => false;
 
             protected virtual EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -3274,16 +3307,21 @@ namespace Oxide.Plugins
 
             #region TryGetVehicleParams
 
-            public virtual bool TryGetVehicleParams(BasePlayer player, string vehicleType, BaseEntity entity, out string reason, ref Vector3 spawnPos, ref Quaternion spawnRot)
+            public virtual bool TryGetVehicleParams(BasePlayer player, Vehicle vehicle, out string reason, ref Vector3 spawnPos, ref Quaternion spawnRot)
             {
                 Vector3 original; Quaternion rotation;
-                if (!TryGetValidPositionAndRotation(player, entity, out reason, out original, out rotation))
+                if (!TryGetValidPositionAndRotation(player, vehicle.Entity, out reason, out original, out rotation))
                 {
                     return false;
                 }
 
-                FindVehicleSpawnPositionAndRotation(player, vehicleType, original, rotation, out spawnPos, out spawnRot);
+                FindVehicleSpawnPositionAndRotation(player, vehicle, original, rotation, out spawnPos, out spawnRot);
                 return true;
+            }
+
+            protected virtual float GetSpawnRotationAngle()
+            {
+                return 90f;
             }
 
             protected virtual Vector3 GetOriginalPosition(BasePlayer player)
@@ -3321,16 +3359,15 @@ namespace Oxide.Plugins
                 return true;
             }
 
-            protected virtual void FindVehicleSpawnPositionAndRotation(BasePlayer player, string vehicleType, Vector3 original, Quaternion rotation, out Vector3 spawnPos, out Quaternion spawnRot)
+            protected virtual void FindVehicleSpawnPositionAndRotation(BasePlayer player, Vehicle vehicle, Vector3 original, Quaternion rotation, out Vector3 spawnPos, out Quaternion spawnRot)
             {
                 spawnPos = original;
-                // if (IsTrainVehicle)
-                // {
-                //     spawnRot = rotation;
-                //     // var rotation = player.eyes.HeadForward().WithY(0);
-                //     // spawnRot = rotation != Vector3.zero ? Quaternion.LookRotation(rotation) : Quaternion.identity;
-                //     return;
-                // }
+                if (IsTrainVehicle)
+                {
+                    var forward = player.eyes.HeadForward().WithY(0);
+                    spawnRot = forward != Vector3.zero ? Quaternion.LookRotation(forward) : Quaternion.identity;
+                    return;
+                }
                 if (configData.global.spawnLookingAt)
                 {
                     bool needGetGround = true;
@@ -3361,13 +3398,8 @@ namespace Oxide.Plugins
 
                 var normalized = (spawnPos - player.transform.position).normalized;
                 var angle = normalized != Vector3.zero ? Quaternion.LookRotation(normalized).eulerAngles.y : UnityEngine.Random.Range(0f, 360f);
-                var rot = vehicleType == nameof(NormalVehicleType.HotAirBalloon) ? 180f : 90f;
-                spawnRot = Quaternion.Euler(Vector3.up * (angle + rot));
-
-                if (vehicleType != nameof(NormalVehicleType.RidableHorse))
-                {
-                    spawnPos += Vector3.up * 0.3f;
-                }
+                var rotationAngle = GetSpawnRotationAngle();
+                spawnRot = Quaternion.Euler(Vector3.up * (angle + rotationAngle));
             }
 
             private void GetPositionWithNoPlayersNearby(BasePlayer player, ref Vector3 spawnPos)
@@ -3557,7 +3589,7 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Refund Inventory On Crash", Order = 31)]
             bool RefundInventoryOnCrash { get; set; }
 
-            [JsonProperty(PropertyName = "Drop Inventory Items When Vehicle Recall", Order = 32)]
+            [JsonProperty(PropertyName = "Drop Inventory Items When Vehicle Recall", Order = 49)]
             bool DropInventoryOnRecall { get; set; }
         }
 
@@ -3608,10 +3640,14 @@ namespace Oxide.Plugins
             public string displayName;
         }
 
+#if TRAIN_ADVANCED
+
         public struct TrainComponent
         {
             public TrainComponentType type;
         }
+
+#endif
 
         #endregion Struct
 
@@ -3627,7 +3663,7 @@ namespace Oxide.Plugins
 
         public class RowboatSettings : InvFuelVehicleSettings
         {
-            protected override bool IsWaterVehicle => true;
+            public override bool IsWaterVehicle => true;
 
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -3646,6 +3682,11 @@ namespace Oxide.Plugins
 
         public class HotAirBalloonSettings : InvFuelVehicleSettings
         {
+            protected override float GetSpawnRotationAngle()
+            {
+                return 180f;
+            }
+
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
                 return (entity as HotAirBalloon)?.fuelSystem;
@@ -3659,6 +3700,8 @@ namespace Oxide.Plugins
 
         public class MiniCopterSettings : FuelVehicleSettings
         {
+            public override bool IsFightVehicle => true;
+
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
                 return (entity as MiniCopter)?.GetFuelSystem();
@@ -3687,11 +3730,17 @@ namespace Oxide.Plugins
                     ridableHorse.DropToGround(ridableHorse.transform.position, true);//ridableHorse.UpdateDropToGroundForDuration(2f);
                 }
             }
+
+            protected override void FindVehicleSpawnPositionAndRotation(BasePlayer player, Vehicle vehicle, Vector3 original, Quaternion rotation, out Vector3 spawnPos, out Quaternion spawnRot)
+            {
+                base.FindVehicleSpawnPositionAndRotation(player, vehicle, original, rotation, out spawnPos, out spawnRot);
+                spawnPos += Vector3.up * 0.3f;
+            }
         }
 
         public class WorkCartSettings : FuelVehicleSettings
         {
-            protected override bool IsTrainVehicle => true;
+            public override bool IsTrainVehicle => true;
 
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -3731,9 +3780,12 @@ namespace Oxide.Plugins
                         return false;
                     }
 
-                    // Vector3 tangent;
-                    // splineResult.GetPositionAndTangent(distResult, entity != null ? entity.transform.forward : player.eyes.HeadForward(), out tangent);
-                    // rotation = Quaternion.Euler(tangent);
+                    // if (entity != null)
+                    // {
+                    //     Vector3 tangent;
+                    //     splineResult.GetPositionAndTangent(distResult, entity.transform.forward, out tangent);
+                    //     rotation = Quaternion.Euler(tangent);
+                    // }
                     original = position;
                 }
                 return true;
@@ -3750,7 +3802,7 @@ namespace Oxide.Plugins
 
         public class SubmarineSoloSettings : InvFuelVehicleSettings
         {
-            protected override bool IsWaterVehicle => true;
+            public override bool IsWaterVehicle => true;
 
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -3893,7 +3945,7 @@ namespace Oxide.Plugins
 
             #endregion EngineItems
 
-            protected override bool IsNormalVehicle => false;
+            public override bool IsNormalVehicle => false;
 
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
             {
@@ -4103,16 +4155,18 @@ namespace Oxide.Plugins
             #endregion VehicleModules
         }
 
+#if TRAIN_ADVANCED
+
         public class TrainVehicleSettings : FuelVehicleSettings, ITrainVehicle
         {
-            #region Properties
+        #region Properties
 
             [JsonProperty(PropertyName = "Train Components", Order = 50)]
             public List<TrainComponent> TrainComponents { get; set; } = new List<TrainComponent>();
 
-            #endregion Properties
+        #endregion Properties
 
-            #region Prefabs
+        #region Prefabs
 
             private List<string> _prefabs;
 
@@ -4136,7 +4190,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            #endregion Prefabs
+        #endregion Prefabs
 
             protected override bool IsNormalVehicle => false;
             protected override bool IsTrainVehicle => true;
@@ -4223,6 +4277,8 @@ namespace Oxide.Plugins
             // }
             // }
         }
+
+#endif
 
         #endregion VehicleSettings
 
