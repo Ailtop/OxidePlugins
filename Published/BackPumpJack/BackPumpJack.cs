@@ -9,19 +9,22 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Back PumpJack", "Arainrr", "1.4.11")]
-    [Description("Obtain oil crater using survey charge.")]
+    [Info("Back Pump Jack", "Arainrr", "1.4.12")]
+    [Description("Allows players to use survey charges to create an oil crater")]
     internal class BackPumpJack : RustPlugin
     {
         #region Fields
 
         [PluginReference] private readonly Plugin Friends, Clans;
+        
         private const string PREFAB_CRATER_OIL = "assets/prefabs/tools/surveycharge/survey_crater_oil.prefab";
-        private readonly List<QuarryData> activeCraters = new List<QuarryData>();
-        private readonly HashSet<SurveyCrater> checkedCraters = new HashSet<SurveyCrater>();
-        private readonly Dictionary<uint, ConfigData.PermissionS> activeSurveyCharges = new Dictionary<uint, ConfigData.PermissionS>();
-        private readonly List<MiningQuarry> miningQuarries = new List<MiningQuarry>();
-        private static object True, False;
+        
+        private readonly List<QuarryData> _activeCraters = new List<QuarryData>();
+        private readonly HashSet<SurveyCrater> _checkedCraters = new HashSet<SurveyCrater>();
+        private readonly Dictionary<uint, ConfigData.PermissionS> _activeSurveyCharges = new Dictionary<uint, ConfigData.PermissionS>();
+        private readonly List<MiningQuarry> _miningQuarries = new List<MiningQuarry>();
+        private readonly object _true = true;
+        private readonly object _false = false;
 
         #endregion Fields
 
@@ -30,8 +33,6 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
-            True = true;
-            False = false;
             foreach (var permissionS in configData.permissionList)
             {
                 if (!permission.PermissionExists(permissionS.permission, this))
@@ -64,7 +65,7 @@ namespace Oxide.Plugins
                     var deposit = ResourceDepositManager.GetOrCreate(surveyCrater.transform.position);
                     if (deposit?._resources == null || deposit._resources.Count <= 0) continue;
                     var mineralItemDataList = deposit._resources.Select(depositEntry => new QuarryData.MineralItemData { amount = depositEntry.amount, shortname = depositEntry.type.shortname, workNeeded = depositEntry.workNeeded }).ToList();
-                    activeCraters.Add(new QuarryData { position = surveyCrater.transform.position, isLiquid = surveyCrater.ShortPrefabName == "survey_crater_oil", mineralItems = mineralItemDataList });
+                    _activeCraters.Add(new QuarryData { position = surveyCrater.transform.position, isLiquid = surveyCrater.ShortPrefabName == "survey_crater_oil", mineralItems = mineralItemDataList });
                     continue;
                 }
                 var miningQuarry = serverEntity as MiningQuarry;
@@ -85,23 +86,18 @@ namespace Oxide.Plugins
             }
         }
 
-        private void Unload()
-        {
-            True = False = null;
-        }
-
         private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), () => RefillMiningQuarries());
 
         private void OnEntitySpawned(MiningQuarry miningQuarry)
         {
             if (miningQuarry == null || !miningQuarry.OwnerID.IsSteamId()) return;
-            miningQuarries.Add(miningQuarry);
+            _miningQuarries.Add(miningQuarry);
         }
 
         private void OnEntityKill(MiningQuarry miningQuarry)
         {
             if (miningQuarry == null || !miningQuarry.OwnerID.IsSteamId()) return;
-            miningQuarries.Remove(miningQuarry);
+            _miningQuarries.Remove(miningQuarry);
         }
 
         private void OnExplosiveThrown(BasePlayer player, SurveyCharge surveyCharge)
@@ -110,16 +106,16 @@ namespace Oxide.Plugins
             var permissionS = GetPermissionS(player);
             if (permissionS == null) return;
             surveyCharge.OwnerID = player.userID;
-            activeSurveyCharges.Add(surveyCharge.net.ID, permissionS);
+            _activeSurveyCharges.Add(surveyCharge.net.ID, permissionS);
         }
 
         private void OnEntityKill(SurveyCharge surveyCharge)
         {
             if (surveyCharge == null || surveyCharge.net == null) return;
             ConfigData.PermissionS permissionS;
-            if (activeSurveyCharges.TryGetValue(surveyCharge.net.ID, out permissionS))
+            if (_activeSurveyCharges.TryGetValue(surveyCharge.net.ID, out permissionS))
             {
-                activeSurveyCharges.Remove(surveyCharge.net.ID);
+                _activeSurveyCharges.Remove(surveyCharge.net.ID);
                 ModifyResourceDeposit(permissionS, surveyCharge.transform.position, surveyCharge.OwnerID);
             }
         }
@@ -128,13 +124,13 @@ namespace Oxide.Plugins
         {
             var miningQuarry = obj?.ToBaseEntity() as MiningQuarry;
             if (miningQuarry == null || !miningQuarry.OwnerID.IsSteamId()) return;
-            foreach (var quarryData in activeCraters.ToArray())
+            foreach (var quarryData in _activeCraters.ToArray())
             {
                 if (Vector3.Distance(quarryData.position, miningQuarry.transform.position) < 2f)
                 {
                     storedData.quarryDataList.Add(quarryData);
                     CreateResourceDeposit(miningQuarry, quarryData);
-                    activeCraters.Remove(quarryData);
+                    _activeCraters.Remove(quarryData);
                     SaveData();
                 }
             }
@@ -149,11 +145,11 @@ namespace Oxide.Plugins
                 if (!AreFriends(surveyCrater.OwnerID, player.userID))
                 {
                     Print(player, Lang("NoDamage", player.UserIDString));
-                    return True;
+                    return _true;
                 }
                 return null;
             }
-            return True;
+            return _true;
         }
 
         private object CanBuild(Planner planner, Construction prefab, Construction.Target target)
@@ -165,7 +161,7 @@ namespace Oxide.Plugins
             if (!AreFriends(surveyCrater.OwnerID, player.userID))
             {
                 Print(player, Lang("NoDeploy", player.UserIDString));
-                return False;
+                return _false;
             }
             return null;
         }
@@ -177,10 +173,12 @@ namespace Oxide.Plugins
         private int RefillMiningQuarries()
         {
             int count = 0;
-            foreach (var miningQuarry in miningQuarries)
+            foreach (var miningQuarry in _miningQuarries)
             {
+                if (miningQuarry == null || miningQuarry.IsDestroyed) continue;
                 foreach (var quarryData in storedData.quarryDataList)
                 {
+                    if (quarryData == null) continue;
                     if (Vector3.Distance(quarryData.position, miningQuarry.transform.position) < 2f)
                     {
                         count++;
@@ -193,11 +191,11 @@ namespace Oxide.Plugins
 
         private void CheckValidData()
         {
-            if (miningQuarries.Count <= 0) return;
+            if (_miningQuarries.Count <= 0) return;
             foreach (var quarryData in storedData.quarryDataList.ToArray())
             {
                 var validData = false;
-                foreach (var miningQuarry in miningQuarries)
+                foreach (var miningQuarry in _miningQuarries)
                 {
                     if (Vector3.Distance(quarryData.position, miningQuarry.transform.position) < 2f)
                     {
@@ -248,7 +246,8 @@ namespace Oxide.Plugins
                 Vis.Entities(checkPosition, 1f, surveyCraterList, Rust.Layers.Mask.Default);
                 foreach (var surveyCrater in surveyCraterList)
                 {
-                    if (checkedCraters.Contains(surveyCrater)) continue;
+                    if (surveyCrater == null || surveyCrater.IsDestroyed) continue;
+                    if (_checkedCraters.Contains(surveyCrater)) continue;
                     if (UnityEngine.Random.Range(0f, 100f) < permissionS.oilCraterChance)
                     {
                         var oilCrater = GameManager.server.CreateEntity(PREFAB_CRATER_OIL, surveyCrater.transform.position) as SurveyCrater;
@@ -256,7 +255,7 @@ namespace Oxide.Plugins
                         surveyCrater.Kill();
                         oilCrater.OwnerID = playerID;
                         oilCrater.Spawn();
-                        checkedCraters.Add(oilCrater);
+                        _checkedCraters.Add(oilCrater);
                         var deposit = ResourceDepositManager.GetOrCreate(oilCrater.transform.position);
                         if (deposit != null)
                         {
@@ -268,7 +267,7 @@ namespace Oxide.Plugins
                             {
                                 deposit.Add(crudeItemDef, 1, amount, workNeeded, ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM, true);
                                 List<QuarryData.MineralItemData> mineralItemDatas = new List<QuarryData.MineralItemData> { new QuarryData.MineralItemData { amount = amount, shortname = crudeItemDef.shortname, workNeeded = workNeeded } };
-                                activeCraters.Add(new QuarryData { position = oilCrater.transform.position, isLiquid = true, mineralItems = mineralItemDatas });
+                                _activeCraters.Add(new QuarryData { position = oilCrater.transform.position, isLiquid = true, mineralItems = mineralItemDatas });
                             }
                         }
                     }
@@ -300,11 +299,11 @@ namespace Oxide.Plugins
                                     amountsRemaining--;
                                 }
                             }
-                            activeCraters.Add(new QuarryData { position = surveyCrater.transform.position, isLiquid = false, mineralItems = mineralItemDataList });
+                            _activeCraters.Add(new QuarryData { position = surveyCrater.transform.position, isLiquid = false, mineralItems = mineralItemDataList });
                         }
                     }
-                    if (surveyCrater != null && !surveyCrater.IsDestroyed)
-                        checkedCraters.Add(surveyCrater);
+                    if (!surveyCrater.IsDestroyed)
+                        _checkedCraters.Add(surveyCrater);
                 }
                 Pool.FreeList(ref surveyCraterList);
             });
