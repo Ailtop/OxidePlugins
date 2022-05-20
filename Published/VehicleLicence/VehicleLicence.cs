@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.30")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.31")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -544,8 +544,6 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            vehiclesCache.Remove(entity);
-            vehicle.OnDeath();
 
             RefundVehicleItems(vehicle, isCrash);
 
@@ -554,6 +552,9 @@ namespace Oxide.Plugins
             {
                 RemoveVehicleLicense(vehicle.PlayerId, vehicle.VehicleType);
             }
+
+            vehicle.OnDeath();
+            vehiclesCache.Remove(entity);
         }
 
         #endregion CheckEntity
@@ -603,7 +604,7 @@ namespace Oxide.Plugins
         private void RefundVehicleItems(Vehicle vehicle, bool isCrash = false, bool isUnload = false)
         {
             var entity = vehicle.Entity;
-            if (entity == null || vehicle.Entity.IsDestroyed)
+            if (entity == null || entity.IsDestroyed)
             {
                 return;
             }
@@ -1860,12 +1861,11 @@ namespace Oxide.Plugins
             var settings = GetBaseVehicleSettings(vehicle.VehicleType);
 
             settings.PreRecallVehicle(player, vehicle, position, rotation);
-
-            vehicle.OnRecall();
             vehicle.Entity.transform.SetPositionAndRotation(position, rotation);
             vehicle.Entity.transform.hasChanged = true;
-
             settings.PostRecallVehicle(player, vehicle, position, rotation);
+
+            vehicle.OnRecall();
 
             if (vehicle.Entity == null || vehicle.Entity.IsDestroyed)
             {
@@ -3176,13 +3176,10 @@ namespace Oxide.Plugins
 
             protected virtual DroppedItemContainer DropVehicleInventory(BasePlayer player, Vehicle vehicle)
             {
-                if (IsNormalVehicle)
+                var inventory = GetInventory(vehicle.Entity);
+                if (inventory != null)
                 {
-                    var inventory = GetInventory(vehicle.Entity);
-                    if (inventory != null)
-                    {
-                        return inventory.Drop(PREFAB_ITEM_DROP, vehicle.Entity.GetDropPosition(), vehicle.Entity.transform.rotation);
-                    }
+                    return inventory.Drop(PREFAB_ITEM_DROP, vehicle.Entity.GetDropPosition(), vehicle.Entity.transform.rotation);
                 }
                 return null;
             }
@@ -3205,27 +3202,24 @@ namespace Oxide.Plugins
 
             protected virtual void CollectVehicleItems(List<Item> items, Vehicle vehicle, bool isCrash, bool isUnload)
             {
-                if (IsNormalVehicle)
+                if (CanRefundFuel(isCrash, isUnload))
                 {
-                    if (CanRefundFuel(isCrash, isUnload))
+                    var fuelSystem = GetFuelSystem(vehicle.Entity);
+                    if (fuelSystem != null)
                     {
-                        var fuelSystem = GetFuelSystem(vehicle.Entity);
-                        if (fuelSystem != null)
+                        var fuelContainer = fuelSystem.GetFuelContainer();
+                        if (fuelContainer != null && fuelContainer.inventory != null)
                         {
-                            var fuelContainer = fuelSystem.GetFuelContainer();
-                            if (fuelContainer != null && fuelContainer.inventory != null)
-                            {
-                                items.AddRange(fuelContainer.inventory.itemList);
-                            }
+                            items.AddRange(fuelContainer.inventory.itemList);
                         }
                     }
-                    if (CanRefundInventory(isCrash, isUnload))
+                }
+                if (CanRefundInventory(isCrash, isUnload))
+                {
+                    var inventory = GetInventory(vehicle.Entity);
+                    if (inventory != null)
                     {
-                        var inventory = GetInventory(vehicle.Entity);
-                        if (inventory != null)
-                        {
-                            items.AddRange(inventory.itemList);
-                        }
+                        items.AddRange(inventory.itemList);
                     }
                 }
             }
