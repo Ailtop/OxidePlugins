@@ -16,7 +16,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.10", ResourceId = 2728)]
+    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.11", ResourceId = 2728)]
     [Description("Creates temporary PvP zones on certain actions/events")]
     public class DynamicPVP : RustPlugin
     {
@@ -43,11 +43,13 @@ namespace Oxide.Plugins
         private class LeftZone : Pool.IPooled
         {
             public string zoneId;
+            public string eventName;
             public Timer zoneTimer;
 
             public void EnterPool()
             {
                 zoneId = null;
+                eventName = null;
                 zoneTimer?.Destroy();
                 zoneTimer = null;
             }
@@ -324,30 +326,39 @@ namespace Oxide.Plugins
                     Unsubscribe(nameof(OnEnterZone));
                     Unsubscribe(nameof(OnExitZone));
                 }
+            }
 
-                bool hasCommands = false;
-                foreach (var entry in _activeDynamicZones)
+            bool hasCommands = false;
+            foreach (var eventName in _activeDynamicZones.Values)
+            {
+                var baseEvent = GetBaseEvent(eventName);
+                if (baseEvent != null && baseEvent.CommandList.Count > 0)
                 {
-                    var baseEvent = GetBaseEvent(entry.Value);
-                    if (baseEvent != null)
+                    hasCommands = true;
+                    break;
+                }
+            }
+            if (!hasCommands)
+            {
+                foreach (var leftZone in _pvpDelays.Values)
+                {
+                    var baseEvent = GetBaseEvent(leftZone.eventName);
+                    if (baseEvent != null && baseEvent.CommandList.Count > 0 && baseEvent.CommandWorksForPVPDelay)
                     {
-                        if (baseEvent.CommandList.Count > 0)
-                        {
-                            hasCommands = true;
-                            break;
-                        }
+                        hasCommands = true;
+                        break;
                     }
                 }
-                if (hasCommands)
-                {
-                    Subscribe(nameof(OnPlayerCommand));
-                    Subscribe(nameof(OnServerCommand));
-                }
-                else
-                {
-                    Unsubscribe(nameof(OnPlayerCommand));
-                    Unsubscribe(nameof(OnServerCommand));
-                }
+            }
+            if (hasCommands)
+            {
+                Subscribe(nameof(OnPlayerCommand));
+                Subscribe(nameof(OnServerCommand));
+            }
+            else
+            {
+                Unsubscribe(nameof(OnPlayerCommand));
+                Unsubscribe(nameof(OnServerCommand));
             }
         }
 
@@ -902,6 +913,19 @@ namespace Oxide.Plugins
                 return null;
             }
 
+            LeftZone leftZone;
+            if (_pvpDelays.TryGetValue(player.userID, out leftZone))
+            {
+                var baseEvent = GetBaseEvent(leftZone.eventName);
+                if (baseEvent != null && baseEvent.CommandWorksForPVPDelay)
+                {
+                    if (IsBlockedCommand(baseEvent, command, isChat))
+                    {
+                        return _false;
+                    }
+                }
+            }
+
             string[] result = GetPlayerZoneIds(player);
             if (result == null || result.Length == 0 || result.Length == 1 && string.IsNullOrEmpty(result[0]))
             {
@@ -915,32 +939,44 @@ namespace Oxide.Plugins
                 {
                     PrintDebug($"Checking command: {command} , zoneId: {zoneId}");
                     var baseEvent = GetBaseEvent(eventName);
-                    if (baseEvent == null || baseEvent.CommandList.Count <= 0) continue;
-
-                    var commandExist = baseEvent.CommandList.Any(entry =>
-                       isChat
-                           ? entry.StartsWith("/") && entry.Substring(1).Equals(command)
-                           : !entry.StartsWith("/") && command.Contains(entry));
-
-                    if (baseEvent.UseBlacklistCommands)
+                    if (baseEvent != null)
                     {
-                        if (commandExist)
+                        if (IsBlockedCommand(baseEvent, command, isChat))
                         {
-                            PrintDebug($"Use blacklist, Blocked command: {command}", true);
-                            return _false;
-                        }
-                    }
-                    else
-                    {
-                        if (!commandExist)
-                        {
-                            PrintDebug($"Use whitelist, Blocked command: {command}", true);
                             return _false;
                         }
                     }
                 }
             }
             return null;
+        }
+
+        private bool IsBlockedCommand(BaseEvent baseEvent, string command, bool isChat)
+        {
+            if (baseEvent != null && baseEvent.CommandList.Count > 0)
+            {
+                var commandExist = baseEvent.CommandList.Any(entry =>
+                    isChat
+                        ? entry.StartsWith("/") && entry.Substring(1).Equals(command)
+                        : !entry.StartsWith("/") && command.Contains(entry));
+                if (baseEvent.UseBlacklistCommands)
+                {
+                    if (commandExist)
+                    {
+                        PrintDebug($"Use blacklist, Blocked command: {command}", true);
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (!commandExist)
+                    {
+                        PrintDebug($"Use whitelist, Blocked command: {command}", true);
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         #endregion Chat/Console Command Handler
@@ -1527,6 +1563,7 @@ namespace Oxide.Plugins
             var playerName = player.displayName;
             var leftZone = GetOrAddPVPDelay(player);
             leftZone.zoneId = zoneId;
+            leftZone.eventName = eventName;
             leftZone.zoneTimer = timer.Once(baseEvent.PvpDelayTime, () =>
             {
                 TryRemovePVPDelay(playerId, playerName);
@@ -1999,7 +2036,10 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Use Blacklist Commands (If false, a whitelist is used)", Order = 10)]
             public bool UseBlacklistCommands { get; set; } = true;
 
-            [JsonProperty(PropertyName = "Command List (If there is a '/' at the front, it is a chat command)", Order = 11)]
+            [JsonProperty(PropertyName = "Command works for PVP delayed players", Order = 11)]
+            public bool CommandWorksForPVPDelay { get; set; } = false;
+
+            [JsonProperty(PropertyName = "Command List (If there is a '/' at the front, it is a chat command)", Order = 12)]
             public List<string> CommandList { get; set; } = new List<string>();
 
             public abstract BaseDynamicZone GetDynamicZone();
