@@ -16,7 +16,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.11", ResourceId = 2728)]
+    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.12", ResourceId = 2728)]
     [Description("Creates temporary PvP zones on certain actions/events")]
     public class DynamicPVP : RustPlugin
     {
@@ -250,9 +250,10 @@ namespace Oxide.Plugins
             }
         }
 
-        private LeftZone GetOrAddPVPDelay(BasePlayer player)
+        private LeftZone GetOrAddPVPDelay(BasePlayer player, string zoneId, string eventName)
         {
             PrintDebug($"Adding {player.displayName} to pvp delay.");
+            bool added = false;
             LeftZone leftZone;
             if (_pvpDelays.TryGetValue(player.userID, out leftZone))
             {
@@ -260,11 +261,16 @@ namespace Oxide.Plugins
             }
             else
             {
+                added = true;
                 leftZone = Pool.Get<LeftZone>();
                 _pvpDelays.Add(player.userID, leftZone);
+            }
+            leftZone.zoneId = zoneId;
+            leftZone.eventName = eventName;
+            if (added)
+            {
                 CheckHooks(true);
             }
-
             return leftZone;
         }
 
@@ -364,6 +370,10 @@ namespace Oxide.Plugins
 
         private BaseEvent GetBaseEvent(string eventName)
         {
+            if (string.IsNullOrEmpty(eventName))
+            {
+                throw new ArgumentNullException(nameof(eventName));
+            }
             var externalEvent = Interface.CallHook("OnGetBaseEvent", eventName) as BaseEvent;
             if (externalEvent != null)
             {
@@ -1561,9 +1571,7 @@ namespace Oxide.Plugins
 
             var playerId = player.userID;
             var playerName = player.displayName;
-            var leftZone = GetOrAddPVPDelay(player);
-            leftZone.zoneId = zoneId;
-            leftZone.eventName = eventName;
+            var leftZone = GetOrAddPVPDelay(player, zoneId, eventName);
             leftZone.zoneTimer = timer.Once(baseEvent.PvpDelayTime, () =>
             {
                 TryRemovePVPDelay(playerId, playerName);
