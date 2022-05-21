@@ -17,7 +17,7 @@ using Time = UnityEngine.Time;
 
 namespace Oxide.Plugins
 {
-    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.31", ResourceId = 651)]
+    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.32", ResourceId = 651)]
     [Description("Building and entity removal tool")]
     public class RemoverTool : RustPlugin
     {
@@ -125,18 +125,18 @@ namespace Oxide.Plugins
             if (configData.removerModeS.specificToolMode) _removeMode = RemoveMode.SpecificTool;
             if (_removeMode == RemoveMode.MeleeHit)
             {
-                BaseMelee beseMelee;
+                BaseMelee baseMelee;
                 ItemDefinition itemDefinition;
                 if (string.IsNullOrEmpty(configData.removerModeS.meleeHitItemShortname) ||
                     (itemDefinition = ItemManager.FindItemDefinition(configData.removerModeS.meleeHitItemShortname)) == null ||
-                    (beseMelee = itemDefinition.GetComponent<ItemModEntity>()?.entityPrefab.Get()?.GetComponent<BaseMelee>()) == null)
+                    (baseMelee = itemDefinition.GetComponent<ItemModEntity>()?.entityPrefab.Get()?.GetComponent<BaseMelee>()) == null)
                 {
                     PrintError($"{configData.removerModeS.meleeHitItemShortname} is not an item shortname for a melee tool");
                     _removeMode = RemoveMode.None;
                 }
                 else
                 {
-                    Subscribe(beseMelee is Hammer ? nameof(OnHammerHit) : nameof(OnPlayerAttack));
+                    Subscribe(baseMelee is Hammer ? nameof(OnHammerHit) : nameof(OnPlayerAttack));
                 }
             }
 
@@ -381,6 +381,10 @@ namespace Oxide.Plugins
 
         private static string GetEntityImage(string name)
         {
+            if (_rt.ImageLibrary == null)
+            {
+                return null;
+            }
             if (configData.imageUrls.ContainsKey(name))
             {
                 return GetImageFromLibrary(name);
@@ -394,6 +398,10 @@ namespace Oxide.Plugins
 
         private static string GetItemImage(string shortname)
         {
+            if (_rt.ImageLibrary == null)
+            {
+                return null;
+            }
             switch (shortname.ToLower())
             {
                 case ECONOMICS_KEY: return GetImageFromLibrary(ECONOMICS_KEY);
@@ -586,10 +594,20 @@ namespace Oxide.Plugins
                     Parent = panelName,
                     Components =
                     {
-                        new CuiRawImageComponent { Sprite = "assets/content/textures/generic/fulltransparent.tga", Color = color, Png = image},
+                        new CuiRawImageComponent { Color = color, Png = image},
                         new CuiRectTransformComponent { AnchorMin = anchorMin, AnchorMax = anchorMax }
                     }
                 });
+            }
+
+            public static void CreateImage(ref CuiElementContainer container, string panelName, int itemId, string anchorMin, string anchorMax)
+            {
+                container.Add(new CuiPanel
+                {
+                    Image = { ItemId = itemId },
+                    RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax },
+                    CursorEnabled = false
+                }, panelName);
             }
         }
 
@@ -650,12 +668,33 @@ namespace Oxide.Plugins
                 displayName = info.Value.DisplayName.Value;
             }
             UI.CreateLabel(ref container, UINAME_ENTITY, configData.uiS.entityTextColor, displayName, configData.uiS.entityTextSize, configData.uiS.entityTextAnchorMin, configData.uiS.entityTextAnchorMax, TextAnchor.MiddleLeft);
-            if (configData.uiS.entityImageEnabled && !string.IsNullOrEmpty(imageName) && _rt.ImageLibrary != null)
+            if (configData.uiS.entityImageEnabled)
             {
-                var imageId = info.HasValue && !string.IsNullOrEmpty(info.Value.ImageId.Value) ? info.Value.ImageId.Value : GetEntityImage(imageName);
-                if (!string.IsNullOrEmpty(imageId))
+                var imageAnchorMin = configData.uiS.entityImageAnchorMin;
+                var imageAnchorMax = configData.uiS.entityImageAnchorMax;
+                if (info.HasValue && !string.IsNullOrEmpty(info.Value.ImageId.Value))
                 {
-                    UI.CreateImage(ref container, UINAME_ENTITY, imageId, configData.uiS.entityImageAnchorMin, configData.uiS.entityImageAnchorMax);
+                    var image = info.Value.ImageId.Value;
+                    if (!string.IsNullOrEmpty(image))
+                    {
+                        UI.CreateImage(ref container, UINAME_ENTITY, image, imageAnchorMin, imageAnchorMax);
+                    }
+                }
+                else if (!string.IsNullOrEmpty(imageName))
+                {
+                    string shortname; int itemId;
+                    if (_rt._shortPrefabNameToDeployable.TryGetValue(imageName, out shortname) && _rt._itemShortNameToItemId.TryGetValue(shortname, out itemId))
+                    {
+                        UI.CreateImage(ref container, UINAME_ENTITY, itemId, imageAnchorMin, imageAnchorMax);
+                    }
+                    else
+                    {
+                        var image = GetEntityImage(imageName);
+                        if (!string.IsNullOrEmpty(image))
+                        {
+                            UI.CreateImage(ref container, UINAME_ENTITY, image, imageAnchorMin, imageAnchorMax);
+                        }
+                    }
                 }
             }
             CuiHelper.DestroyUi(player, UINAME_ENTITY);
@@ -692,12 +731,33 @@ namespace Oxide.Plugins
                         : $"{itemInfo.Value.DisplayName.Value} x{itemInfo.Value.Amount.Value}";
 
                     UI.CreateLabel(ref container, UINAME_PRICE, configData.uiS.price2TextColor, displayText, textSize, $"{anchorMin.x} {anchorMin.y + i * x}", $"{anchorMax.x} {anchorMin.y + (i + 1) * x}", TextAnchor.MiddleLeft);
-                    if (configData.uiS.imageEnabled && _rt.ImageLibrary != null)
+                    if (configData.uiS.imageEnabled)
                     {
-                        var image = itemInfo.HasValue && !string.IsNullOrEmpty(itemInfo.Value.ImageId.Value) ? itemInfo.Value.ImageId.Value : GetItemImage(entry.Key);
-                        if (!string.IsNullOrEmpty(image))
+                        var imageAnchorMin = $"{anchorMax.x - configData.uiS.rightDistance - x * configData.uiS.imageScale} {anchorMin.y + i * x}";
+                        var imageAnchorMax = $"{anchorMax.x - configData.uiS.rightDistance} {anchorMin.y + (i + 1) * x}";
+                        if (itemInfo.HasValue && !string.IsNullOrEmpty(itemInfo.Value.ImageId.Value))
                         {
-                            UI.CreateImage(ref container, UINAME_PRICE, image, $"{anchorMax.x - configData.uiS.rightDistance - x * configData.uiS.imageScale} {anchorMin.y + i * x}", $"{anchorMax.x - configData.uiS.rightDistance} {anchorMin.y + (i + 1) * x}");
+                            var image = itemInfo.Value.ImageId.Value;
+                            if (!string.IsNullOrEmpty(image))
+                            {
+                                UI.CreateImage(ref container, UINAME_PRICE, image, imageAnchorMin, imageAnchorMax);
+                            }
+                        }
+                        else
+                        {
+                            int itemId;
+                            if (_rt._itemShortNameToItemId.TryGetValue(entry.Key, out itemId))
+                            {
+                                UI.CreateImage(ref container, UINAME_PRICE, itemId, imageAnchorMin, imageAnchorMax);
+                            }
+                            else
+                            {
+                                var image = GetItemImage(entry.Key);
+                                if (!string.IsNullOrEmpty(image))
+                                {
+                                    UI.CreateImage(ref container, UINAME_PRICE, image, imageAnchorMin, imageAnchorMax);
+                                }
+                            }
                         }
                     }
                     i++;
@@ -738,12 +798,33 @@ namespace Oxide.Plugins
                         : $"{itemInfo.Value.DisplayName.Value} x{itemInfo.Value.Amount.Value}";
 
                     UI.CreateLabel(ref container, UINAME_REFUND, configData.uiS.refund2TextColor, displayText, textSize, $"{anchorMin.x} {anchorMin.y + i * x}", $"{anchorMax.x} {anchorMin.y + (i + 1) * x}", TextAnchor.MiddleLeft);
-                    if (configData.uiS.imageEnabled && _rt.ImageLibrary != null)
+                    if (configData.uiS.imageEnabled)
                     {
-                        var image = itemInfo.HasValue && !string.IsNullOrEmpty(itemInfo.Value.ImageId.Value) ? itemInfo.Value.ImageId.Value : GetItemImage(entry.Key);
-                        if (!string.IsNullOrEmpty(image))
+                        var imageAnchorMin = $"{anchorMax.x - configData.uiS.rightDistance - x * configData.uiS.imageScale} {anchorMin.y + i * x}";
+                        var imageAnchorMax = $"{anchorMax.x - configData.uiS.rightDistance} {anchorMin.y + (i + 1) * x}";
+                        if (itemInfo.HasValue && !string.IsNullOrEmpty(itemInfo.Value.ImageId.Value))
                         {
-                            UI.CreateImage(ref container, UINAME_REFUND, image, $"{anchorMax.x - configData.uiS.rightDistance - x * configData.uiS.imageScale} {anchorMin.y + i * x}", $"{anchorMax.x - configData.uiS.rightDistance} {anchorMin.y + (i + 1) * x}");
+                            var image = itemInfo.Value.ImageId.Value;
+                            if (!string.IsNullOrEmpty(image))
+                            {
+                                UI.CreateImage(ref container, UINAME_REFUND, image, imageAnchorMin, imageAnchorMax);
+                            }
+                        }
+                        else
+                        {
+                            int itemId;
+                            if (_rt._itemShortNameToItemId.TryGetValue(entry.Key, out itemId))
+                            {
+                                UI.CreateImage(ref container, UINAME_REFUND, itemId, imageAnchorMin, imageAnchorMax);
+                            }
+                            else
+                            {
+                                var image = GetItemImage(entry.Key);
+                                if (!string.IsNullOrEmpty(image))
+                                {
+                                    UI.CreateImage(ref container, UINAME_REFUND, image, imageAnchorMin, imageAnchorMax);
+                                }
+                            }
                         }
                     }
                     i++;
@@ -1280,7 +1361,7 @@ namespace Oxide.Plugins
             if (!configData.containerS.removeNotEmptyStorage)
             {
                 var storageContainer = targetEntity as StorageContainer;
-                if (storageContainer?.inventory?.itemList?.Count > 0)
+                if (storageContainer != null && storageContainer.inventory?.itemList?.Count > 0)
                 {
                     reason = Lang("StorageNotEmpty", player.UserIDString);
                     return false;
@@ -1289,7 +1370,7 @@ namespace Oxide.Plugins
             if (!configData.containerS.removeNotEmptyIoEntity)
             {
                 var containerIOEntity = targetEntity as ContainerIOEntity;
-                if (containerIOEntity?.inventory?.itemList?.Count > 0)
+                if (containerIOEntity != null && containerIOEntity.inventory?.itemList?.Count > 0)
                 {
                     reason = Lang("StorageNotEmpty", player.UserIDString);
                     return false;
@@ -1959,6 +2040,7 @@ namespace Oxide.Plugins
             yield return GetNearbyEntities(sourceEntity, removeList, LAYER_ALL);
             yield return ProcessContainers(removeList);
             yield return DelayRemove(removeList, player, RemoveType.All);
+            removeList.Clear();
             Pool.Free(ref removeList);
             _removeAllCoroutine = null;
         }
@@ -1968,6 +2050,7 @@ namespace Oxide.Plugins
             var removeList = Pool.Get<HashSet<StabilityEntity>>();
             yield return GetNearbyEntities(sourceEntity, removeList, Rust.Layers.Mask.Construction, IsExternalWall);
             yield return DelayRemove(removeList, player, RemoveType.External);
+            removeList.Clear();
             Pool.Free(ref removeList);
             _removeExternalCoroutine = null;
         }
@@ -1977,6 +2060,7 @@ namespace Oxide.Plugins
             var removeList = Pool.Get<HashSet<BaseEntity>>();
             yield return ProcessBuilding(sourceEntity, removeList);
             yield return DelayRemove(removeList, player, RemoveType.Structure);
+            removeList.Clear();
             Pool.Free(ref removeList);
             _removeStructureCoroutine = null;
         }
@@ -2023,6 +2107,7 @@ namespace Oxide.Plugins
             }
             int removed = removeList.Count(x => x != null && !x.IsDestroyed);
             yield return DelayRemove(removeList);
+            removeList.Clear();
             Pool.Free(ref removeList);
             Print(arg, $"You have successfully removed {removed} entities of player {targetID}.");
             _removePlayerEntityCoroutine = null;
@@ -2078,6 +2163,7 @@ namespace Oxide.Plugins
                 }
                 if (++current % configData.globalS.removePerFrame == 0) yield return CoroutineEx.waitForEndOfFrame;
             }
+            checkFrom.Clear();
             Pool.Free(ref checkFrom);
             Pool.FreeList(ref nearbyEntities);
         }
@@ -2086,21 +2172,10 @@ namespace Oxide.Plugins
         {
             foreach (var entity in removeList)
             {
-                var storageContainer = entity as StorageContainer;
-                if (storageContainer != null && storageContainer.inventory?.itemList?.Count > 0)
-                {
-                    if (configData.globalS.noItemContainerDrop) storageContainer.inventory.Clear();
-                    else DropItemContainer(storageContainer.inventory, storageContainer.GetDropPosition(), storageContainer.transform.rotation);
-                    continue;
-                }
-                var containerIoEntity = entity as ContainerIOEntity;
-                if (containerIoEntity != null && containerIoEntity.inventory?.itemList?.Count > 0)
-                {
-                    if (configData.globalS.noItemContainerDrop) containerIoEntity.inventory.Clear();
-                    else DropItemContainer(containerIoEntity.inventory, containerIoEntity.GetDropPosition(), containerIoEntity.transform.rotation);
-                }
+                ProcessContainer(entity);
             }
-            if (configData.globalS.noItemContainerDrop) ItemManager.DoRemoves();
+
+            ItemManager.DoRemoves();
             yield break;
         }
 
@@ -2111,18 +2186,50 @@ namespace Oxide.Plugins
             {
                 foreach (var entity in building.decayEntities)
                 {
-                    if (!removeList.Add(entity)) continue;
-                    var storageContainer = entity as StorageContainer;
-                    if (storageContainer != null && storageContainer.inventory?.itemList?.Count > 0)
+                    if (!removeList.Add(entity))
                     {
-                        if (configData.globalS.noItemContainerDrop) storageContainer.inventory.Clear();
-                        else DropItemContainer(storageContainer.inventory, storageContainer.GetDropPosition(), storageContainer.transform.rotation);
+                        continue;
                     }
+                    ProcessContainer(entity);
                 }
             }
-            else removeList.Add(sourceEntity);
-            if (configData.globalS.noItemContainerDrop) ItemManager.DoRemoves();
+            else
+            {
+                removeList.Add(sourceEntity);
+            }
+
+            ItemManager.DoRemoves();
             yield break;
+        }
+
+        private static void ProcessContainer(BaseEntity entity)
+        {
+            var storageContainer = entity as StorageContainer;
+            if (storageContainer != null && storageContainer.inventory?.itemList?.Count > 0)
+            {
+                if (configData.globalS.noItemContainerDrop)
+                {
+                    storageContainer.inventory.Clear();
+                }
+                else
+                {
+                    DropItemContainer(storageContainer.inventory, storageContainer.GetDropPosition(), storageContainer.transform.rotation);
+                }
+                return;
+            }
+            var containerIoEntity = entity as ContainerIOEntity;
+            if (containerIoEntity != null && containerIoEntity.inventory?.itemList?.Count > 0)
+            {
+                if (configData.globalS.noItemContainerDrop)
+                {
+                    containerIoEntity.inventory.Clear();
+                }
+                else
+                {
+                    DropItemContainer(containerIoEntity.inventory, containerIoEntity.GetDropPosition(), containerIoEntity.transform.rotation);
+                }
+                return;
+            }
         }
 
         private static bool DoRemove(BaseEntity entity, BaseNetworkable.DestroyMode destroyMode)
