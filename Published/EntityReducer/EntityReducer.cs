@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Entity Reducer", "Arainrr", "2.1.0")]
+    [Info("Entity Reducer", "Arainrr", "2.1.1")]
     [Description("Control all spawn populations on your server")]
     public class EntityReducer : RustPlugin
     {
@@ -97,17 +97,6 @@ namespace Oxide.Plugins
             SpawnHandler.Instance.EnforceLimits(true);
         }
 
-        #region Enforce Limits
-
-        [ConsoleCommand("er.enforcelimits")]
-        private void CmdEnforceLimits(ConsoleSystem.Arg arg)
-        {
-            SpawnHandler.Instance.EnforceLimits(true);
-            SendReply(arg, "Successfully enforced all population limits");
-        }
-
-        #endregion Enforce Limits
-
         public string GetReport()
         {
             SpawnPopulation[] allSpawnPopulations = SpawnHandler.Instance.AllSpawnPopulations;
@@ -146,6 +135,13 @@ namespace Oxide.Plugins
 
         [ConsoleCommand("er.getreport")]
         private void CmdGetReport(ConsoleSystem.Arg arg) => SendReply(arg, GetReport());
+
+        [ConsoleCommand("er.enforcelimits")]
+        private void CmdEnforceLimits(ConsoleSystem.Arg arg)
+        {
+            SpawnHandler.Instance.EnforceLimits(true);
+            SendReply(arg, "Successfully enforced all population limits");
+        }
 
         #endregion Commands
 
