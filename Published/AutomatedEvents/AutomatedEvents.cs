@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
@@ -10,12 +11,12 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Automated Events", "k1lly0u/mspeedie/Arainrr", "1.0.10")]
+    [Info("Automated Events", "k1lly0u/mspeedie/Arainrr", "1.0.11")]
     internal class AutomatedEvents : RustPlugin
     {
         #region Fields
 
-        [PluginReference] private Plugin GUIAnnouncements, AlphaChristmas, FancyDrop, PlaneCrash, RustTanic, HeliRefuel, PilotEject;
+        [PluginReference] private Plugin GUIAnnouncements;
 
         private const string PERMISSION_USE = "automatedevents.allowed";
         private const string PERMISSION_NEXT = "automatedevents.next";
@@ -31,11 +32,11 @@ namespace Oxide.Plugins
         private const string PREFAB_CHRISTMAS = "assets/prefabs/misc/xmas/xmasrefill.prefab";
 
         private static AutomatedEvents instance;
-        private Dictionary<BaseEntity, EventType> eventEntities;
-        private readonly Dictionary<EventType, Timer> eventTimers = new Dictionary<EventType, Timer>();
-        private readonly Dictionary<EventSchedule, EventType> disabledVanillaEvents = new Dictionary<EventSchedule, EventType>();
+        private Dictionary<BaseEntity, EventType> _eventEntities;
+        private readonly Dictionary<EventType, Timer> _eventTimers = new Dictionary<EventType, Timer>();
+        private readonly Dictionary<EventSchedule, EventType> _disabledVanillaEvents = new Dictionary<EventSchedule, EventType>();
 
-        private readonly Dictionary<string, EventType> eventSchedulePrefabShortNames = new Dictionary<string, EventType>
+        private readonly Dictionary<string, EventType> _eventSchedulePrefabShortNames = new Dictionary<string, EventType>
         {
             ["event_airdrop"] = EventType.CargoPlane,
             ["event_cargoship"] = EventType.CargoShip,
@@ -67,26 +68,26 @@ namespace Oxide.Plugins
         private void Init()
         {
             instance = this;
-            LoadDefaultMessages();
             permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_NEXT, this);
-            AddCovalenceCommand(configData.chatS.nextEventCommand, nameof(CmdNextEvent));
-            AddCovalenceCommand(configData.chatS.runEventCommand, nameof(CmdRunEvent));
-            AddCovalenceCommand(configData.chatS.killEventCommand, nameof(CmdKillEvent));
+
+            AddCovalenceCommand(configData.Chat.NextEventCommand, nameof(CmdNextEvent));
+            AddCovalenceCommand(configData.Chat.RunEventCommand, nameof(CmdRunEvent));
+            AddCovalenceCommand(configData.Chat.KillEventCommand, nameof(CmdKillEvent));
 
             var eventTypes = new List<EventType>(Enum.GetValues(typeof(EventType)).Cast<EventType>());
             if (!eventTypes.Any(x =>
             {
                 if (x == EventType.None) return false;
-                var baseEventS = GetBaseEventS(x);
-                return baseEventS.enabled && baseEventS.restartTimerOnKill;
+                var baseEvent = GetBaseEvent(x);
+                return baseEvent.Enabled && baseEvent.RestartTimerOnKill;
             }))
             {
                 Unsubscribe(nameof(OnEntityKill));
             }
             else
             {
-                eventEntities = new Dictionary<BaseEntity, EventType>();
+                _eventEntities = new Dictionary<BaseEntity, EventType>();
             }
         }
 
@@ -108,7 +109,7 @@ namespace Oxide.Plugins
             foreach (EventType eventType in Enum.GetValues(typeof(EventType)))
             {
                 if (eventType == EventType.None) continue;
-                var baseEventS = GetBaseEventS(eventType);
+                var baseEvent = GetBaseEvent(eventType);
                 switch (eventType)
                 {
                     case EventType.Bradley:
@@ -116,7 +117,7 @@ namespace Oxide.Plugins
                             var bradleySpawner = BradleySpawner.singleton;
                             if (bradleySpawner != null)
                             {
-                                if (baseEventS.disableVanillaEvent)
+                                if (baseEvent.DisableVanillaEvent)
                                 {
                                     ConVar.Bradley.enabled = false;
                                     bradleySpawner.enabled = false;
@@ -125,7 +126,7 @@ namespace Oxide.Plugins
                                     PrintDebug($"The vanilla {eventType} event is disabled");
                                 }
                             }
-                            else if (baseEventS.enabled)
+                            else if (baseEvent.Enabled)
                             {
                                 PrintError("There is no Bradley Spawner on your server, so the Bradley event is disabled");
                                 continue;
@@ -133,9 +134,9 @@ namespace Oxide.Plugins
                         }
                         break;
                 }
-                if (baseEventS.enabled)
+                if (baseEvent.Enabled)
                 {
-                    eventTimers[eventType] = timer.Once(5f, () => StartEventTimer(eventType, configData.globalS.announceOnLoaded));
+                    _eventTimers[eventType] = timer.Once(5f, () => StartEventTimer(eventType, configData.Global.AnnounceOnLoaded));
                 }
             }
         }
@@ -148,9 +149,9 @@ namespace Oxide.Plugins
                 {
                     case EventType.Bradley:
                         {
-                            var baseEventS = GetBaseEventS(eventType);
+                            var baseEvent = GetBaseEvent(eventType);
                             var bradleySpawner = BradleySpawner.singleton;
-                            if (bradleySpawner != null && baseEventS.disableVanillaEvent)
+                            if (bradleySpawner != null && baseEvent.DisableVanillaEvent)
                             {
                                 ConVar.Bradley.enabled = true;
                                 bradleySpawner.enabled = true;
@@ -162,12 +163,12 @@ namespace Oxide.Plugins
                 }
             }
 
-            foreach (var entry in disabledVanillaEvents)
+            foreach (var entry in _disabledVanillaEvents)
             {
                 entry.Key.enabled = true;
                 PrintDebug($"The vanilla {entry.Value} event is enabled");
             }
-            foreach (var value in eventTimers.Values)
+            foreach (var value in _eventTimers.Values)
             {
                 value?.Destroy();
             }
@@ -178,7 +179,7 @@ namespace Oxide.Plugins
         {
             if (entity == null) return;
             EventType eventType;
-            if (!eventEntities.TryGetValue(entity, out eventType)) return;
+            if (!_eventEntities.TryGetValue(entity, out eventType)) return;
             StartEventTimer(eventType, onKill: true);
         }
 
@@ -192,10 +193,10 @@ namespace Oxide.Plugins
                 return null;
             }
             EventType eventType;
-            if (eventSchedulePrefabShortNames.TryGetValue(prefabShortName, out eventType))
+            if (_eventSchedulePrefabShortNames.TryGetValue(prefabShortName, out eventType))
             {
-                var baseEventS = GetBaseEventS(eventType);
-                if (baseEventS.disableVanillaEvent)
+                var baseEvent = GetBaseEvent(eventType);
+                if (baseEvent.DisableVanillaEvent)
                 {
                     var eventSchedule = eventPrefab.GetComponent<EventSchedule>();
                     if (eventSchedule == null)
@@ -204,57 +205,57 @@ namespace Oxide.Plugins
                         return null;
                     }
                     eventSchedule.enabled = false;
-                    disabledVanillaEvents.Add(eventSchedule, eventType);
+                    _disabledVanillaEvents.Add(eventSchedule, eventType);
                     PrintDebug($"The vanilla {eventType} event is disabled", true);
                     return false;
                 }
-                if (!baseEventS.enabled) return null;
+                if (!baseEvent.Enabled) return null;
                 switch (eventType)
                 {
                     case EventType.CargoPlane:
-                        if (!CanRunEvent<CargoPlane>(eventType, baseEventS))
+                        if (!CanRunEvent<CargoPlane>(eventType, baseEvent))
                         {
                             return false;
                         }
                         break;
 
                     case EventType.CargoShip:
-                        if (!CanRunEvent<CargoShip>(eventType, baseEventS))
+                        if (!CanRunEvent<CargoShip>(eventType, baseEvent))
                         {
                             return false;
                         }
                         break;
 
                     case EventType.Chinook:
-                        if (!CanRunEvent<CH47HelicopterAIController>(eventType, baseEventS))
+                        if (!CanRunEvent<CH47HelicopterAIController>(eventType, baseEvent))
                         {
                             return false;
                         }
                         break;
 
                     case EventType.Helicopter:
-                        if (!CanRunEvent<BaseHelicopter>(eventType, baseEventS))
+                        if (!CanRunEvent<BaseHelicopter>(eventType, baseEvent))
                         {
                             return false;
                         }
                         break;
 
                     case EventType.Christmas:
-                        if (!CanRunEvent<XMasRefill>(eventType, baseEventS))
+                        if (!CanRunEvent<XMasRefill>(eventType, baseEvent))
                         {
                             return false;
                         }
                         break;
 
                     case EventType.Easter:
-                        if (!CanRunHuntEvent<EggHuntEvent>(eventType, baseEventS))
+                        if (!CanRunHuntEvent<EggHuntEvent>(eventType, baseEvent))
                         {
                             return false;
                         }
                         break;
 
                     case EventType.Halloween:
-                        if (!CanRunHuntEvent<HalloweenHunt>(eventType, baseEventS))
+                        if (!CanRunHuntEvent<HalloweenHunt>(eventType, baseEvent))
                         {
                             return false;
                         }
@@ -264,7 +265,7 @@ namespace Oxide.Plugins
                         PrintError($"The vanilla {eventType} event was triggered, but not handled. Please notify the plugin developer");
                         return null;
                 }
-                if (configData.globalS.announceEventTriggered)
+                if (configData.Global.AnnounceEventTriggered)
                 {
                     SendEventTriggeredMessage(eventType.ToString());
                 }
@@ -284,10 +285,10 @@ namespace Oxide.Plugins
             foreach (EventType eventType in Enum.GetValues(typeof(EventType)))
             {
                 if (eventType == EventType.None) continue;
-                var baseEventS = GetBaseEventS(eventType);
-                if (baseEventS.enabled && baseEventS.killEventOnLoaded)
+                var baseEvent = GetBaseEvent(eventType);
+                if (baseEvent.Enabled && baseEvent.KillEventOnLoaded)
                 {
-                    var excludePlayerEntity = (baseEventS as CoexistEventS)?.excludePlayerEntity ?? false;
+                    var excludePlayerEntity = (baseEvent as CoexistEvent)?.ExcludePlayerEntity ?? false;
                     eventTypes.Add(eventType, excludePlayerEntity);
                 }
             }
@@ -310,33 +311,33 @@ namespace Oxide.Plugins
         private void StartEventTimer(EventType eventType, bool announce = true, float timeOverride = 0f, bool onKill = false)
         {
             if (eventType == EventType.None) return;
-            var baseEventS = GetBaseEventS(eventType);
-            if (!baseEventS.enabled)
+            var baseEvent = GetBaseEvent(eventType);
+            if (!baseEvent.Enabled)
             {
                 PrintDebug($"Unable to running {eventType} event, because the event is disabled");
                 return;
             }
             var randomTime = timeOverride <= 0f
-                ? baseEventS.minimumTimeBetween <= baseEventS.maximumTimeBetween
-                    ? UnityEngine.Random.Range(baseEventS.minimumTimeBetween, baseEventS.maximumTimeBetween)
-                    : UnityEngine.Random.Range(baseEventS.maximumTimeBetween, baseEventS.minimumTimeBetween)
+                ? baseEvent.MinimumTimeBetween <= baseEvent.MaximumTimeBetween
+                    ? UnityEngine.Random.Range(baseEvent.MinimumTimeBetween, baseEvent.MaximumTimeBetween)
+                    : UnityEngine.Random.Range(baseEvent.MaximumTimeBetween, baseEvent.MinimumTimeBetween)
                 : timeOverride;
-            randomTime += baseEventS.startOffset;
+            randomTime += baseEvent.StartOffset;
             var nextDateTime = DateTime.UtcNow.AddMinutes(randomTime);
-            baseEventS.nextRunTime = Facepunch.Math.Epoch.FromDateTime(nextDateTime);
+            baseEvent.NextRunTime = Facepunch.Math.Epoch.FromDateTime(nextDateTime);
 
             Timer value;
-            if (eventTimers.TryGetValue(eventType, out value))
+            if (_eventTimers.TryGetValue(eventType, out value))
             {
                 value?.Destroy();
             }
-            eventTimers[eventType] = timer.Once(randomTime * 60f, () => RunEvent(eventType));
+            _eventTimers[eventType] = timer.Once(randomTime * 60f, () => RunEvent(eventType));
 
-            if (onKill || !baseEventS.restartTimerOnKill)
+            if (onKill || !baseEvent.RestartTimerOnKill)
             {
-                var timeLeft = TimeSpan.FromSeconds(baseEventS.nextRunTime - Facepunch.Math.Epoch.Current).ToShortString();
+                var timeLeft = TimeSpan.FromSeconds(baseEvent.NextRunTime - Facepunch.Math.Epoch.Current).ToShortString();
                 PrintDebug($"Next {eventType} event will be ran after {timeLeft}");
-                if (announce && baseEventS.announceNext)
+                if (announce && baseEvent.AnnounceNext)
                 {
                     SendEventNextRunMessage(eventType, timeLeft);
                 }
@@ -348,82 +349,69 @@ namespace Oxide.Plugins
             if (eventType == EventType.None) return;
             BaseEntity eventEntity = null;
             string eventTypeStr = null;
-            var baseEventS = GetBaseEventS(eventType);
+            var baseEvent = GetBaseEvent(eventType);
             switch (eventType)
             {
                 case EventType.Bradley:
                     {
-                        if (bypass || CanRunEvent<BradleyAPC>(eventType, baseEventS, false))
+                        if (bypass || CanRunEvent<BradleyAPC>(eventType, baseEvent, false))
                         {
-                            var bradleySpawner = BradleySpawner.singleton;
-                            if (bradleySpawner == null || bradleySpawner.path?.interestZones == null)
+                            var eventWeight = baseEvent.GetRandomEventWeight();
+                            if (eventWeight == null || eventWeight.IsNormalEvent)
                             {
-                                PrintError("There is no Bradley Spawner on your server, so you cannot spawn a Bradley");
-                                return;
-                            }
-                            PrintDebug("Spawning Bradley");
-                            var bradley = GameManager.server.CreateEntity(PREFAB_APC) as BradleyAPC;
-                            if (bradley == null)
-                            {
-                                goto NotifyDeveloper;
-                            }
-                            bradley.Spawn();
-                            eventEntity = bradley;
-                            eventTypeStr = eventType.ToString();
+                                var bradleySpawner = BradleySpawner.singleton;
+                                if (bradleySpawner == null || bradleySpawner.path?.interestZones == null)
+                                {
+                                    PrintError("There is no Bradley Spawner on your server, so you cannot spawn a Bradley");
+                                    return;
+                                }
+                                PrintDebug("Spawning Bradley");
+                                var bradley = GameManager.server.CreateEntity(PREFAB_APC) as BradleyAPC;
+                                if (bradley == null)
+                                {
+                                    goto NotifyDeveloper;
+                                }
+                                bradley.Spawn();
+                                eventEntity = bradley;
+                                eventTypeStr = eventType.ToString();
 
-                            var position = bradleySpawner.path.interestZones[UnityEngine.Random.Range(0, bradleySpawner.path.interestZones.Count)].transform.position;
-                            bradley.transform.position = position;
-                            bradley.DoAI = true;
-                            bradley.InstallPatrolPath(bradleySpawner.path);
+                                var position = bradleySpawner.path.interestZones[UnityEngine.Random.Range(0, bradleySpawner.path.interestZones.Count)].transform.position;
+                                bradley.transform.position = position;
+                                bradley.DoAI = true;
+                                bradley.InstallPatrolPath(bradleySpawner.path);
+                            }
+                            else
+                            {
+                                PrintDebug($"Spawning {eventWeight.Name}");
+                                eventWeight.RunCustomEvent();
+                                eventTypeStr = eventWeight.Name;
+                            }
                         }
                     }
                     break;
 
                 case EventType.CargoPlane:
                     {
-                        if (bypass || CanRunEvent<CargoPlane>(eventType, baseEventS, false))
+                        if (bypass || CanRunEvent<CargoPlane>(eventType, baseEvent, false))
                         {
-                            var planeEventS = baseEventS as PlaneEventS;
-                            var weightDict = new Dictionary<int, float>();
-                            if (planeEventS.normalWeight > 0)
+                            var eventWeight = baseEvent.GetRandomEventWeight();
+                            if (eventWeight == null || eventWeight.IsNormalEvent)
                             {
-                                weightDict.Add(0, planeEventS.normalWeight);
+                                PrintDebug("Spawning Cargo Plane");
+                                var plane = GameManager.server.CreateEntity(PREFAB_PLANE) as CargoPlane;
+                                if (plane == null)
+                                {
+                                    goto NotifyDeveloper;
+                                }
+                                plane.Spawn();
+                                eventEntity = plane;
+                                eventTypeStr = eventType.ToString();
                             }
-                            if (planeEventS.fancyDropWeight > 0 && FancyDrop != null)
+                            else
                             {
-                                weightDict.Add(1, planeEventS.fancyDropWeight);
-                            }
-                            if (planeEventS.planeCrashWeight > 0 && PlaneCrash != null)
-                            {
-                                weightDict.Add(2, planeEventS.planeCrashWeight);
-                            }
-
-                            var index = GetEventIndexFromWeight(weightDict);
-                            switch (index)
-                            {
-                                case 0:
-                                    PrintDebug("Spawning Cargo Plane");
-                                    var plane = GameManager.server.CreateEntity(PREFAB_PLANE) as CargoPlane;
-                                    if (plane == null)
-                                    {
-                                        goto NotifyDeveloper;
-                                    }
-                                    plane.Spawn();
-                                    eventEntity = plane;
-                                    eventTypeStr = eventType.ToString();
-                                    break;
-
-                                case 1:
-                                    PrintDebug("Spawning FancyDrop Cargo Plane");
-                                    rust.RunServerCommand("ad.random");
-                                    eventTypeStr = "FancyDrop";
-                                    break;
-
-                                case 2:
-                                    PrintDebug("Spawning PlaneCrash Cargo Plane");
-                                    rust.RunServerCommand("callcrash");
-                                    eventTypeStr = "PlaneCrash";
-                                    break;
+                                PrintDebug($"Spawning {eventWeight.Name}");
+                                eventWeight.RunCustomEvent();
+                                eventTypeStr = eventWeight.Name;
                             }
                         }
                     }
@@ -431,39 +419,27 @@ namespace Oxide.Plugins
 
                 case EventType.CargoShip:
                     {
-                        if (bypass || CanRunEvent<CargoShip>(eventType, baseEventS, false))
+                        if (bypass || CanRunEvent<CargoShip>(eventType, baseEvent, false))
                         {
-                            var cargoShipEventS = baseEventS as ShipEventS;
-                            var weightDict = new Dictionary<int, float>();
-                            if (cargoShipEventS.normalWeight > 0)
+                            var eventWeight = baseEvent.GetRandomEventWeight();
+                            if (eventWeight == null || eventWeight.IsNormalEvent)
                             {
-                                weightDict.Add(0, cargoShipEventS.normalWeight);
+                                PrintDebug("Spawning Cargo Ship");
+                                var ship = GameManager.server.CreateEntity(PREFAB_SHIP) as CargoShip;
+                                if (ship == null)
+                                {
+                                    goto NotifyDeveloper;
+                                }
+                                ship.TriggeredEventSpawn();
+                                ship.Spawn();
+                                eventEntity = ship;
+                                eventTypeStr = eventType.ToString();
                             }
-                            if (cargoShipEventS.rustTanicWeight > 0 && RustTanic != null)
+                            else
                             {
-                                weightDict.Add(1, cargoShipEventS.rustTanicWeight);
-                            }
-                            var index = GetEventIndexFromWeight(weightDict);
-                            switch (index)
-                            {
-                                case 0:
-                                    PrintDebug("Spawning Cargo Ship");
-                                    var ship = GameManager.server.CreateEntity(PREFAB_SHIP) as CargoShip;
-                                    if (ship == null)
-                                    {
-                                        goto NotifyDeveloper;
-                                    }
-                                    ship.TriggeredEventSpawn();
-                                    ship.Spawn();
-                                    eventEntity = ship;
-                                    eventTypeStr = eventType.ToString();
-                                    break;
-
-                                case 1:
-                                    PrintDebug("Spawning RustTanic Cargo Ship");
-                                    rust.RunServerCommand("calltitanic");
-                                    eventTypeStr = "RustTanic";
-                                    break;
+                                PrintDebug($"Spawning {eventWeight.Name}");
+                                eventWeight.RunCustomEvent();
+                                eventTypeStr = eventWeight.Name;
                             }
                         }
                     }
@@ -471,68 +447,55 @@ namespace Oxide.Plugins
 
                 case EventType.Chinook:
                     {
-                        if (bypass || CanRunEvent<CH47HelicopterAIController>(eventType, baseEventS, false, entity => entity.landingTarget == Vector3.zero))
+                        if (bypass || CanRunEvent<CH47HelicopterAIController>(eventType, baseEvent, false, entity => entity.landingTarget == Vector3.zero))
                         {
-                            PrintDebug("Spawning Chinook");
-                            var chinook = GameManager.server.CreateEntity(PREFAB_CHINOOK) as CH47HelicopterAIController;
-                            if (chinook == null)
+                            var eventWeight = baseEvent.GetRandomEventWeight();
+                            if (eventWeight == null || eventWeight.IsNormalEvent)
                             {
-                                goto NotifyDeveloper;
-                            }
+                                PrintDebug("Spawning Chinook");
+                                var chinook = GameManager.server.CreateEntity(PREFAB_CHINOOK) as CH47HelicopterAIController;
+                                if (chinook == null)
+                                {
+                                    goto NotifyDeveloper;
+                                }
 
-                            chinook.TriggeredEventSpawn();
-                            chinook.Spawn();
-                            eventEntity = chinook;
-                            eventTypeStr = eventType.ToString();
+                                chinook.TriggeredEventSpawn();
+                                chinook.Spawn();
+                                eventEntity = chinook;
+                                eventTypeStr = eventType.ToString();
+                            }
+                            else
+                            {
+                                PrintDebug($"Spawning {eventWeight.Name}");
+                                eventWeight.RunCustomEvent();
+                                eventTypeStr = eventWeight.Name;
+                            }
                         }
                     }
                     break;
 
                 case EventType.Helicopter:
                     {
-                        if (bypass || CanRunEvent<BaseHelicopter>(eventType, baseEventS, false))
+                        if (bypass || CanRunEvent<BaseHelicopter>(eventType, baseEvent, false))
                         {
-                            var heliEventS = baseEventS as HeliEventS;
-                            var weightDict = new Dictionary<int, float>();
-                            if (heliEventS.normalWeight > 0)
+                            var eventWeight = baseEvent.GetRandomEventWeight();
+                            if (eventWeight == null || eventWeight.IsNormalEvent)
                             {
-                                weightDict.Add(0, heliEventS.normalWeight);
+                                PrintDebug("Spawning Helicopter");
+                                var helicopter = GameManager.server.CreateEntity(PREFAB_HELI) as BaseHelicopter;
+                                if (helicopter == null)
+                                {
+                                    goto NotifyDeveloper;
+                                }
+                                helicopter.Spawn();
+                                eventEntity = helicopter;
+                                eventTypeStr = eventType.ToString();
                             }
-                            if (heliEventS.pilotEjectWeight > 0 && PilotEject != null)
+                            else
                             {
-                                weightDict.Add(1, heliEventS.pilotEjectWeight);
-                            }
-                            if (heliEventS.heliRefuelWeight > 0 && HeliRefuel != null)
-                            {
-                                weightDict.Add(2, heliEventS.heliRefuelWeight);
-                            }
-
-                            var index = GetEventIndexFromWeight(weightDict);
-                            switch (index)
-                            {
-                                case 0:
-                                    PrintDebug("Spawning Helicopter");
-                                    var helicopter = GameManager.server.CreateEntity(PREFAB_HELI) as BaseHelicopter;
-                                    if (helicopter == null)
-                                    {
-                                        goto NotifyDeveloper;
-                                    }
-                                    helicopter.Spawn();
-                                    eventEntity = helicopter;
-                                    eventTypeStr = eventType.ToString();
-                                    break;
-
-                                case 1:
-                                    PrintDebug("Spawning PilotEject Helicopter");
-                                    rust.RunServerCommand("pe call");
-                                    eventTypeStr = "PilotEject";
-                                    break;
-
-                                case 2:
-                                    PrintDebug("Spawning HeliRefuel Helicopter");
-                                    rust.RunServerCommand("hr call");
-                                    eventTypeStr = "HeliRefuel";
-                                    break;
+                                PrintDebug($"Spawning {eventWeight.Name}");
+                                eventWeight.RunCustomEvent();
+                                eventTypeStr = eventWeight.Name;
                             }
                         }
                     }
@@ -540,60 +503,58 @@ namespace Oxide.Plugins
 
                 case EventType.SantaSleigh:
                     {
-                        if (bypass || CanRunEvent<SantaSleigh>(eventType, baseEventS, false))
+                        if (bypass || CanRunEvent<SantaSleigh>(eventType, baseEvent, false))
                         {
-                            PrintDebug("Santa Sleigh is coming, have you been good?");
-                            var santaSleigh = GameManager.server.CreateEntity(PREFAB_SLEIGH) as SantaSleigh;
-                            if (santaSleigh == null)
+                            var eventWeight = baseEvent.GetRandomEventWeight();
+                            if (eventWeight == null || eventWeight.IsNormalEvent)
                             {
-                                goto NotifyDeveloper;
-                            }
+                                PrintDebug("Santa Sleigh is coming, have you been good?");
+                                var santaSleigh = GameManager.server.CreateEntity(PREFAB_SLEIGH) as SantaSleigh;
+                                if (santaSleigh == null)
+                                {
+                                    goto NotifyDeveloper;
+                                }
 
-                            santaSleigh.Spawn();
-                            eventEntity = santaSleigh;
-                            eventTypeStr = eventType.ToString();
+                                santaSleigh.Spawn();
+                                eventEntity = santaSleigh;
+                                eventTypeStr = eventType.ToString();
+                            }
+                            else
+                            {
+                                PrintDebug($"Spawning {eventWeight.Name}");
+                                eventWeight.RunCustomEvent();
+                                eventTypeStr = eventWeight.Name;
+                            }
                         }
                     }
                     break;
 
                 case EventType.Christmas:
                     {
-                        if (bypass || CanRunEvent<XMasRefill>(eventType, baseEventS, false))
+                        if (bypass || CanRunEvent<XMasRefill>(eventType, baseEvent, false))
                         {
-                            var christmasEventS = baseEventS as ChristmasEventS;
-                            var weightDict = new Dictionary<int, float>();
-                            if (christmasEventS.normalWeight > 0)
+                            var eventWeight = baseEvent.GetRandomEventWeight();
+                            if (eventWeight == null || eventWeight.IsNormalEvent)
                             {
-                                weightDict.Add(0, christmasEventS.normalWeight);
-                            }
-                            if (christmasEventS.alphaChristmasWeight > 0 && AlphaChristmas != null)
-                            {
-                                weightDict.Add(1, christmasEventS.alphaChristmasWeight);
-                            }
-                            var index = GetEventIndexFromWeight(weightDict);
-                            switch (index)
-                            {
-                                case 0:
-                                    PrintDebug("Christmas Refill is occurring");
-                                    var xMasRefill = GameManager.server.CreateEntity(PREFAB_CHRISTMAS) as XMasRefill;
-                                    if (xMasRefill == null)
-                                    {
-                                        goto NotifyDeveloper;
-                                    }
+                                PrintDebug("Christmas Refill is occurring");
+                                var xMasRefill = GameManager.server.CreateEntity(PREFAB_CHRISTMAS) as XMasRefill;
+                                if (xMasRefill == null)
+                                {
+                                    goto NotifyDeveloper;
+                                }
 
-                                    bool temp = ConVar.XMas.enabled;
-                                    ConVar.XMas.enabled = true;
-                                    xMasRefill.Spawn();
-                                    ConVar.XMas.enabled = temp;
-                                    eventEntity = xMasRefill;
-                                    eventTypeStr = eventType.ToString();
-                                    break;
-
-                                case 1:
-                                    PrintDebug("Running AlphaChristmas Refill");
-                                    rust.RunServerCommand("alphachristmas.refill");
-                                    eventTypeStr = "AlphaChristmas";
-                                    break;
+                                bool temp = ConVar.XMas.enabled;
+                                ConVar.XMas.enabled = true;
+                                xMasRefill.Spawn();
+                                ConVar.XMas.enabled = temp;
+                                eventEntity = xMasRefill;
+                                eventTypeStr = eventType.ToString();
+                            }
+                            else
+                            {
+                                PrintDebug($"Spawning {eventWeight.Name}");
+                                eventWeight.RunCustomEvent();
+                                eventTypeStr = eventWeight.Name;
                             }
                         }
                     }
@@ -601,7 +562,7 @@ namespace Oxide.Plugins
 
                 case EventType.Easter:
                     {
-                        if (bypass || CanRunHuntEvent<EggHuntEvent>(eventType, baseEventS, false))
+                        if (bypass || CanRunHuntEvent<EggHuntEvent>(eventType, baseEvent, false))
                         {
                             if (EggHuntEvent.serverEvent != null) //EggHuntEvent.serverEvent.IsEventActive()
                             {
@@ -631,7 +592,7 @@ namespace Oxide.Plugins
 
                 case EventType.Halloween:
                     {
-                        if (bypass || CanRunHuntEvent<HalloweenHunt>(eventType, baseEventS, false))
+                        if (bypass || CanRunHuntEvent<HalloweenHunt>(eventType, baseEvent, false))
                         {
                             if (EggHuntEvent.serverEvent != null) //EggHuntEvent.serverEvent.IsEventActive()
                             {
@@ -664,20 +625,20 @@ namespace Oxide.Plugins
                     return;
             }
 
-            if (eventEntity != null && baseEventS.enabled && baseEventS.restartTimerOnKill)
+            if (eventEntity != null && baseEvent.Enabled && baseEvent.RestartTimerOnKill)
             {
-                foreach (var entry in eventEntities.ToArray())
+                foreach (var entry in _eventEntities.ToArray())
                 {
                     if (entry.Value == eventType)
                     {
-                        eventEntities.Remove(entry.Key);
+                        _eventEntities.Remove(entry.Key);
                     }
                 }
-                eventEntities.Add(eventEntity, eventType);
+                _eventEntities.Add(eventEntity, eventType);
             }
             if (!string.IsNullOrEmpty(eventTypeStr))
             {
-                if (configData.globalS.announceEventTriggered)
+                if (configData.Global.AnnounceEventTriggered)
                 {
                     SendEventTriggeredMessage(eventTypeStr);
                 }
@@ -688,7 +649,7 @@ namespace Oxide.Plugins
                 StartEventTimer(eventType);
             }
             return;
-            NotifyDeveloper:
+        NotifyDeveloper:
             {
                 PrintError($"{eventType} prefab does not exist. Please notify the plugin developer");
             }
@@ -696,11 +657,11 @@ namespace Oxide.Plugins
 
         private void KillEvent(EventType eventType)
         {
-            var baseEventS = GetBaseEventS(eventType);
+            var baseEvent = GetBaseEvent(eventType);
             switch (eventType)
             {
                 case EventType.Bradley:
-                    foreach (var bradley in GetEventEntities<BradleyAPC>(baseEventS).ToArray())
+                    foreach (var bradley in GetEventEntities<BradleyAPC>(baseEvent).ToArray())
                     {
                         PrintDebug("Killing a Bradley");
                         bradley.Kill();
@@ -708,7 +669,7 @@ namespace Oxide.Plugins
                     return;
 
                 case EventType.CargoPlane:
-                    foreach (var cargoPlane in GetEventEntities<CargoPlane>(baseEventS).ToArray())
+                    foreach (var cargoPlane in GetEventEntities<CargoPlane>(baseEvent).ToArray())
                     {
                         PrintDebug("Killing a Cargo Plane");
                         cargoPlane.Kill();
@@ -716,7 +677,7 @@ namespace Oxide.Plugins
                     return;
 
                 case EventType.CargoShip:
-                    foreach (var cargoShip in GetEventEntities<CargoShip>(baseEventS).ToArray())
+                    foreach (var cargoShip in GetEventEntities<CargoShip>(baseEvent).ToArray())
                     {
                         PrintDebug("Killing a Cargo Ship");
                         cargoShip.Kill();
@@ -724,7 +685,7 @@ namespace Oxide.Plugins
                     return;
 
                 case EventType.Chinook:
-                    foreach (var ch47Helicopter in GetEventEntities<CH47HelicopterAIController>(baseEventS, entity => entity.landingTarget == Vector3.zero).ToArray())
+                    foreach (var ch47Helicopter in GetEventEntities<CH47HelicopterAIController>(baseEvent, entity => entity.landingTarget == Vector3.zero).ToArray())
                     {
                         PrintDebug("Killing a Chinook (CH47)");
                         ch47Helicopter.Kill();
@@ -732,7 +693,7 @@ namespace Oxide.Plugins
                     return;
 
                 case EventType.Helicopter:
-                    foreach (var helicopter in GetEventEntities<BaseHelicopter>(baseEventS).ToArray())
+                    foreach (var helicopter in GetEventEntities<BaseHelicopter>(baseEvent).ToArray())
                     {
                         PrintDebug("Killing a Helicopter");
                         helicopter.Kill();
@@ -740,7 +701,7 @@ namespace Oxide.Plugins
                     return;
 
                 case EventType.SantaSleigh:
-                    foreach (var santaSleigh in GetEventEntities<SantaSleigh>(baseEventS).ToArray())
+                    foreach (var santaSleigh in GetEventEntities<SantaSleigh>(baseEvent).ToArray())
                     {
                         PrintDebug("Killing a Santa Sleigh");
                         santaSleigh.Kill();
@@ -748,7 +709,7 @@ namespace Oxide.Plugins
                     return;
 
                 case EventType.Christmas:
-                    foreach (var christmas in GetEventEntities<XMasRefill>(baseEventS).ToArray())
+                    foreach (var christmas in GetEventEntities<XMasRefill>(baseEvent).ToArray())
                     {
                         PrintDebug("Killing a Christmas");
                         christmas.Kill();
@@ -756,7 +717,7 @@ namespace Oxide.Plugins
                     return;
 
                 case EventType.Easter:
-                    foreach (var easter in GetEventEntities<EggHuntEvent>(baseEventS, entity => entity.ShortPrefabName == "egghunt").ToArray())
+                    foreach (var easter in GetEventEntities<EggHuntEvent>(baseEvent, entity => entity.ShortPrefabName == "egghunt").ToArray())
                     {
                         PrintDebug("Killing a Easter");
                         easter.Kill();
@@ -764,7 +725,7 @@ namespace Oxide.Plugins
                     return;
 
                 case EventType.Halloween:
-                    foreach (var halloween in GetEventEntities<HalloweenHunt>(baseEventS).ToArray())
+                    foreach (var halloween in GetEventEntities<HalloweenHunt>(baseEvent).ToArray())
                     {
                         PrintDebug("Killing a Halloween");
                         halloween.Kill();
@@ -779,30 +740,30 @@ namespace Oxide.Plugins
 
         private bool GetNextEventRunTime(IPlayer iPlayer, EventType eventType, out string nextTime)
         {
-            var baseEventS = GetBaseEventS(eventType);
-            if (!baseEventS.enabled || baseEventS.nextRunTime <= 0)
+            var baseEvent = GetBaseEvent(eventType);
+            if (!baseEvent.Enabled || baseEvent.NextRunTime <= 0)
             {
-                nextTime = Lang("NotSet", iPlayer.Id, baseEventS.displayName);
+                nextTime = Lang("NotSet", iPlayer.Id, baseEvent.DisplayName);
                 return false;
             }
-            var timeLeft = TimeSpan.FromSeconds(baseEventS.nextRunTime - Facepunch.Math.Epoch.Current).ToShortString();
-            nextTime = Lang("NextRunTime", iPlayer.Id, baseEventS.displayName, timeLeft);
+            var timeLeft = TimeSpan.FromSeconds(baseEvent.NextRunTime - Facepunch.Math.Epoch.Current).ToShortString();
+            nextTime = Lang("NextRunTime", iPlayer.Id, baseEvent.DisplayName, timeLeft);
             return true;
         }
 
-        private BaseEventS GetBaseEventS(EventType eventType)
+        private BaseEvent GetBaseEvent(EventType eventType)
         {
             switch (eventType)
             {
-                case EventType.Bradley: return configData.events.bradleyEventS;
-                case EventType.CargoPlane: return configData.events.planeEventS;
-                case EventType.CargoShip: return configData.events.shipEventS;
-                case EventType.Chinook: return configData.events.chinookEventS;
-                case EventType.Helicopter: return configData.events.helicopterEventS;
-                case EventType.SantaSleigh: return configData.events.santaSleighEventS;
-                case EventType.Christmas: return configData.events.christmasEventS;
-                case EventType.Easter: return configData.events.easterEventS;
-                case EventType.Halloween: return configData.events.halloweenEventS;
+                case EventType.Bradley: return configData.Events.Bradley;
+                case EventType.CargoPlane: return configData.Events.Plane;
+                case EventType.CargoShip: return configData.Events.Ship;
+                case EventType.Chinook: return configData.Events.Chinook;
+                case EventType.Helicopter: return configData.Events.Helicopter;
+                case EventType.SantaSleigh: return configData.Events.SantaSleigh;
+                case EventType.Christmas: return configData.Events.Christmas;
+                case EventType.Easter: return configData.Events.Easter;
+                case EventType.Halloween: return configData.Events.Halloween;
                 default: PrintError($"GetBaseEventS: Unknown EventType: {eventType}"); return null;
             }
         }
@@ -810,13 +771,13 @@ namespace Oxide.Plugins
         private string GetEventTypeDisplayName(EventType eventType)
         {
             if (eventType == EventType.None) return "None";
-            var baseEventS = GetBaseEventS(eventType);
-            return baseEventS.displayName;
+            var baseEvent = GetBaseEvent(eventType);
+            return baseEvent.DisplayName;
         }
 
         private void SendEventNextRunMessage(EventType eventType, string timeLeft)
         {
-            if (configData.globalS.useGUIAnnouncements && GUIAnnouncements != null)
+            if (configData.Global.UseGuiAnnouncements && GUIAnnouncements != null)
             {
                 foreach (var player in BasePlayer.activePlayerList)
                 {
@@ -834,7 +795,7 @@ namespace Oxide.Plugins
 
         private void SendEventTriggeredMessage(string eventTypeStr)
         {
-            if (configData.globalS.useGUIAnnouncements && GUIAnnouncements != null)
+            if (configData.Global.UseGuiAnnouncements && GUIAnnouncements != null)
             {
                 foreach (var player in BasePlayer.activePlayerList)
                 {
@@ -1018,9 +979,9 @@ namespace Oxide.Plugins
             return 0;
         }
 
-        private static IEnumerable<T> GetEventEntities<T>(BaseEventS baseEventS, Func<T, bool> filter = null) where T : BaseEntity
+        private static IEnumerable<T> GetEventEntities<T>(BaseEvent baseEvent, Func<T, bool> filter = null) where T : BaseEntity
         {
-            var excludePlayerEntity = (baseEventS as CoexistEventS)?.excludePlayerEntity ?? false;
+            var excludePlayerEntity = (baseEvent as CoexistEvent)?.ExcludePlayerEntity ?? false;
             foreach (var serverEntity in BaseNetworkable.serverEntities)
             {
                 var entity = serverEntity as T;
@@ -1031,50 +992,50 @@ namespace Oxide.Plugins
             }
         }
 
-        private static bool CanRunEvent<T>(EventType eventType, BaseEventS baseEventS, bool vanilla = true, Func<T, bool> filter = null) where T : BaseEntity
+        private static bool CanRunEvent<T>(EventType eventType, BaseEvent baseEvent, bool vanilla = true, Func<T, bool> filter = null) where T : BaseEntity
         {
-            return CheckOnlinePlayers(eventType, baseEventS, vanilla) && CanRunCoexistEvent(eventType, baseEventS, vanilla, filter);
+            return CheckOnlinePlayers(eventType, baseEvent, vanilla) && CanRunCoexistEvent(eventType, baseEvent, vanilla, filter);
         }
 
-        private static bool CheckOnlinePlayers(EventType eventType, BaseEventS baseEventS, bool vanilla = true)
+        private static bool CheckOnlinePlayers(EventType eventType, BaseEvent baseEvent, bool vanilla = true)
         {
             var onlinePlayers = BasePlayer.activePlayerList.Count;
-            if (baseEventS.minimumOnlinePlayers > 0 && onlinePlayers < baseEventS.minimumOnlinePlayers)
+            if (baseEvent.MinimumOnlinePlayers > 0 && onlinePlayers < baseEvent.MinimumOnlinePlayers)
             {
-                instance?.PrintDebug($"The online players is less than {baseEventS.minimumOnlinePlayers}, so the {eventType} {(vanilla ? "vanilla" : "auto")} event cannot run", true);
+                instance?.PrintDebug($"The online players is less than {baseEvent.MinimumOnlinePlayers}, so the {eventType} {(vanilla ? "vanilla" : "auto")} event cannot run", true);
                 return false;
             }
-            if (baseEventS.maximumOnlinePlayers > 0 && onlinePlayers > baseEventS.maximumOnlinePlayers)
+            if (baseEvent.MaximumOnlinePlayers > 0 && onlinePlayers > baseEvent.MaximumOnlinePlayers)
             {
-                instance?.PrintDebug($"The online players is greater than {baseEventS.maximumOnlinePlayers}, so the {eventType} {(vanilla ? "vanilla" : "auto")} event cannot run", true);
+                instance?.PrintDebug($"The online players is greater than {baseEvent.MaximumOnlinePlayers}, so the {eventType} {(vanilla ? "vanilla" : "auto")} event cannot run", true);
                 return false;
             }
             return true;
         }
 
-        private static bool CanRunCoexistEvent<T>(EventType eventType, BaseEventS baseEventS, bool vanilla = true, Func<T, bool> filter = null) where T : BaseEntity
+        private static bool CanRunCoexistEvent<T>(EventType eventType, BaseEvent baseEvent, bool vanilla = true, Func<T, bool> filter = null) where T : BaseEntity
         {
-            var coexistEventS = baseEventS as CoexistEventS;
-            if (coexistEventS != null && coexistEventS.serverMaximumNumber > 0)
+            var coexistEventS = baseEvent as CoexistEvent;
+            if (coexistEventS != null && coexistEventS.ServerMaximumNumber > 0)
             {
                 if (BaseNetworkable.serverEntities.Count(x =>
                 {
                     var entity = x as T;
                     if (entity == null) return false;
                     if (filter != null && !filter(entity)) return false;
-                    return !coexistEventS.excludePlayerEntity || !entity.OwnerID.IsSteamId();
-                }) >= coexistEventS.serverMaximumNumber)
+                    return !coexistEventS.ExcludePlayerEntity || !entity.OwnerID.IsSteamId();
+                }) >= coexistEventS.ServerMaximumNumber)
                 {
-                    instance?.PrintDebug($"The number of {eventType} {(vanilla ? "vanilla" : "auto")} events has reached the limit of {coexistEventS.serverMaximumNumber}", true);
+                    instance?.PrintDebug($"The number of {eventType} {(vanilla ? "vanilla" : "auto")} events has reached the limit of {coexistEventS.ServerMaximumNumber}", true);
                     return false;
                 }
             }
             return true;
         }
 
-        private static bool CanRunHuntEvent<T>(EventType eventType, BaseEventS baseEventS, bool vanilla = true) where T : EggHuntEvent
+        private static bool CanRunHuntEvent<T>(EventType eventType, BaseEvent baseEvent, bool vanilla = true) where T : EggHuntEvent
         {
-            if (!CheckOnlinePlayers(eventType, baseEventS, vanilla)) return false;
+            if (!CheckOnlinePlayers(eventType, baseEvent, vanilla)) return false;
             return true;
         }
 
@@ -1084,7 +1045,7 @@ namespace Oxide.Plugins
 
         private void PrintDebug(string message, bool warning = false)
         {
-            if (configData.globalS.debugEnabled)
+            if (configData.Global.DebugEnabled)
             {
                 if (warning) PrintWarning(message);
                 else Puts(message);
@@ -1100,213 +1061,357 @@ namespace Oxide.Plugins
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Settings")]
-            public Settings globalS = new Settings();
+            public Settings Global { get; set; } = new Settings();
 
             public class Settings
             {
                 [JsonProperty(PropertyName = "Enable Debug Mode")]
-                public bool debugEnabled = true;
+                public bool DebugEnabled { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Announce On Plugin Loaded")]
-                public bool announceOnLoaded;
+                public bool AnnounceOnLoaded { get; set; }
 
                 [JsonProperty(PropertyName = "Announce On Event Triggered")]
-                public bool announceEventTriggered;
+                public bool AnnounceEventTriggered { get; set; }
 
                 [JsonProperty(PropertyName = "Use GUIAnnouncements Plugin")]
-                public bool useGUIAnnouncements;
+                public bool UseGuiAnnouncements { get; set; }
             }
 
             [JsonProperty(PropertyName = "Chat Settings")]
-            public ChatSettings chatS = new ChatSettings();
+            public ChatSettings Chat { get; set; } = new ChatSettings();
 
             public class ChatSettings
             {
                 [JsonProperty(PropertyName = "Next Event Command")]
-                public string nextEventCommand = "nextevent";
+                public string NextEventCommand { get; set; } = "nextevent";
 
                 [JsonProperty(PropertyName = "Run Event Command")]
-                public string runEventCommand = "runevent";
+                public string RunEventCommand { get; set; } = "runevent";
 
                 [JsonProperty(PropertyName = "Kill Event Command")]
-                public string killEventCommand = "killevent";
+                public string KillEventCommand { get; set; } = "killevent";
 
                 [JsonProperty(PropertyName = "Chat Prefix")]
-                public string prefix = "[AutomatedEvents]: ";
+                public string Prefix { get; set; } = "[AutomatedEvents]: ";
 
                 [JsonProperty(PropertyName = "Chat Prefix Color")]
-                public string prefixColor = "#00FFFF";
+                public string PrefixColor { get; set; } = "#00FFFF";
 
                 [JsonProperty(PropertyName = "Chat SteamID Icon")]
-                public ulong steamIDIcon = 0;
+                public ulong SteamIdIcon { get; set; } = 0;
             }
 
             [JsonProperty(PropertyName = "Event Settings")]
-            public EventSettings events = new EventSettings();
+            public EventSettings Events { get; set; } = new EventSettings();
 
             public class EventSettings
             {
                 [JsonProperty(PropertyName = "Bradley Event")]
-                public CoexistEventS bradleyEventS = new CoexistEventS
+                public CoexistEvent Bradley { get; set; } = new CoexistEvent
                 {
-                    displayName = "Bradley",
-                    minimumTimeBetween = 30,
-                    maximumTimeBetween = 45
+                    DisplayName = "Bradley",
+                    MinimumTimeBetween = 30,
+                    MaximumTimeBetween = 45,
                 };
 
                 [JsonProperty(PropertyName = "Cargo Plane Event")]
-                public PlaneEventS planeEventS = new PlaneEventS
+                public CoexistEvent Plane { get; set; } = new CoexistEvent
                 {
-                    displayName = "Cargo Plane",
-                    minimumTimeBetween = 30,
-                    maximumTimeBetween = 45
+                    DisplayName = "Cargo Plane",
+                    MinimumTimeBetween = 30,
+                    MaximumTimeBetween = 45,
+                    EventWeights = new List<EventWeight>
+                    {
+                        new EventWeight {Weight = 60},
+                        new EventWeight
+                        {
+                            Name = "FancyDrop",
+                            Weight = 20,
+                            ArgType = ArgumentType.Command,
+                            Args = new List<string> { "ad.random" }
+                        },
+                        new EventWeight
+                        {
+                            Name = "PlaneCrash",
+                            Weight = 20,
+                            ArgType = ArgumentType.Command,
+                            Args = new List<string> { "callcrash" }
+                        }
+                    }
                 };
 
                 [JsonProperty(PropertyName = "Cargo Ship Event")]
-                public ShipEventS shipEventS = new ShipEventS
+                public CoexistEvent Ship { get; set; } = new CoexistEvent
                 {
-                    displayName = "Cargo Ship",
-                    minimumTimeBetween = 30,
-                    maximumTimeBetween = 45
+                    DisplayName = "Cargo Ship",
+                    MinimumTimeBetween = 30,
+                    MaximumTimeBetween = 45,
+                    EventWeights = new List<EventWeight>
+                    {
+                        new EventWeight {Weight = 80},
+                        new EventWeight
+                        {
+                            Name = "RustTanic",
+                            Weight = 20,
+                            ArgType = ArgumentType.Command,
+                            Args = new List<string> { "calltitanic" }
+                        }
+                    }
                 };
 
                 [JsonProperty(PropertyName = "Chinook (CH47) Event")]
-                public CoexistEventS chinookEventS = new CoexistEventS
+                public CoexistEvent Chinook { get; set; } = new CoexistEvent
                 {
-                    displayName = "Chinook",
-                    minimumTimeBetween = 30,
-                    maximumTimeBetween = 45
+                    DisplayName = "Chinook",
+                    MinimumTimeBetween = 30,
+                    MaximumTimeBetween = 45
                 };
 
                 [JsonProperty(PropertyName = "Helicopter Event")]
-                public HeliEventS helicopterEventS = new HeliEventS
+                public CoexistEvent Helicopter { get; set; } = new CoexistEvent
                 {
-                    displayName = "Helicopter",
-                    minimumTimeBetween = 45,
-                    maximumTimeBetween = 60
+                    DisplayName = "Helicopter",
+                    MinimumTimeBetween = 45,
+                    MaximumTimeBetween = 60,
+                    EventWeights = new List<EventWeight>
+                    {
+                        new EventWeight {Weight = 60},
+                        new EventWeight
+                        {
+                            Name = "HeliRefuel",
+                            Weight = 20,
+                            ArgType = ArgumentType.Command,
+                            Args = new List<string> { "pe call" }
+                        },
+                        new EventWeight
+                        {
+                            Name = "PilotEject",
+                            Weight = 20,
+                            ArgType = ArgumentType.Command,
+                            Args = new List<string> { "hr call" }
+                        }
+                    }
                 };
 
                 [JsonProperty(PropertyName = "Santa Sleigh Event")]
-                public CoexistEventS santaSleighEventS = new CoexistEventS
+                public CoexistEvent SantaSleigh { get; set; } = new CoexistEvent
                 {
-                    displayName = "Santa Sleigh",
-                    minimumTimeBetween = 30,
-                    maximumTimeBetween = 60
+                    DisplayName = "Santa Sleigh",
+                    MinimumTimeBetween = 30,
+                    MaximumTimeBetween = 60
                 };
 
                 [JsonProperty(PropertyName = "Christmas Event")]
-                public ChristmasEventS christmasEventS = new ChristmasEventS
+                public CoexistEvent Christmas { get; set; } = new CoexistEvent
                 {
-                    displayName = "Christmas",
-                    minimumTimeBetween = 60,
-                    maximumTimeBetween = 120
+                    DisplayName = "Christmas",
+                    MinimumTimeBetween = 60,
+                    MaximumTimeBetween = 120,
+                    EventWeights = new List<EventWeight>
+                    {
+                        new EventWeight {Weight = 80},
+                        new EventWeight
+                        {
+                            Name = "AlphaChristmas",
+                            Weight = 20,
+                            ArgType = ArgumentType.Command,
+                            Args = new List<string> {"alphachristmas.refill"}
+                        }
+                    }
                 };
 
                 [JsonProperty(PropertyName = "Easter Event")]
-                public BaseEventS easterEventS = new BaseEventS
+                public BaseEvent Easter { get; set; } = new BaseEvent
                 {
-                    displayName = "Easter",
-                    minimumTimeBetween = 30,
-                    maximumTimeBetween = 60
+                    DisplayName = "Easter",
+                    MinimumTimeBetween = 30,
+                    MaximumTimeBetween = 60
                 };
 
                 [JsonProperty(PropertyName = "Halloween Event")]
-                public BaseEventS halloweenEventS = new BaseEventS
+                public BaseEvent Halloween { get; set; } = new BaseEvent
                 {
-                    displayName = "Halloween",
-                    minimumTimeBetween = 30,
-                    maximumTimeBetween = 60
+                    DisplayName = "Halloween",
+                    MinimumTimeBetween = 30,
+                    MaximumTimeBetween = 60
                 };
             }
         }
 
-        private class BaseEventS
+        private class BaseEvent
         {
             [JsonProperty(PropertyName = "Enabled", Order = 1)]
-            public bool enabled;
+            public bool Enabled { get; set; }
 
             [JsonProperty(PropertyName = "Display Name", Order = 2)]
-            public string displayName;
+            public string DisplayName { get; set; }
 
             [JsonProperty(PropertyName = "Disable Vanilla Event", Order = 3)]
-            public bool disableVanillaEvent;
+            public bool DisableVanillaEvent { get; set; }
 
             [JsonProperty(PropertyName = "Event Start Offset (Minutes)", Order = 4)]
-            public float startOffset;
+            public float StartOffset { get; set; }
 
             [JsonProperty(PropertyName = "Minimum Time Between (Minutes)", Order = 5)]
-            public float minimumTimeBetween;
+            public float MinimumTimeBetween { get; set; }
 
             [JsonProperty(PropertyName = "Maximum Time Between (Minutes)", Order = 6)]
-            public float maximumTimeBetween;
+            public float MaximumTimeBetween { get; set; }
 
             [JsonProperty(PropertyName = "Minimum Online Players Required (0 = Disabled)", Order = 7)]
-            public int minimumOnlinePlayers = 0;
+            public int MinimumOnlinePlayers { get; set; } = 0;
 
             [JsonProperty(PropertyName = "Maximum Online Players Required (0 = Disabled)", Order = 8)]
-            public int maximumOnlinePlayers = 0;
+            public int MaximumOnlinePlayers { get; set; } = 0;
 
             [JsonProperty(PropertyName = "Announce Next Run Time", Order = 9)]
-            public bool announceNext;
+            public bool AnnounceNext { get; set; }
 
             [JsonProperty(PropertyName = "Restart Timer On Entity Kill", Order = 10)]
-            public bool restartTimerOnKill = true;
+            public bool RestartTimerOnKill { get; set; } = true;
 
             [JsonProperty(PropertyName = "Kill Existing Event On Plugin Loaded", Order = 11)]
-            public bool killEventOnLoaded;
+            public bool KillEventOnLoaded { get; set; }
 
-            [JsonIgnore] public double nextRunTime;
+            [JsonIgnore]
+            public double NextRunTime { get; set; }
+
+            public virtual EventWeight GetRandomEventWeight()
+            {
+                return null;
+            }
         }
 
-        private class CoexistEventS : BaseEventS
+        private class CoexistEvent : BaseEvent
         {
             [JsonProperty(PropertyName = "Maximum Number On Server", Order = 19)]
-            public int serverMaximumNumber = 1;
+            public int ServerMaximumNumber { get; set; } = 1;
 
             [JsonProperty(PropertyName = "Exclude Player's Entity", Order = 20)]
-            public bool excludePlayerEntity = true;
+            public bool ExcludePlayerEntity { get; set; } = true;
+
+            [JsonProperty(PropertyName = "Event Weights", Order = 21, ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public List<EventWeight> EventWeights { get; set; } = new List<EventWeight>();
+
+            [JsonIgnore]
+            private readonly List<EventWeight> _validEventWeights = new List<EventWeight>();
+
+            public override EventWeight GetRandomEventWeight()
+            {
+                if (EventWeights.Count <= 0)
+                {
+                    return null;
+                }
+                _validEventWeights.Clear();
+                _validEventWeights.AddRange(EventWeights.Where(x => x.IsValid()));
+                if (_validEventWeights.Count <= 0)
+                {
+                    return null;
+                }
+
+                int totalWeight = 0;
+                foreach (var eventWeight in _validEventWeights)
+                {
+                    totalWeight += eventWeight.Weight;
+                }
+
+                int random = UnityEngine.Random.Range(0, totalWeight);
+                foreach (var eventWeight in _validEventWeights)
+                {
+                    if ((random -= eventWeight.Weight) < 0)
+                    {
+                        return eventWeight;
+                    }
+                }
+
+                return null;
+            }
         }
 
-        private class PlaneEventS : CoexistEventS
+        private enum ArgumentType
         {
-            [JsonProperty(PropertyName = "Normal Event Weight (0 = Disable)", Order = 21)]
-            public float normalWeight = 60;
-
-            [JsonProperty(PropertyName = "FancyDrop Plugin Event Weight (0 = Disable)", Order = 22)]
-            public float fancyDropWeight = 20;
-
-            [JsonProperty(PropertyName = "PlaneCrash Plugin Event Weight (0 = Disable)", Order = 23)]
-            public float planeCrashWeight = 20;
+            Command,
+            CallHook,
         }
 
-        private class ShipEventS : CoexistEventS
+        private class EventWeight
         {
-            [JsonProperty(PropertyName = "Normal Event Weight (0 = Disable)", Order = 21)]
-            public float normalWeight = 80;
+            [JsonProperty(PropertyName = "Weight")]
+            public int Weight { get; set; }
 
-            [JsonProperty(PropertyName = "RustTanic Plugin Event Weight (0 = Disable)", Order = 22)]
-            public float rustTanicWeight = 20;
-        }
+            [JsonProperty(PropertyName = "Name")]
+            public string Name { get; set; }
 
-        private class HeliEventS : CoexistEventS
-        {
-            [JsonProperty(PropertyName = "Normal Event Weight (0 = Disable)", Order = 21)]
-            public float normalWeight = 60;
+            [JsonConverter(typeof(StringEnumConverter))]
+            [JsonProperty(PropertyName = "Argument Type (Command or CallHook)")]
+            public ArgumentType? ArgType { get; set; }
 
-            [JsonProperty(PropertyName = "HeliRefuel Plugin Event Weight (0 = Disable)", Order = 22)]
-            public float heliRefuelWeight = 20;
+            [JsonProperty(PropertyName = "Arguments")]
+            public List<string> Args { get; set; }
 
-            [JsonProperty(PropertyName = "PilotEject Plugin Event Weight (0 = Disable)", Order = 23)]
-            public float pilotEjectWeight = 20;
-        }
+            [JsonIgnore] public bool IsNormalEvent => string.IsNullOrEmpty(Name);
 
-        private class ChristmasEventS : CoexistEventS
-        {
-            [JsonProperty(PropertyName = "Normal Event Weight (0 = Disable)", Order = 21)]
-            public float normalWeight = 20;
+            public bool IsValid()
+            {
+                if (Weight <= 0)
+                {
+                    return false;
+                }
+                if (IsNormalEvent)
+                {
+                    return true;
+                }
+                if (!ArgType.HasValue)
+                {
+                    return false;
+                }
+                if (ArgType.Value == ArgumentType.CallHook)
+                {
+                    if (Args.Count >= 2)
+                    {
+                        var plugin = instance.Manager.GetPlugin(Args[0]);
+                        if (plugin != null)
+                        {
+                            return true;
+                        }
+                    }
+                }
+                else if (ArgType.Value == ArgumentType.Command)
+                {
+                    if (Args.Count >= 1)
+                    {
+                        return true;
+                    }
+                }
 
-            [JsonProperty(PropertyName = "AlphaChristmas Plugin Event Weight (0 = Disable)", Order = 22)]
-            public float alphaChristmasWeight = 80;
+                return false;
+            }
+
+            public void RunCustomEvent()
+            {
+                if (Weight <= 0 || IsNormalEvent || !ArgType.HasValue)
+                {
+                    return;
+                }
+                if (ArgType.Value == ArgumentType.CallHook)
+                {
+                    var pluginName = Args[0];
+                    var hookName = Args[1];
+                    var plugin = instance.Manager.GetPlugin(pluginName);
+                    if (plugin != null)
+                    {
+                        var args = Args.Skip(2);
+                        plugin.Call(hookName, args.Select(x => (object)x).ToArray());
+                    }
+                }
+                else if (ArgType.Value == ArgumentType.Command)
+                {
+                    var command = Args[0];
+                    var args = Args.Skip(1) ;
+                    ConsoleSystem.Run(ConsoleSystem.Option.Server, command, args.Select(x => (object)x).ToArray());
+                }
+            }
         }
 
         protected override void LoadConfig()
@@ -1341,18 +1446,18 @@ namespace Oxide.Plugins
         private void Print(BasePlayer player, string message)
         {
             Player.Message(player, message,
-                string.IsNullOrEmpty(configData.chatS.prefix)
+                string.IsNullOrEmpty(configData.Chat.Prefix)
                     ? string.Empty
-                    : $"<color={configData.chatS.prefixColor}>{configData.chatS.prefix}</color>",
-                configData.chatS.steamIDIcon);
+                    : $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>",
+                configData.Chat.SteamIdIcon);
         }
 
         private void Print(IPlayer iPlayer, string message)
         {
             iPlayer.Reply(message,
                 iPlayer.Id == "server_console"
-                    ? $"{configData.chatS.prefix}"
-                    : $"<color={configData.chatS.prefixColor}>{configData.chatS.prefix}</color>");
+                    ? $"{configData.Chat.Prefix}"
+                    : $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>");
         }
 
         private string Lang(string key, string id = null, params object[] args)
