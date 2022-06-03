@@ -8,8 +8,8 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Entity Reducer", "Arainrr", "2.1.1")]
-    [Description("Control all spawn populations on your server")]
+    [Info("Entity Reducer", "Arainrr", "2.1.3")]
+    [Description("Controls all spawn populations on the server")]
     public class EntityReducer : RustPlugin
     {
         #region Oxide Hooks
@@ -63,38 +63,76 @@ namespace Oxide.Plugins
 
         private void ApplySpawnHandler()
         {
-            foreach (var spawnPopulation in SpawnHandler.Instance.AllSpawnPopulations)
+            SpawnPopulation[] allSpawnPopulations = SpawnHandler.Instance.AllSpawnPopulations;
+            SpawnDistribution[] spawnDistributions = SpawnHandler.Instance.SpawnDistributions;
+            for (var i = 0; i < allSpawnPopulations.Length; i++)
             {
-                if (spawnPopulation == null) continue;
+                var spawnPopulation = allSpawnPopulations[i];
+                if (spawnPopulation == null)
+                {
+                    continue;
+                }
+                var spawnDistribution = spawnDistributions[i];
+                if (spawnDistribution == null)
+                {
+                    continue;
+                }
+
                 PopulationSetting populationSetting;
                 if (configData.populationSettings.TryGetValue(spawnPopulation.name, out populationSetting) && populationSetting.enabled)
                 {
                     float num = TerrainMeta.Size.x * TerrainMeta.Size.z;
+                    float num2 = /*2f **/ Spawn.max_density * 1E-06f;
                     if (!spawnPopulation.ScaleWithLargeMaps)
                     {
                         num = Mathf.Min(num, 1.6E+07f);
                     }
-                    var densityToMaxPopulation = num * 1E-06f * Spawn.max_density;
-                    spawnPopulation.ScaleWithSpawnFilter = false;
-                    spawnPopulation.ScaleWithServerPopulation = false;
-                    spawnPopulation.EnforcePopulationLimits = true;
-                    spawnPopulation.ScaleWithLargeMaps = true;
-                    var targetDensity = populationSetting.targetCount / densityToMaxPopulation;
-                    var convarControlledSpawnPopulation = spawnPopulation as ConvarControlledSpawnPopulation;
-                    if (convarControlledSpawnPopulation != null)
+                    if (spawnPopulation.ScaleWithSpawnFilter)
                     {
-                        var controlledSpawnPopulationRailRing = convarControlledSpawnPopulation as ConvarControlledSpawnPopulationRailRing;
-                        if (controlledSpawnPopulationRailRing != null && controlledSpawnPopulationRailRing.IsWagon)
-                        {
-                            targetDensity /= TrainCar.wagons_per_engine;
-                        }
-                        ConsoleSystem.Command command = ConsoleSystem.Index.Server.Find(convarControlledSpawnPopulation.PopulationConvar);
-                        command?.Set(targetDensity);
+                        num2 *= spawnDistribution.Density;
                     }
-                    else spawnPopulation._targetDensity = targetDensity;
+                    var densityToMaxPopulation = (float)Mathf.RoundToInt(num * num2);
+
+                    spawnPopulation.ScaleWithServerPopulation = false;
+                    var targetDensity = populationSetting.targetCount / densityToMaxPopulation;
+                    var convarControlled = spawnPopulation as ConvarControlledSpawnPopulation;
+                    if (convarControlled != null)
+                    {
+                        var railRing = convarControlled as ConvarControlledSpawnPopulationRailRing;
+                        if (railRing != null)
+                        {
+                            // They use the same command(traincar.population) and you can't modify them all, only one
+                            switch (railRing.trainCarType)
+                            {
+                                case ConvarControlledSpawnPopulationRailRing.TrainCarType.WorkCart:
+                                    targetDensity /= 1f - TrainCar.variant_ratio;
+                                    break;
+
+                                case ConvarControlledSpawnPopulationRailRing.TrainCarType.WorkCartWithCover:
+                                    targetDensity /= TrainCar.variant_ratio;
+                                    break;
+
+                                case ConvarControlledSpawnPopulationRailRing.TrainCarType.Wagon:
+                                    targetDensity /= TrainCar.wagons_per_engine * 1.1f;
+
+                                    ConsoleSystem.Command command = ConsoleSystem.Index.Server.Find(convarControlled.PopulationConvar);
+                                    command?.Set(targetDensity);
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            ConsoleSystem.Command command = ConsoleSystem.Index.Server.Find(convarControlled.PopulationConvar);
+                            command?.Set(targetDensity);
+                        }
+                    }
+                    else
+                    {
+                        spawnPopulation._targetDensity = targetDensity;
+                    }
                 }
             }
-            SpawnHandler.Instance.EnforceLimits(true);
+            // SpawnHandler.Instance.EnforceLimits(true);
         }
 
         public string GetReport()
