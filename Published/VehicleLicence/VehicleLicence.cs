@@ -19,10 +19,10 @@ using UnityEngine;
 namespace Oxide.Plugins
 {
 #if TRAIN_ADVANCED
-    // TODO Convert WorkCartAboveGround data and permission
+    // TODO Convert WorkCartAboveGround/WorkCartCovered data and permission
 #endif
 
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.32")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.33")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
