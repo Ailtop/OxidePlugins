@@ -363,9 +363,7 @@ namespace Oxide.Plugins
         #endregion Methods
 
         #region Building Grade Control
-
-        private readonly MethodInfo _isUpgradeBlockedMethod = typeof(BuildingBlock).GetMethod("IsUpgradeBlocked", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-
+         
         private Coroutine _changeGradeCoroutine;
         private readonly HashSet<BuildingBlock> _allBuildingBlocks = new HashSet<BuildingBlock>();
         private readonly Dictionary<ulong, bool> _tempFriends = new Dictionary<ulong, bool>();
@@ -685,8 +683,7 @@ namespace Oxide.Plugins
                 {
                     return false;
                 }
-                var isUpgradeBlocked = _isUpgradeBlockedMethod?.Invoke(buildingBlock, null);
-                if (isUpgradeBlocked is bool && (bool)isUpgradeBlocked)
+                if (buildingBlock.IsUpgradeBlocked())
                 {
                     return false;
                 }
