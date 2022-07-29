@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode", "Wulf/lukespragg/Arainrr", "4.2.10", ResourceId = 673)]
+    [Info("Godmode", "Wulf/lukespragg/Arainrr", "4.2.11", ResourceId = 673)]
     [Description("Allows players with permission to be invulnerable and god-like")]
     internal class Godmode : RustPlugin
     {
@@ -26,9 +26,9 @@ namespace Oxide.Plugins
         private const string PermUntiring = "godmode.untiring";
         private const string PermAutoEnable = "godmode.autoenable";
 
-        private static object False, True;
-
+        private readonly object _false = false, _true = true;
         private Dictionary<ulong, float> _informHistory;
+        private readonly StoredMetabolism _storedMetabolism = new StoredMetabolism();
 
         #endregion Fields
 
@@ -37,8 +37,6 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
-            False = false;
-            True = true;
             permission.RegisterPermission(PermAdmin, this);
             permission.RegisterPermission(PermInvulnerable, this);
             permission.RegisterPermission(PermLootPlayers, this);
@@ -56,6 +54,10 @@ namespace Oxide.Plugins
 
         private void OnServerInitialized()
         {
+            if (!_storedMetabolism.FetchDefaultMetabolism())
+            {
+                PrintError("Failed to fetch default metabolism data");
+            }
             foreach (var god in storedData.godPlayers.ToArray())
             {
                 if (!permission.UserHasPermission(god, PermToggle))
@@ -97,10 +99,9 @@ namespace Oxide.Plugins
                 DisableGodmode(god, true);
             }
             SaveData();
-            False = True = null;
         }
 
-        private object CanBeWounded(BasePlayer player) => IsGod(player) ? False : null;
+        private object CanBeWounded(BasePlayer player) => IsGod(player) ? _false : null;
 
         private object CanLootPlayer(BasePlayer target, BasePlayer looter)
         {
@@ -108,7 +109,7 @@ namespace Oxide.Plugins
             if (IsGod(target) && permission.UserHasPermission(target.UserIDString, PermLootProtection) && !permission.UserHasPermission(looter.UserIDString, PermLootPlayers))
             {
                 Print(looter, Lang("NoLooting", looter.UserIDString));
-                return False;
+                return _false;
             }
             return null;
         }
@@ -121,13 +122,13 @@ namespace Oxide.Plugins
             {
                 InformPlayers(player, attacker);
                 NullifyDamage(ref info);
-                return True;
+                return _true;
             }
             if (IsGod(attacker) && permission.UserHasPermission(attacker.UserIDString, PermNoAttacking))
             {
                 InformPlayers(player, attacker);
                 NullifyDamage(ref info);
-                return True;
+                return _true;
             }
             return null;
         }
@@ -142,7 +143,7 @@ namespace Oxide.Plugins
             player.SetPlayerFlag(BasePlayer.PlayerFlags.Workbench2, currentCraftLevel == 2f);
             player.SetPlayerFlag(BasePlayer.PlayerFlags.Workbench3, currentCraftLevel == 3f);
             player.SetPlayerFlag(BasePlayer.PlayerFlags.SafeZone, player.InSafeZone());
-            return False;
+            return _false;
         }
 
         #endregion Oxide Hook
@@ -169,7 +170,14 @@ namespace Oxide.Plugins
 
         private void InformPlayers(BasePlayer victim, BasePlayer attacker)
         {
-            if (!configData.informOnAttack || victim == null || attacker == null || victim == attacker) return;
+            if (!configData.informOnAttack || victim == null || attacker == null || victim == attacker)
+            {
+                return;
+            }
+            if (!victim.userID.IsSteamId() || !attacker.userID.IsSteamId())
+            {
+                return;
+            }
             float victimTime;
             if (!_informHistory.TryGetValue(victim.userID, out victimTime))
             {
@@ -299,7 +307,136 @@ namespace Oxide.Plugins
             //SingletonComponent<ServerMgr>.Instance.persistance.SetPlayerName(player.userID, newName);
         }
 
+        private void ModifyMetabolism(BasePlayer player, bool isGod)
+        {
+            if (player == null || player.metabolism == null) return;
+            if (isGod)
+            {
+                player.health = player.MaxHealth();
+                _storedMetabolism.Unlimited(player.metabolism);
+            }
+            else
+            {
+                _storedMetabolism.Restore(player.metabolism);
+            }
+        }
+
         #endregion Godmode Toggle
+
+        #region Stored Metabolism
+
+        private class StoredMetabolism
+        {
+            private struct Attribute
+            {
+                private readonly float _min;
+                private readonly float _max;
+
+                public Attribute(MetabolismAttribute attribute)
+                {
+                    _min = attribute.min;
+                    _max = attribute.max;
+                }
+
+                public void Reset(MetabolismAttribute attribute)
+                {
+                    attribute.min = _min;
+                    attribute.max = _max;
+                }
+            }
+
+            public bool FetchDefaultMetabolism()
+            {
+                var playerPrefab = "assets/prefabs/player/player.prefab";
+                var playerMetabolism = GameManager.server.FindPrefab(playerPrefab)?.GetComponent<PlayerMetabolism>();
+                if (playerMetabolism != null)
+                {
+                    Store(playerMetabolism);
+                    return true;
+                }
+                return false;
+            }
+
+            private Attribute calories;
+            private Attribute hydration;
+            private Attribute heartrate;
+            private Attribute temperature;
+            private Attribute poison;
+            private Attribute radiation_level;
+            private Attribute radiation_poison;
+            private Attribute wetness;
+            private Attribute dirtyness;
+            private Attribute oxygen;
+            private Attribute bleeding;
+            // private Attribute comfort; private Attribute pending_health;
+
+            public void Store(PlayerMetabolism playerMetabolism)
+            {
+                calories = new Attribute(playerMetabolism.calories);
+                hydration = new Attribute(playerMetabolism.hydration);
+                heartrate = new Attribute(playerMetabolism.heartrate);
+                temperature = new Attribute(playerMetabolism.temperature);
+                poison = new Attribute(playerMetabolism.poison);
+                radiation_level = new Attribute(playerMetabolism.radiation_level);
+                radiation_poison = new Attribute(playerMetabolism.radiation_poison);
+                wetness = new Attribute(playerMetabolism.wetness);
+                dirtyness = new Attribute(playerMetabolism.dirtyness);
+                oxygen = new Attribute(playerMetabolism.oxygen);
+                bleeding = new Attribute(playerMetabolism.bleeding);
+                // comfort = new Attribute(playerMetabolism.comfort); pending_health = new Attribute(playerMetabolism.pending_health);
+            }
+
+            public void Unlimited(PlayerMetabolism playerMetabolism)
+            {
+                playerMetabolism.calories.min = 500;
+                playerMetabolism.calories.value = 500;
+                // playerMetabolism.hydration.min = 250;
+                playerMetabolism.hydration.value = 250;
+                playerMetabolism.heartrate.min = 0.5f;
+                playerMetabolism.heartrate.max = 0.5f;
+                playerMetabolism.heartrate.value = 0.5f;
+                playerMetabolism.temperature.min = 32;
+                playerMetabolism.temperature.max = 32;
+                playerMetabolism.temperature.value = 32;
+                playerMetabolism.poison.max = 0;
+                playerMetabolism.poison.value = 0;
+                playerMetabolism.radiation_level.max = 0;
+                playerMetabolism.radiation_level.value = 0;
+                playerMetabolism.radiation_poison.max = 0;
+                playerMetabolism.radiation_poison.value = 0;
+                playerMetabolism.wetness.max = 0;
+                playerMetabolism.wetness.value = 0;
+                playerMetabolism.dirtyness.max = 0;
+                playerMetabolism.dirtyness.value = 0;
+                playerMetabolism.oxygen.min = 1;
+                playerMetabolism.oxygen.value = 1;
+                playerMetabolism.bleeding.max = 0;
+                playerMetabolism.bleeding.value = 0;
+
+                playerMetabolism.SendChangesToClient();
+            }
+
+            public void Restore(PlayerMetabolism playerMetabolism)
+            {
+                calories.Reset(playerMetabolism.calories);
+                hydration.Reset(playerMetabolism.hydration);
+                heartrate.Reset(playerMetabolism.heartrate);
+                temperature.Reset(playerMetabolism.temperature);
+                poison.Reset(playerMetabolism.poison);
+                radiation_level.Reset(playerMetabolism.radiation_level);
+                radiation_poison.Reset(playerMetabolism.radiation_poison);
+                wetness.Reset(playerMetabolism.wetness);
+                dirtyness.Reset(playerMetabolism.dirtyness);
+                oxygen.Reset(playerMetabolism.oxygen);
+                bleeding.Reset(playerMetabolism.bleeding);
+                // comfort.Reset(playerMetabolism.comfort); pending_health.Reset(playerMetabolism.pending_health);
+
+                playerMetabolism.Reset();
+                playerMetabolism.SendChangesToClient();
+            }
+        }
+
+        #endregion Stored Metabolism
 
         #endregion Methods
 
@@ -310,65 +447,6 @@ namespace Oxide.Plugins
             info.damageTypes = new DamageTypeList();
             info.HitMaterial = 0;
             info.PointStart = Vector3.zero;
-        }
-
-        private static void ModifyMetabolism(BasePlayer player, bool isGod)
-        {
-            if (player == null || player.metabolism == null) return;
-            if (isGod)
-            {
-                player.health = player.MaxHealth();
-                player.metabolism.bleeding.max = 0;
-                player.metabolism.bleeding.value = 0;
-                player.metabolism.calories.min = 500;
-                player.metabolism.calories.value = 500;
-                player.metabolism.dirtyness.max = 0;
-                player.metabolism.dirtyness.value = 0;
-                player.metabolism.heartrate.min = 0.5f;
-                player.metabolism.heartrate.max = 0.5f;
-                player.metabolism.heartrate.value = 0.5f;
-                //player.metabolism.hydration.min = 250;
-                player.metabolism.hydration.value = 250;
-                player.metabolism.oxygen.min = 1;
-                player.metabolism.oxygen.value = 1;
-                player.metabolism.poison.max = 0;
-                player.metabolism.poison.value = 0;
-                player.metabolism.radiation_level.max = 0;
-                player.metabolism.radiation_level.value = 0;
-                player.metabolism.radiation_poison.max = 0;
-                player.metabolism.radiation_poison.value = 0;
-                player.metabolism.temperature.min = 32;
-                player.metabolism.temperature.max = 32;
-                player.metabolism.temperature.value = 32;
-                player.metabolism.wetness.max = 0;
-                player.metabolism.wetness.value = 0;
-            }
-            else
-            {
-                player.metabolism.bleeding.min = 0;
-                player.metabolism.bleeding.max = 1;
-                player.metabolism.calories.min = 0;
-                player.metabolism.calories.max = 500;
-                player.metabolism.dirtyness.min = 0;
-                player.metabolism.dirtyness.max = 100;
-                player.metabolism.heartrate.min = 0;
-                player.metabolism.heartrate.max = 1;
-                //player.metabolism.hydration.min = 0;
-                player.metabolism.hydration.max = 250;
-                player.metabolism.oxygen.min = 0;
-                player.metabolism.oxygen.max = 1;
-                player.metabolism.poison.min = 0;
-                player.metabolism.poison.max = 100;
-                player.metabolism.radiation_level.min = 0;
-                player.metabolism.radiation_level.max = 100;
-                player.metabolism.radiation_poison.min = 0;
-                player.metabolism.radiation_poison.max = 500;
-                player.metabolism.temperature.min = -100;
-                player.metabolism.temperature.max = 100;
-                player.metabolism.wetness.min = 0;
-                player.metabolism.wetness.max = 1;
-            }
-            player.metabolism.SendChangesToClient();
         }
 
         private static string GetPayerOriginalName(ulong playerId)
