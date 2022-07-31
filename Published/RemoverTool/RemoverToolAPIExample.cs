@@ -1,5 +1,4 @@
-﻿using Oxide.Core;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace Oxide.Plugins
 {
@@ -35,6 +34,12 @@ namespace Oxide.Plugins
                 /// Amount of the item.
                 /// </summary>
                 public int Amount { get; set; }
+
+                /// <summary>
+                /// SkinId of the item.
+                /// Less than 0 is not specified skin.
+                /// </summary>
+                public long SkinId { get; set; }
 
                 /// <summary>
                 /// Id of the item image.
@@ -82,6 +87,13 @@ namespace Oxide.Plugins
                 {
                     ["Amount"] = 1,
                     ["DisplayName"] = "Refund Drone",
+                },
+                // Custom SkinId
+                ["box.wooden.large"] = new Dictionary<string, object>
+                {
+                    ["Amount"] = 1,
+                    ["SkinId"] = 1742653197L,
+                    ["DisplayName"] = "MiniCopter",
                 }
             }
         };
@@ -89,18 +101,19 @@ namespace Oxide.Plugins
         #region RemoverTool Hooks
 
         /// <summary>
-        /// Used to check if the player can pay.
-        /// It is only called when there is a custom ItemName in the price
+        /// Used to check if the player can pay. It is only called when there is a custom ItemName
+        /// in the price
         /// </summary>
-        /// <param name="entity">Entity</param>
-        /// <param name="player">Player</param>
-        /// <param name="itemName">Item name</param>
-        /// <param name="itemAmount">Item amount</param>
-        /// <param name="check">If true, check if the player can pay. If false, consume the item</param>
-        /// <returns>Returns whether payment can be made or whether payment was successful</returns>
-        private bool OnRemovableEntityCheckOrPay(BaseEntity entity, BasePlayer player, string itemName, int itemAmount, bool check)
+        /// <param name="entity"> Entity </param>
+        /// <param name="player"> Player </param>
+        /// <param name="itemName"> Item name </param>
+        /// <param name="itemAmount"> Item amount </param>
+        /// <param name="skinId"> Less than 0 is not specified skin </param>
+        /// <param name="check"> If true, check if the player can pay. If false, consume the item </param>
+        /// <returns> Returns whether payment can be made or whether payment was successful </returns>
+        private bool OnRemovableEntityCheckOrPay(BaseEntity entity, BasePlayer player, string itemName, int itemAmount, long skinId, bool check)
         {
-            Interface.Oxide.LogWarning($"OnRemovableEntityCheckOrPay: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {check}");
+            PrintWarning($"OnRemovableEntityCheckOrPay: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {skinId} | {check}");
             if (itemName == PriceItemName)
             {
                 return true;
@@ -110,17 +123,18 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Called when giving refund items.
-        /// It is only called when there is a custom item name in the refund.
+        /// Called when giving refund items. It is only called when there is a custom item name in
+        /// the refund.
         /// </summary>
-        /// <param name="entity">Entity</param>
-        /// <param name="player">Player</param>
-        /// <param name="itemName">Item name</param>
-        /// <param name="itemAmount">Item amount</param>
-        /// <returns>Returns whether the refund has been granted successful</returns>
-        private bool OnRemovableEntityGiveRefund(BaseEntity entity, BasePlayer player, string itemName, int itemAmount)
+        /// <param name="entity"> Entity </param>
+        /// <param name="player"> Player </param>
+        /// <param name="itemName"> Item name </param>
+        /// <param name="itemAmount"> Item amount </param>
+        /// <param name="skinId"> Less than 0 is not specified skin </param>
+        /// <returns> Returns whether the refund has been granted successful </returns>
+        private bool OnRemovableEntityGiveRefund(BaseEntity entity, BasePlayer player, string itemName, int itemAmount, long skinId)
         {
-            Interface.Oxide.LogWarning($"OnRemovableEntityGiveRefund: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount}");
+            PrintWarning($"OnRemovableEntityGiveRefund: {player.userID} | {entity.ShortPrefabName} | {itemName} | {itemAmount} | {skinId}");
             if (itemName == RefundItemName)
             {
                 var item = ItemManager.CreateByName("drone", itemAmount);
@@ -133,9 +147,9 @@ namespace Oxide.Plugins
         /// <summary>
         /// Return information about the removable entity.
         /// </summary>
-        /// <param name="entity">Entity</param>
-        /// <param name="player">Player</param>
-        /// <returns>Serialized information</returns>
+        /// <param name="entity"> Entity </param>
+        /// <param name="player"> Player </param>
+        /// <returns> Serialized information </returns>
         private Dictionary<string, object> OnRemovableEntityInfo(BaseEntity entity, BasePlayer player)
         {
             PrintWarning($"OnRemovableEntityInfo: {entity.ShortPrefabName} | {player.userID}");
