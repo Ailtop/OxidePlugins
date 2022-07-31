@@ -7,12 +7,14 @@ using Oxide.Core.Plugins;
 
 namespace Oxide.Plugins
 {
-    [Info("Item Cost Calculator", "Absolut/Arainrr", "2.0.14", ResourceId = 2109)]
+    [Info("Item Cost Calculator", "Absolut/Arainrr", "2.0.15", ResourceId = 2109)]
     internal class ItemCostCalculator : RustPlugin
     {
         #region Fields
 
-        [PluginReference] private Plugin ImageLibrary, RustTranslationAPI;
+        [PluginReference]
+        private Plugin ImageLibrary, RustTranslationAPI;
+
         private readonly Dictionary<ItemDefinition, double> itemsCost = new Dictionary<ItemDefinition, double>();
 
         private enum FileType
@@ -87,7 +89,8 @@ namespace Oxide.Plugins
                 }
 
                 var itemBlueprint = ItemManager.FindBlueprint(itemDefinition);
-                if (itemBlueprint == null) continue;
+                if (itemBlueprint == null)
+                    continue;
 
                 double cost = 0;
                 var ingredients = GetItemIngredients(itemBlueprint);
@@ -159,128 +162,130 @@ namespace Oxide.Plugins
             switch (fileType)
             {
                 case FileType.GUIShop:
+                {
+                    var guiShopData = new ShopData();
+                    var itemDisplayNames = new Dictionary<string, string>();
+                    foreach (var entry in itemsCost)
                     {
-                        var guiShopData = new ShopData();
-                        var itemDisplayNames = new Dictionary<string, string>();
-                        foreach (var entry in itemsCost)
+                        var displayName = GetItemDisplayName(language, entry.Key);
+                        if (string.IsNullOrEmpty(displayName))
+                            continue;
+                        var displayNameKey = displayName;
+                        var imageUrl = GetImageUrl(entry.Key);
+                        if (guiShopData.ShopItems.ContainsKey(displayNameKey))
                         {
-                            var displayName = GetItemDisplayName(language, entry.Key);
-                            if (string.IsNullOrEmpty(displayName)) continue;
-                            var displayNameKey = displayName;
-                            var imageUrl = GetImageUrl(entry.Key);
-                            if (guiShopData.ShopItems.ContainsKey(displayNameKey))
-                            {
-                                displayNameKey += $"_Repeat_{UnityEngine.Random.Range(0, 9999)}";
-                            }
-
-                            if (!guiShopData.ShopItems.ContainsKey(displayNameKey))
-                            {
-                                itemDisplayNames.Add(entry.Key.shortname, displayNameKey);
-                                guiShopData.ShopItems.Add(displayNameKey, new ShopItem
-                                {
-                                    DisplayName = displayName,
-                                    Shortname = entry.Key.shortname,
-                                    EnableBuy = true,
-                                    EnableSell = true,
-                                    BuyPrice = Math.Round(entry.Value, configData.keepdecimal),
-                                    SellPrice = Math.Round(entry.Value * configData.recoveryRate, configData.keepdecimal),
-                                    Image = !string.IsNullOrEmpty(imageUrl) ? imageUrl : "https://rustlabs.com/img/items180/{entry.Key.shortname}.png",
-                                });
-                            }
+                            displayNameKey += $"_Repeat_{UnityEngine.Random.Range(0, 9999)}";
                         }
 
-                        guiShopData.ShopItems = guiShopData.ShopItems.OrderBy(p => p.Key).ToDictionary(p => p.Key, o => o.Value);
-
-                        foreach (var itemDefinition in ItemManager.GetItemDefinitions())
+                        if (!guiShopData.ShopItems.ContainsKey(displayNameKey))
                         {
-                            ShopCategory shopCategory;
-                            var categoryKey = itemDefinition.category.ToString();
-                            if (!guiShopData.ShopCategories.TryGetValue(categoryKey, out shopCategory))
+                            itemDisplayNames.Add(entry.Key.shortname, displayNameKey);
+                            guiShopData.ShopItems.Add(displayNameKey, new ShopItem
                             {
-                                shopCategory = new ShopCategory
-                                {
-                                    DisplayName = categoryKey,
-                                    EnabledCategory = true,
-                                    Description = "You currently have {0} coins to spend in the " + categoryKey + " shop",
-                                };
-                                guiShopData.ShopCategories.Add(categoryKey, shopCategory);
-                            }
-
-                            string displayName;
-                            if (!itemDisplayNames.TryGetValue(itemDefinition.shortname, out displayName))
-                            {
-                                displayName = itemDefinition.displayName.english;
-                            }
-                            if (!string.IsNullOrEmpty(displayName))
-                            {
-                                shopCategory.Items.Add(displayName);
-                            }
+                                DisplayName = displayName,
+                                Shortname = entry.Key.shortname,
+                                EnableBuy = true,
+                                EnableSell = true,
+                                BuyPrice = Math.Round(entry.Value, configData.keepdecimal),
+                                SellPrice = Math.Round(entry.Value * configData.recoveryRate, configData.keepdecimal),
+                                Image = !string.IsNullOrEmpty(imageUrl) ? imageUrl : $"https://rustlabs.com/img/items180/{entry.Key.shortname}.png",
+                            });
                         }
-
-                        SaveData("GUIShop", guiShopData);
-                        PrintWarning("GUIShop successfully created, data file path: data/ItemCostCalculator/ItemCostCalculator_GUIShop.json");
                     }
+
+                    guiShopData.ShopItems = guiShopData.ShopItems.OrderBy(p => p.Key).ToDictionary(p => p.Key, o => o.Value);
+
+                    foreach (var itemDefinition in ItemManager.GetItemDefinitions())
+                    {
+                        ShopCategory shopCategory;
+                        var categoryKey = itemDefinition.category.ToString();
+                        if (!guiShopData.ShopCategories.TryGetValue(categoryKey, out shopCategory))
+                        {
+                            shopCategory = new ShopCategory
+                            {
+                                DisplayName = categoryKey,
+                                EnabledCategory = true,
+                                Description = "You currently have {0} coins to spend in the " + categoryKey + " shop",
+                            };
+                            guiShopData.ShopCategories.Add(categoryKey, shopCategory);
+                        }
+
+                        string displayName;
+                        if (!itemDisplayNames.TryGetValue(itemDefinition.shortname, out displayName))
+                        {
+                            displayName = itemDefinition.displayName.english;
+                        }
+                        if (!string.IsNullOrEmpty(displayName))
+                        {
+                            shopCategory.Items.Add(displayName);
+                        }
+                    }
+
+                    SaveData("GUIShop", guiShopData);
+                    PrintWarning("GUIShop successfully created, data file path: data/ItemCostCalculator/ItemCostCalculator_GUIShop.json");
                     return;
+                }
 
                 case FileType.ServerReward:
+                {
+                    var serverRewardsData = new Dictionary<string, RewardData>();
+                    var skin = 0UL;
+                    foreach (var entry in itemsCost)
                     {
-                        var serverRewardsData = new Dictionary<string, RewardData>();
-                        var skin = 0UL;
-                        foreach (var entry in itemsCost)
+                        var displayName = GetItemDisplayName(language, entry.Key);
+                        if (string.IsNullOrEmpty(displayName))
+                            continue;
+                        var shortName = $"{entry.Key.shortname}_{skin}";
+                        Category category;
+                        if (!Enum.TryParse(entry.Key.category.ToString(), out category))
                         {
-                            var displayName = GetItemDisplayName(language, entry.Key);
-                            if (string.IsNullOrEmpty(displayName)) continue;
-                            var shortName = $"{entry.Key.shortname}_{skin}";
-                            Category category;
-                            if (!Enum.TryParse(entry.Key.category.ToString(), out category))
-                            {
-                                category = Category.None;
-                            }
-                            if (!serverRewardsData.ContainsKey(shortName))
-                            {
-                                serverRewardsData.Add(shortName, new RewardData
-                                {
-                                    shortname = entry.Key.shortname,
-                                    amount = 1,
-                                    skinId = skin,
-                                    isBp = false,
-                                    category = category,
-                                    displayName = displayName,
-                                    cost = (int)Math.Round(entry.Value),
-                                    cooldown = 0,
-                                });
-                            }
+                            category = Category.None;
                         }
-
-                        serverRewardsData = serverRewardsData.OrderBy(p => p.Key).ToDictionary(p => p.Key, o => o.Value);
-                        SaveData("ServerRewards", serverRewardsData);
-                        PrintWarning("ServerRewards successfully created, data file path: data/ItemCostCalculator/ItemCostCalculator_ServerRewards.json");
+                        if (!serverRewardsData.ContainsKey(shortName))
+                        {
+                            serverRewardsData.Add(shortName, new RewardData
+                            {
+                                shortname = entry.Key.shortname,
+                                amount = 1,
+                                skinId = skin,
+                                isBp = false,
+                                category = category,
+                                displayName = displayName,
+                                cost = (int)Math.Round(entry.Value),
+                                cooldown = 0,
+                            });
+                        }
                     }
+
+                    serverRewardsData = serverRewardsData.OrderBy(p => p.Key).ToDictionary(p => p.Key, o => o.Value);
+                    SaveData("ServerRewards", serverRewardsData);
+                    PrintWarning("ServerRewards successfully created, data file path: data/ItemCostCalculator/ItemCostCalculator_ServerRewards.json");
                     return;
+                }
 
                 case FileType.Ingredient:
+                {
+                    var itemIngredients = new Dictionary<string, Ingredient>();
+                    foreach (var itemDefinition in ItemManager.GetItemDefinitions())
                     {
-                        var itemIngredients = new Dictionary<string, Ingredient>();
-                        foreach (var itemDefinition in ItemManager.GetItemDefinitions())
+                        var itemBlueprint = ItemManager.FindBlueprint(itemDefinition);
+                        if (itemBlueprint != null)
                         {
-                            var itemBlueprint = ItemManager.FindBlueprint(itemDefinition);
-                            if (itemBlueprint != null)
+                            Ingredient ingredient = new Ingredient();
+                            ingredient.description = $"{string.Join(", ", itemBlueprint.ingredients.Select(x => $"'{x.itemDef.shortname} x{x.amount}"))}' to craft '{itemDefinition.shortname} x{itemBlueprint.amountToCreate}'.";
+                            ingredient.amountToCreate = itemBlueprint.amountToCreate;
+                            ingredient.ingredients = new Dictionary<string, int>();
+                            foreach (var itemAmount in itemBlueprint.ingredients)
                             {
-                                Ingredient ingredient = new Ingredient();
-                                ingredient.description = $"{string.Join(", ", itemBlueprint.ingredients.Select(x => $"'{x.itemDef.shortname} x{x.amount}"))}' to craft '{itemDefinition.shortname} x{itemBlueprint.amountToCreate}'.";
-                                ingredient.amountToCreate = itemBlueprint.amountToCreate;
-                                ingredient.ingredients = new Dictionary<string, int>();
-                                foreach (var itemAmount in itemBlueprint.ingredients)
-                                {
-                                    ingredient.ingredients.Add(itemAmount.itemDef.shortname, (int)itemAmount.amount);
-                                }
-                                itemIngredients.Add(itemDefinition.shortname, ingredient);
+                                ingredient.ingredients.Add(itemAmount.itemDef.shortname, (int)itemAmount.amount);
                             }
+                            itemIngredients.Add(itemDefinition.shortname, ingredient);
                         }
-                        SaveData("ItemIngredients", itemIngredients);
-                        PrintWarning("ItemIngredients successfully created, data file path: data/ItemCostCalculator/ItemCostCalculator_ItemIngredients.json");
                     }
+                    SaveData("ItemIngredients", itemIngredients);
+                    PrintWarning("ItemIngredients successfully created, data file path: data/ItemCostCalculator/ItemCostCalculator_ItemIngredients.json");
                     return;
+                }
             }
         }
 
@@ -293,7 +298,8 @@ namespace Oxide.Plugins
 
         private string GetImageUrl(ItemDefinition itemDefinition, ulong skin = 0)
         {
-            if (ImageLibrary == null) return null;
+            if (ImageLibrary == null)
+                return null;
             return (string)ImageLibrary.Call("GetImageURL", itemDefinition.shortname, skin);
         }
 
@@ -330,14 +336,16 @@ namespace Oxide.Plugins
         private double GetItemCost(string shortname)
         {
             var itemDefinition = ItemManager.FindItemDefinition(shortname);
-            if (itemDefinition == null) return -1;
+            if (itemDefinition == null)
+                return -1;
             return GetItemCost(itemDefinition);
         }
 
         private double GetItemCost(int itemID)
         {
             var itemDefinition = ItemManager.FindItemDefinition(itemID);
-            if (itemDefinition == null) return -1;
+            if (itemDefinition == null)
+                return -1;
             return GetItemCost(itemDefinition);
         }
 
@@ -393,7 +401,7 @@ namespace Oxide.Plugins
                     CreateDataFile(FileType.Ingredient, language);
                     return;
             }
-            SyntaxError:
+        SyntaxError:
             SendReply(arg, "Syntax error, please type 'costfile <shop / reward / ingredients> [language]'");
         }
 
@@ -438,14 +446,13 @@ namespace Oxide.Plugins
             };
 
             [JsonProperty(PropertyName = "Item ingredients override", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public Dictionary<string, Dictionary<string, int>> ingredientsOverride =
-                new Dictionary<string, Dictionary<string, int>>
+            public Dictionary<string, Dictionary<string, int>> ingredientsOverride = new Dictionary<string, Dictionary<string, int>>
+            {
+                ["horse.shoes.basic"] = new Dictionary<string, int>
                 {
-                    ["horse.shoes.basic"] = new Dictionary<string, int>
-                    {
-                        ["metal.fragments"] = 50,
-                    }
-                };
+                    ["metal.fragments"] = 50,
+                }
+            };
 
             [JsonProperty(PropertyName = "Item displayNames")]
             public Dictionary<string, string> displayNames = new Dictionary<string, string>();
@@ -486,7 +493,24 @@ namespace Oxide.Plugins
         #region DataFile
 
         //From Server Rewards
-        private enum Category { None, Weapon, Construction, Items, Resources, Attire, Tool, Medical, Food, Ammunition, Traps, Misc, Component, Electrical, Fun }
+        private enum Category
+        {
+            None,
+            Weapon,
+            Construction,
+            Items,
+            Resources,
+            Attire,
+            Tool,
+            Medical,
+            Food,
+            Ammunition,
+            Traps,
+            Misc,
+            Component,
+            Electrical,
+            Fun
+        }
 
         private class RewardData
         {
@@ -512,38 +536,53 @@ namespace Oxide.Plugins
             public Dictionary<string, ShopItem> ShopItems = new Dictionary<string, ShopItem>();
         }
 
-        public class ShopItem
+        private class ShopItem
         {
             public string DisplayName;
+            public bool CraftAsDisplayName = false;
             public string Shortname;
-            public bool EnableBuy;
-            public bool EnableSell;
-            public string Image;
+            public int ItemId;
+            public bool MakeBlueprint = false;
+            public bool AllowSellOfUsedItems = false;
+            public float Condition;
+            public bool EnableBuy = true;
+            public bool EnableSell = true;
+            public string Image = "";
             public double SellPrice;
             public double BuyPrice;
             public int BuyCooldown;
             public int SellCooldown;
             public int[] BuyQuantity = { 1, 10, 100, 1000 };
             public int[] SellQuantity = { 1, 10, 100, 1000 };
-
-            //public int BuyLimit;
-            //public int SellLimit;
-            public string KitName;
-
-            public List<string> Command;
+            public int BuyLimit = 0;
+            public int BuyLimitResetCoolDown = 0;
+            public bool SwapLimitToQuantityBuyLimit;
+            public int SellLimit = 0;
+            public int SellLimitResetCoolDown = 0;
+            public bool SwapLimitToQuantitySoldLimit;
+            public string KitName = "";
+            public List<string> Command = new List<string>();
+            public bool RunCommandAndCustomShopItem = false;
+            public List<char> GeneTypes = new List<char>();
             public ulong SkinId;
         }
 
-        public class ShopCategory
+        private class ShopCategory
         {
             public string DisplayName;
+            public string DisplayNameColor = null;
             public string Description;
+            public string DescriptionColor = null;
+            public string Permission = "";
+            public string Currency = "";
+            public bool CustomCurrencyAllowSellOfUsedItems;
+            public string CustomCurrencyNames = "";
+            public int CustomCurrencyIDs = -0;
+            public ulong CustomCurrencySkinIDs = 0;
             public bool EnabledCategory;
-
-            //public bool BluePrints;
             public bool EnableNPC;
-
             public string NPCId = "";
+            public HashSet<string> NpcIds = new HashSet<string>();
             public HashSet<string> Items = new HashSet<string>();
         }
 
