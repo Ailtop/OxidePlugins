@@ -18,7 +18,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.33", ResourceId = 651)]
+    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.34", ResourceId = 651)]
     [Description("Building and entity removal tool")]
     public class RemoverTool : RustPlugin
     {
@@ -46,6 +46,7 @@ namespace Oxide.Plugins
         private static RemoverTool _instance;
         private static BUTTON _removeButton;
         private static RemoveMode _removeMode;
+        private static RaycastHit[] _hitBuffer;
 
         private readonly object _false = false;
         private bool _configChanged;
@@ -91,6 +92,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             _instance = this;
+            _hitBuffer = new RaycastHit[32];
             permission.RegisterPermission(PERMISSION_ALL, this);
             permission.RegisterPermission(PERMISSION_ADMIN, this);
             permission.RegisterPermission(PERMISSION_NORMAL, this);
@@ -226,6 +228,7 @@ namespace Oxide.Plugins
             }
             _configData = null;
             _instance = null;
+            _hitBuffer = null;
         }
 
         private void OnServerSave()
@@ -271,7 +274,10 @@ namespace Oxide.Plugins
             _entitySpawnedTimes.Remove(entity.net.ID);
         }
 
-        private object OnPlayerAttack(BasePlayer player, HitInfo info) => OnHammerHit(player, info);
+        private object OnPlayerAttack(BasePlayer player, HitInfo info)
+        {
+            return OnHammerHit(player, info);
+        }
 
         private object OnHammerHit(BasePlayer player, HitInfo info)
         {
@@ -363,11 +369,20 @@ namespace Oxide.Plugins
 
         #region Methods
 
-        private static string GetRemoveTypeName(RemoveType removeType) => _configData.removeType[removeType].displayName;
+        private static string GetRemoveTypeName(RemoveType removeType)
+        {
+            return _configData.removeType[removeType].displayName;
+        }
 
-        private static void DropItemContainer(ItemContainer itemContainer, Vector3 position, Quaternion rotation) => itemContainer?.Drop(PREFAB_ITEM_DROP, position, rotation);
+        private static void DropItemContainer(ItemContainer itemContainer, Vector3 position, Quaternion rotation)
+        {
+            itemContainer?.Drop(PREFAB_ITEM_DROP, position, rotation);
+        }
 
-        private static bool IsExternalWall(StabilityEntity stabilityEntity) => stabilityEntity.ShortPrefabName.Contains("external");
+        private static bool IsExternalWall(StabilityEntity stabilityEntity)
+        {
+            return stabilityEntity.ShortPrefabName.Contains("external");
+        }
 
         private static bool CanEntityBeDisplayed(BaseEntity entity, BasePlayer player)
         {
@@ -497,6 +512,7 @@ namespace Oxide.Plugins
             imageName = entity.ShortPrefabName;
             displayName = entity.ShortPrefabName;
         }
+
         private static string GetDisplayNameByCurrencyName(string language, string currencyName, long skinId)
         {
             var itemDefinition = ItemManager.FindItemDefinition(currencyName);
@@ -518,7 +534,7 @@ namespace Oxide.Plugins
             return GetCurrencyDisplayName(currencyName, currencyName);
         }
 
-        private static string GetCurrencyDisplayName(string currencyName, string defaultName, bool readOnly = false)
+        private static string GetCurrencyDisplayName(string currencyName, string defaultName = null, bool readOnly = false)
         {
             string displayName;
             if (_configData.remove.displayNames.TryGetValue(currencyName, out displayName))
@@ -529,7 +545,6 @@ namespace Oxide.Plugins
             {
                 _configData.remove.displayNames.Add(currencyName, defaultName);
                 _instance._configChanged = true;
-                return defaultName;
             }
             return defaultName;
         }
@@ -555,9 +570,15 @@ namespace Oxide.Plugins
             return new Vector2(float.Parse(array[0]), float.Parse(array[1]));
         }
 
-        private static bool AddImageToLibrary(string url, string shortname, ulong skin = 0) => (bool)_instance.ImageLibrary.Call("AddImage", url, shortname.ToLower(), skin);
+        private static bool AddImageToLibrary(string url, string shortname, ulong skin = 0)
+        {
+            return (bool)_instance.ImageLibrary.Call("AddImage", url, shortname.ToLower(), skin);
+        }
 
-        private static string GetImageFromLibrary(string shortname, ulong skin = 0, bool returnUrl = false) => string.IsNullOrEmpty(shortname) ? null : (string)_instance.ImageLibrary.Call("GetImage", shortname.ToLower(), skin, returnUrl);
+        private static string GetImageFromLibrary(string shortname, ulong skin = 0, bool returnUrl = false)
+        {
+            return string.IsNullOrEmpty(shortname) ? null : (string)_instance.ImageLibrary.Call("GetImage", shortname.ToLower(), skin, returnUrl);
+        }
 
         #endregion Methods
 
@@ -601,9 +622,15 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private bool IsRaidBlocked(string playerID) => (bool)NoEscape.Call("IsRaidBlocked", playerID);
+        private bool IsRaidBlocked(string playerID)
+        {
+            return (bool)NoEscape.Call("IsRaidBlocked", playerID);
+        }
 
-        private bool IsCombatBlocked(string playerID) => (bool)NoEscape.Call("IsCombatBlocked", playerID);
+        private bool IsCombatBlocked(string playerID)
+        {
+            return (bool)NoEscape.Call("IsCombatBlocked", playerID);
+        }
 
         #endregion NoEscape
 
@@ -1115,15 +1142,13 @@ namespace Oxide.Plugins
                 }
             }
 
-            private static readonly RaycastHit[] HitBuffer = new RaycastHit[128];
-
             private BaseEntity GetTargetEntity()
             {
                 BaseEntity target = null;
-                var count = Physics.RaycastNonAlloc(Player.eyes.HeadRay(), HitBuffer, _distance, LAYER_TARGET);
+                var count = Physics.RaycastNonAlloc(Player.eyes.HeadRay(), _hitBuffer, _distance, LAYER_TARGET);
                 for (var i = 0; i < count; i++)
                 {
-                    var hitInfo = HitBuffer[i];
+                    var hitInfo = _hitBuffer[i];
                     var hitEntity = hitInfo.GetEntity();
                     if (hitEntity != null)
                     {
@@ -1970,7 +1995,7 @@ namespace Oxide.Plugins
                     }
                     else
                     {
-                        var takePoints = ServerRewards.Call("TakePoints", player.userID, currencyInfo);
+                        var takePoints = ServerRewards.Call("TakePoints", player.userID, currencyInfo.Amount);
                         if (takePoints == null || !(bool)takePoints)
                         {
                             return false;
@@ -2668,9 +2693,15 @@ namespace Oxide.Plugins
             return null;
         }
 
-        private bool IsToolRemover(BasePlayer player) => player != null && player.GetComponent<ToolRemover>() != null;
+        private bool IsToolRemover(BasePlayer player)
+        {
+            return player != null && player.GetComponent<ToolRemover>() != null;
+        }
 
-        private string GetPlayerRemoveType(BasePlayer player) => player != null ? player.GetComponent<ToolRemover>()?.RemoveType.ToString() : null;
+        private string GetPlayerRemoveType(BasePlayer player)
+        {
+            return player != null ? player.GetComponent<ToolRemover>()?.RemoveType.ToString() : null;
+        }
 
         #endregion API
 
@@ -2811,7 +2842,8 @@ namespace Oxide.Plugins
                 {
                     if (!IsMeleeTool(player))
                     {
-                        Print(player, Lang("MeleeToolNotHeld", player.UserIDString));
+                        var meleeToolDisplayName = GetDisplayNameByCurrencyName(lang.GetLanguage(player.UserIDString), _configData.removerMode.meleeHitItemShortname, _configData.removerMode.meleeHitModeSkin);
+                        Print(player, Lang("MeleeToolNotHeld", player.UserIDString, meleeToolDisplayName));
                         return false;
                     }
                 }
@@ -2819,7 +2851,8 @@ namespace Oxide.Plugins
                 {
                     if (!IsSpecificTool(player))
                     {
-                        Print(player, Lang("SpecificToolNotHeld", player.UserIDString));
+                        var specificToolDisplayName = GetDisplayNameByCurrencyName(lang.GetLanguage(player.UserIDString), _configData.removerMode.specificToolShortName, _configData.removerMode.specificToolSkin);
+                        Print(player, Lang("SpecificToolNotHeld", player.UserIDString, specificToolDisplayName));
                         return false;
                     }
                 }
@@ -3205,11 +3238,20 @@ namespace Oxide.Plugins
 
         #region RustTranslationAPI
 
-        private string GetItemTranslationByShortName(string language, string itemShortName) => (string)RustTranslationAPI.Call("GetItemTranslationByShortName", language, itemShortName);
+        private string GetItemTranslationByShortName(string language, string itemShortName)
+        {
+            return (string)RustTranslationAPI.Call("GetItemTranslationByShortName", language, itemShortName);
+        }
 
-        private string GetConstructionTranslation(string language, string prefabName) => (string)RustTranslationAPI.Call("GetConstructionTranslation", language, prefabName);
+        private string GetConstructionTranslation(string language, string prefabName)
+        {
+            return (string)RustTranslationAPI.Call("GetConstructionTranslation", language, prefabName);
+        }
 
-        private string GetDeployableTranslation(string language, string deployable) => (string)RustTranslationAPI.Call("GetDeployableTranslation", language, deployable);
+        private string GetDeployableTranslation(string language, string deployable)
+        {
+            return (string)RustTranslationAPI.Call("GetDeployableTranslation", language, deployable);
+        }
 
         private string GetItemDisplayName(string language, string itemShortName)
         {
@@ -3829,10 +3871,10 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Allowed Building Grade")]
             public Dictionary<BuildingGrade.Enum, bool> validConstruction = new Dictionary<BuildingGrade.Enum, bool>();
-            
+
             [JsonProperty(PropertyName = "Display Names (Refund & Price)")]
             public readonly Dictionary<string, string> displayNames = new Dictionary<string, string>();
-            
+
             [JsonProperty(PropertyName = "Building Blocks Settings")]
             public Dictionary<string, BuildingBlocksSettings> buildingBlock = new Dictionary<string, BuildingBlocksSettings>();
 
@@ -3915,7 +3957,10 @@ namespace Oxide.Plugins
             _configData.version = Version;
         }
 
-        protected override void SaveConfig() => Config.WriteObject(_configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(_configData);
+        }
 
         private void PreprocessConfigValues()
         {
@@ -4455,8 +4500,8 @@ namespace Oxide.Plugins
                 ["Cooldown"] = "You need to wait {0} seconds before using Remover Tool again.",
                 ["CurrentlyDisabled"] = "Remover Tool is currently disabled.",
                 ["EntityLimit"] = "Entity limit reached, you have removed {0} entities, Remover Tool was automatically disabled.",
-                ["MeleeToolNotHeld"] = "You need to be holding a melee tool in order to use the Remover Tool.",
-                ["SpecificToolNotHeld"] = "You need to be holding a specific tool in order to use the Remover Tool.",
+                ["MeleeToolNotHeld"] = "You need to be holding a {0} in order to use the Remover Tool",
+                ["SpecificToolNotHeld"] = "You need to be holding a {0} in order to use the Remover Tool.",
 
                 ["StartRemoveAll"] = "Start running RemoveAll, please wait.",
                 ["StartRemoveStructure"] = "Start running RemoveStructure, please wait.",
@@ -4512,8 +4557,8 @@ namespace Oxide.Plugins
                 ["Cooldown"] = "您需要等待 {0} 秒才可以再次使用拆除工具",
                 ["CurrentlyDisabled"] = "服务器当前已禁用了拆除工具",
                 ["EntityLimit"] = "您已经拆除了 '{0}' 个实体，拆除工具已自动禁用",
-                ["MeleeToolNotHeld"] = "您必须拿着近战工具才可以使用拆除工具",
-                ["SpecificToolNotHeld"] = "您必须拿着指定工具才可以使用拆除工具",
+                ["MeleeToolNotHeld"] = "您必须拿着{0}才可以使用拆除工具",
+                ["SpecificToolNotHeld"] = "您必须拿着{0}才可以使用拆除工具",
 
                 ["StartRemoveAll"] = "开始运行 '所有拆除'，请稍等片刻",
                 ["StartRemoveStructure"] = "开始运行 '建筑拆除'，请稍等片刻",
@@ -4567,8 +4612,8 @@ namespace Oxide.Plugins
                 ["Cooldown"] = "Необходимо подождать {0} секунд, прежде чем использовать Remover Tool снова.",
                 ["CurrentlyDisabled"] = "Remover Tool в данный момент отключен.",
                 ["EntityLimit"] = "Достигнут предел, удалено {0} объектов, Remover Tool автоматически отключен.",
-                ["MeleeToolNotHeld"] = "Вы должны держать Инструмент ближнего боя, чтобы использовать инструмент для удаления.",
-                ["SpecificToolNotHeld"] = "Вы должны держать Инструмент определенный, чтобы использовать инструмент для удаления.",
+                ["MeleeToolNotHeld"] = "Вы должны держать {0}, чтобы использовать инструмент для удаления.",
+                ["SpecificToolNotHeld"] = "Вы должны держать {0}, чтобы использовать инструмент для удаления.",
 
                 ["StartRemoveAll"] = "Запускается RemoveAll, пожалуйста, подождите.",
                 ["StartRemoveStructure"] = "Запускается RemoveStructure, пожалуйста, подождите.",
