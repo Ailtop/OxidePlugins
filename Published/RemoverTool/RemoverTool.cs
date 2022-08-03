@@ -18,7 +18,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.34", ResourceId = 651)]
+    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.35", ResourceId = 651)]
     [Description("Building and entity removal tool")]
     public class RemoverTool : RustPlugin
     {
@@ -46,7 +46,6 @@ namespace Oxide.Plugins
         private static RemoverTool _instance;
         private static BUTTON _removeButton;
         private static RemoveMode _removeMode;
-        private static RaycastHit[] _hitBuffer;
 
         private readonly object _false = false;
         private bool _configChanged;
@@ -92,7 +91,6 @@ namespace Oxide.Plugins
         private void Init()
         {
             _instance = this;
-            _hitBuffer = new RaycastHit[32];
             permission.RegisterPermission(PERMISSION_ALL, this);
             permission.RegisterPermission(PERMISSION_ADMIN, this);
             permission.RegisterPermission(PERMISSION_NORMAL, this);
@@ -228,7 +226,6 @@ namespace Oxide.Plugins
             }
             _configData = null;
             _instance = null;
-            _hitBuffer = null;
         }
 
         private void OnServerSave()
@@ -1145,10 +1142,23 @@ namespace Oxide.Plugins
             private BaseEntity GetTargetEntity()
             {
                 BaseEntity target = null;
-                var count = Physics.RaycastNonAlloc(Player.eyes.HeadRay(), _hitBuffer, _distance, LAYER_TARGET);
-                for (var i = 0; i < count; i++)
+                List<RaycastHit> hitInfos = Pool.GetList<RaycastHit>();
+                GamePhysics.TraceAll(Player.eyes.HeadRay(), 0f, hitInfos, _distance, LAYER_TARGET);
+
+                // StringBuilder sb = new StringBuilder();
+                // sb.AppendLine($"count: {hitInfos.Count}");
+                // foreach (var hitInfo in hitInfos)
+                // {
+                //     var hitEntity = hitInfo.GetEntity();
+                //     if (hitEntity != null)
+                //     {
+                //         sb.AppendLine($"{hitEntity.ShortPrefabName} - {Player.Distance(hitEntity)}");
+                //     }
+                // }
+                // _instance.Print(Player, sb.ToString());
+
+                foreach (var hitInfo in hitInfos)
                 {
-                    var hitInfo = _hitBuffer[i];
                     var hitEntity = hitInfo.GetEntity();
                     if (hitEntity != null)
                     {
@@ -1163,9 +1173,14 @@ namespace Oxide.Plugins
                         }
                     }
                 }
+                Pool.FreeList(ref hitInfos);
                 return target;
-                // RaycastHit hitInfo; if (Physics.Raycast(Player.eyes.HeadRay(), out hitInfo,
-                // _distance, LAYER_TARGET)) { return hitInfo.GetEntity(); } return null;
+                // RaycastHit hitInfo;
+                // if (Physics.Raycast(Player.eyes.HeadRay(), out hitInfo, _distance, LAYER_TARGET))
+                // {
+                //     return hitInfo.GetEntity();
+                // }
+                // return null;
             }
 
             private void Update()
