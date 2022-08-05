@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Text;
 using Facepunch;
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Plugins;
+using Rust;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -17,7 +17,8 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        [PluginReference] private readonly Plugin Friends, Clans, NoEscape, RustTranslationAPI;
+        [PluginReference]
+        private readonly Plugin Friends, Clans, NoEscape, RustTranslationAPI;
 
         private const string PermissionUp = "buildinggrades.up.";
         private const string PermissionDown = "buildinggrades.down.";
@@ -96,17 +97,16 @@ namespace Oxide.Plugins
 
         private void OnServerInitialized()
         {
-            if (_isUpgradeBlockedMethod == null)
-            {
-                PrintError("IsUpgradeBlocked == null. Please notify the plugin developer");
-            }
             foreach (var entry in configData.Categories)
             {
                 var values = new HashSet<uint>();
                 foreach (var prefab in entry.Value)
                 {
                     var item = StringPool.Get(prefab);
-                    if (item == 0u) continue;
+                    if (item == 0u)
+                    {
+                        continue;
+                    }
                     values.Add(item);
                 }
                 _categories.Add(entry.Key, values);
@@ -188,7 +188,7 @@ namespace Oxide.Plugins
                 if (!_categories.TryGetValue(args[0], out filter))
                 {
                     if (!Enum.TryParse(args[0], true, out targetGrade) || !ValidGrades.Contains(targetGrade) ||
-                        isUpgrade ? targetGrade <= BuildingGrade.Enum.Twigs : targetGrade >= BuildingGrade.Enum.TopTier)
+                            isUpgrade ? targetGrade <= BuildingGrade.Enum.Twigs : targetGrade >= BuildingGrade.Enum.TopTier)
                     {
                         Print(player, Lang("UnknownGrade", player.UserIDString));
                         return;
@@ -251,7 +251,7 @@ namespace Oxide.Plugins
 
         private PermissionSettings GetPermissionSettings(BasePlayer player)
         {
-            int priority = 0;
+            var priority = 0;
             PermissionSettings permissionSettings = null;
             foreach (var entry in configData.Permissions)
             {
@@ -267,51 +267,90 @@ namespace Oxide.Plugins
         private bool HasGradePermission(BasePlayer player, BuildingGrade.Enum grade, bool isUpgrade)
         {
             return isUpgrade
-                ? permission.UserHasPermission(player.UserIDString, PermissionUpAll) ||
-                  permission.UserHasPermission(player.UserIDString, PermissionUp + (int)grade)
-                : permission.UserHasPermission(player.UserIDString, PermissionDownAll) ||
-                  permission.UserHasPermission(player.UserIDString, PermissionDown + (int)grade);
+                    ? permission.UserHasPermission(player.UserIDString, PermissionUpAll) ||
+                    permission.UserHasPermission(player.UserIDString, PermissionUp + (int)grade)
+                    : permission.UserHasPermission(player.UserIDString, PermissionDownAll) ||
+                    permission.UserHasPermission(player.UserIDString, PermissionDown + (int)grade);
         }
 
         #region AreFriends
 
         private bool AreFriends(ulong playerId, ulong friendId)
         {
-            if (!playerId.IsSteamId()) return false;
-            if (playerId == friendId) return true;
-            if (configData.Global.UseTeams && SameTeam(playerId, friendId)) return true;
-            if (configData.Global.UseFriends && HasFriend(playerId, friendId)) return true;
-            if (configData.Global.UseClans && SameClan(playerId, friendId)) return true;
+            if (!playerId.IsSteamId())
+            {
+                return false;
+            }
+            if (playerId == friendId)
+            {
+                return true;
+            }
+            if (configData.Global.UseTeams && SameTeam(playerId, friendId))
+            {
+                return true;
+            }
+            if (configData.Global.UseFriends && HasFriend(playerId, friendId))
+            {
+                return true;
+            }
+            if (configData.Global.UseClans && SameClan(playerId, friendId))
+            {
+                return true;
+            }
             return false;
         }
 
         private static bool SameTeam(ulong playerId, ulong friendId)
         {
-            if (!RelationshipManager.TeamsEnabled()) return false;
+            if (!RelationshipManager.TeamsEnabled())
+            {
+                return false;
+            }
             var playerTeam = RelationshipManager.ServerInstance.FindPlayersTeam(playerId);
-            if (playerTeam == null) return false;
+            if (playerTeam == null)
+            {
+                return false;
+            }
             var friendTeam = RelationshipManager.ServerInstance.FindPlayersTeam(friendId);
-            if (friendTeam == null) return false;
+            if (friendTeam == null)
+            {
+                return false;
+            }
             return playerTeam == friendTeam;
         }
 
         private bool HasFriend(ulong playerId, ulong friendId)
         {
-            if (Friends == null) return false;
+            if (Friends == null)
+            {
+                return false;
+            }
             return (bool)Friends.Call("HasFriend", playerId, friendId);
         }
 
         private bool SameClan(ulong playerId, ulong friendId)
         {
-            if (Clans == null) return false;
+            if (Clans == null)
+            {
+                return false;
+            }
             //Clans
             var isMember = Clans.Call("IsClanMember", playerId.ToString(), friendId.ToString());
-            if (isMember != null) return (bool)isMember;
+            if (isMember != null)
+            {
+                return (bool)isMember;
+            }
             //Rust:IO Clans
             var playerClan = Clans.Call("GetClanOf", playerId);
-            if (playerClan == null) return false;
+            if (playerClan == null)
+            {
+                return false;
+            }
             var friendClan = Clans.Call("GetClanOf", friendId);
-            if (friendClan == null) return false;
+            if (friendClan == null)
+            {
+                return false;
+            }
             return (string)playerClan == (string)friendClan;
         }
 
@@ -321,7 +360,10 @@ namespace Oxide.Plugins
 
         private bool IsPlayerBlocked(BasePlayer player)
         {
-            if (NoEscape == null) return false;
+            if (NoEscape == null)
+            {
+                return false;
+            }
             if (configData.Global.UseRaidBlocker && IsRaidBlocked(player.UserIDString))
             {
                 Print(player, Lang("RaidBlocked", player.UserIDString));
@@ -335,15 +377,24 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private bool IsRaidBlocked(string playerId) => (bool)NoEscape.Call("IsRaidBlocked", playerId);
+        private bool IsRaidBlocked(string playerId)
+        {
+            return (bool)NoEscape.Call("IsRaidBlocked", playerId);
+        }
 
-        private bool IsCombatBlocked(string playerId) => (bool)NoEscape.Call("IsCombatBlocked", playerId);
+        private bool IsCombatBlocked(string playerId)
+        {
+            return (bool)NoEscape.Call("IsCombatBlocked", playerId);
+        }
 
         #endregion PlayerIsBlocked
 
         #region RustTranslationAPI
 
-        private string GetItemTranslationByShortName(string language, string itemShortName) => (string)RustTranslationAPI.Call("GetItemTranslationByShortName", language, itemShortName);
+        private string GetItemTranslationByShortName(string language, string itemShortName)
+        {
+            return (string)RustTranslationAPI.Call("GetItemTranslationByShortName", language, itemShortName);
+        }
 
         private string GetItemDisplayName(string language, ItemDefinition itemDefinition)
         {
@@ -363,7 +414,7 @@ namespace Oxide.Plugins
         #endregion Methods
 
         #region Building Grade Control
-         
+
         private Coroutine _changeGradeCoroutine;
         private readonly HashSet<BuildingBlock> _allBuildingBlocks = new HashSet<BuildingBlock>();
         private readonly Dictionary<ulong, bool> _tempFriends = new Dictionary<ulong, bool>();
@@ -447,7 +498,7 @@ namespace Oxide.Plugins
                 {
                     break;
                 }
-                BuildingGrade.Enum grade = targetGrade;
+                var grade = targetGrade;
                 if (CheckBuildingGrade(buildingBlock, true, ref grade))
                 {
                     if (!autoGrade || _tempGrantedGrades.Contains(grade))
@@ -479,7 +530,7 @@ namespace Oxide.Plugins
             {
                 if (_missingDictionary.Count > 0)
                 {
-                    StringBuilder stringBuilder = Pool.Get<StringBuilder>();
+                    var stringBuilder = Pool.Get<StringBuilder>();
                     var language = lang.GetLanguage(player.UserIDString);
                     foreach (var entry in _missingDictionary)
                     {
@@ -559,13 +610,13 @@ namespace Oxide.Plugins
 
         public bool CanAffordUpgrade(BuildingBlock buildingBlock, ConstructionGrade constructionGrade, BasePlayer player, BuildingGrade.Enum grade)
         {
-            object obj = Interface.CallHook("CanAffordUpgrade", player, buildingBlock, grade);
+            var obj = Interface.CallHook("CanAffordUpgrade", player, buildingBlock, grade);
             if (obj is bool)
             {
                 return (bool)obj;
             }
 
-            bool flag = true;
+            var flag = true;
             foreach (var item in constructionGrade.costToBuild)
             {
                 var missingAmount = item.amount - player.inventory.GetAmount(item.itemid);
@@ -609,12 +660,12 @@ namespace Oxide.Plugins
                 {
                     break;
                 }
-                BuildingGrade.Enum grade = targetGrade;
+                var grade = targetGrade;
                 if (CheckBuildingGrade(buildingBlock, false, ref grade))
                 {
                     if (!autoGrade || _tempGrantedGrades.Contains(grade))
                     {
-                        if (TryDowngradeToGrade(buildingBlock, player, grade/*, permissionSettings.Refund*/, isAdmin: isAdmin))
+                        if (TryDowngradeToGrade(buildingBlock, player, grade /*, permissionSettings.Refund*/, isAdmin: isAdmin))
                         {
                             success++;
                         }
@@ -717,7 +768,7 @@ namespace Oxide.Plugins
             Func<BuildingBlock, bool> func = x => filter == null || filter.Contains(x.prefabID);
             if (isAll)
             {
-                yield return GetNearbyEntities(sourceEntity, _allBuildingBlocks, Rust.Layers.Mask.Construction, func);
+                yield return GetNearbyEntities(sourceEntity, _allBuildingBlocks, Layers.Mask.Construction, func);
             }
             else
             {
@@ -823,7 +874,7 @@ namespace Oxide.Plugins
         private static BuildingBlock GetBuildingBlockLookingAt(BasePlayer player, PermissionSettings permissionSettings)
         {
             RaycastHit raycastHit;
-            var flag = Physics.Raycast(player.eyes.HeadRay(), out raycastHit, permissionSettings.Distance, Rust.Layers.Mask.Construction);
+            var flag = Physics.Raycast(player.eyes.HeadRay(), out raycastHit, permissionSettings.Distance, Layers.Mask.Construction);
             return flag ? raycastHit.GetEntity() as BuildingBlock : null;
         }
 
@@ -872,7 +923,7 @@ namespace Oxide.Plugins
 
         private static IEnumerator GetNearbyEntities<T>(T sourceEntity, HashSet<T> entities, int layers, Func<T, bool> filter = null) where T : BaseEntity
         {
-            int current = 0;
+            var current = 0;
             var checkFrom = Pool.Get<Queue<Vector3>>();
             var nearbyEntities = Pool.GetList<T>();
             checkFrom.Enqueue(sourceEntity.transform.position);
@@ -884,11 +935,20 @@ namespace Oxide.Plugins
                 for (var i = 0; i < nearbyEntities.Count; i++)
                 {
                     var entity = nearbyEntities[i];
-                    if (filter != null && !filter(entity)) continue;
-                    if (!entities.Add(entity)) continue;
+                    if (filter != null && !filter(entity))
+                    {
+                        continue;
+                    }
+                    if (!entities.Add(entity))
+                    {
+                        continue;
+                    }
                     checkFrom.Enqueue(entity.transform.position);
                 }
-                if (++current % _instance.configData.Global.PerFrame == 0) yield return CoroutineEx.waitForEndOfFrame;
+                if (++current % _instance.configData.Global.PerFrame == 0)
+                {
+                    yield return CoroutineEx.waitForEndOfFrame;
+                }
             }
             Pool.Free(ref checkFrom);
             Pool.FreeList(ref nearbyEntities);
@@ -917,45 +977,51 @@ namespace Oxide.Plugins
                     Pay = true,
                     //Refund = false,
                     Cooldown = 60,
-                    Distance = 10,
+                    Distance = 10
                 }
             };
 
             [JsonProperty(PropertyName = "Building Block Categories", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public Dictionary<string, HashSet<string>> Categories { get; set; } = new Dictionary<string, HashSet<string>>
             {
-                ["foundation"] = new HashSet<string> {
+                ["foundation"] = new HashSet<string>
+                {
                     "assets/prefabs/building core/foundation/foundation.prefab",
                     "assets/prefabs/building core/foundation.steps/foundation.steps.prefab",
                     "assets/prefabs/building core/foundation.triangle/foundation.triangle.prefab"
                 },
-                ["wall"] = new HashSet<string> {
+                ["wall"] = new HashSet<string>
+                {
                     "assets/prefabs/building core/wall/wall.prefab",
                     "assets/prefabs/building core/wall.doorway/wall.doorway.prefab",
                     "assets/prefabs/building core/wall.frame/wall.frame.prefab",
                     "assets/prefabs/building core/wall.half/wall.half.prefab",
                     "assets/prefabs/building core/wall.low/wall.low.prefab",
-                    "assets/prefabs/building core/wall.window/wall.window.prefab",
+                    "assets/prefabs/building core/wall.window/wall.window.prefab"
                 },
-                ["floor"] = new HashSet<string> {
+                ["floor"] = new HashSet<string>
+                {
                     "assets/prefabs/building core/floor/floor.prefab",
                     "assets/prefabs/building core/floor.frame/floor.frame.prefab",
                     "assets/prefabs/building core/floor.triangle/floor.triangle.prefab",
-                    "assets/prefabs/building core/floor.triangle.frame/floor.triangle.frame.prefab",
+                    "assets/prefabs/building core/floor.triangle.frame/floor.triangle.frame.prefab"
                 },
-                ["stair"] = new HashSet<string> {
+                ["stair"] = new HashSet<string>
+                {
                     "assets/prefabs/building core/stairs.l/block.stair.lshape.prefab",
                     "assets/prefabs/building core/stairs.spiral/block.stair.spiral.prefab",
                     "assets/prefabs/building core/stairs.spiral.triangle/block.stair.spiral.triangle.prefab",
-                    "assets/prefabs/building core/stairs.u/block.stair.ushape.prefab",
+                    "assets/prefabs/building core/stairs.u/block.stair.ushape.prefab"
                 },
-                ["roof"] = new HashSet<string> {
+                ["roof"] = new HashSet<string>
+                {
                     "assets/prefabs/building core/roof/roof.prefab",
-                    "assets/prefabs/building core/roof.triangle/roof.triangle.prefab",
+                    "assets/prefabs/building core/roof.triangle/roof.triangle.prefab"
                 },
-                ["ramp"] = new HashSet<string> {
-                    "assets/prefabs/building core/ramp/ramp.prefab",
-                },
+                ["ramp"] = new HashSet<string>
+                {
+                    "assets/prefabs/building core/ramp/ramp.prefab"
+                }
             };
         }
 
@@ -1047,7 +1113,10 @@ namespace Oxide.Plugins
             configData = new ConfigData();
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData);
+        }
 
         #endregion ConfigurationFile
 
@@ -1095,7 +1164,7 @@ namespace Oxide.Plugins
                 ["NotUpgraded"] = "None of the buildings were upgraded.",
                 ["NotDowngraded"] = "None of the buildings were downgraded.",
                 ["FinishedUpgrade"] = "<color=#FF1919>{0}</color> building blocks were upgraded.",
-                ["FinishedDowngrade"] = "<color=#FF1919>{0}</color> building blocks were downgraded.",
+                ["FinishedDowngrade"] = "<color=#FF1919>{0}</color> building blocks were downgraded."
             }, this);
             lang.RegisterMessages(new Dictionary<string, string>
             {
@@ -1119,7 +1188,7 @@ namespace Oxide.Plugins
                 ["NotUpgraded"] = "没有可以升级的建筑",
                 ["NotDowngraded"] = "没有可以降级的建筑",
                 ["FinishedUpgrade"] = "<color=#FF1919>{0}</color> 个建筑成功升级了",
-                ["FinishedDowngrade"] = "<color=#FF1919>{0}</color> 个建筑成功降级了",
+                ["FinishedDowngrade"] = "<color=#FF1919>{0}</color> 个建筑成功降级了"
             }, this, "zh-CN");
         }
 
