@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Entity Reducer", "Arainrr", "2.1.3")]
+    [Info("Entity Reducer", "Arainrr", "2.1.4")]
     [Description("Controls all spawn populations on the server")]
     public class EntityReducer : RustPlugin
     {
@@ -23,7 +23,7 @@ namespace Oxide.Plugins
                 return;
             }
             UpdateConfig();
-            if (configData.pluginEnabled)
+            if (_configData.pluginEnabled)
             {
                 ApplySpawnHandler();
             }
@@ -36,15 +36,21 @@ namespace Oxide.Plugins
         private void UpdateConfig()
         {
             var newPopulationSettings = new Dictionary<string, PopulationSetting>();
-            for (int i = 0; i < SpawnHandler.Instance.AllSpawnPopulations.Length; i++)
+            for (var i = 0; i < SpawnHandler.Instance.AllSpawnPopulations.Length; i++)
             {
                 var spawnPopulation = SpawnHandler.Instance.AllSpawnPopulations[i];
-                if (spawnPopulation == null) continue;
+                if (spawnPopulation == null)
+                {
+                    continue;
+                }
                 var spawnDistribution = SpawnHandler.Instance.SpawnDistributions[i];
-                if (spawnDistribution == null) continue;
-                int targetCount = SpawnHandler.Instance.GetTargetCount(spawnPopulation, spawnDistribution);
+                if (spawnDistribution == null)
+                {
+                    continue;
+                }
+                var targetCount = SpawnHandler.Instance.GetTargetCount(spawnPopulation, spawnDistribution);
                 PopulationSetting populationSetting;
-                if (configData.populationSettings.TryGetValue(spawnPopulation.name, out populationSetting))
+                if (_configData.populationSettings.TryGetValue(spawnPopulation.name, out populationSetting))
                 {
                     if (!populationSetting.enabled)
                     {
@@ -57,14 +63,14 @@ namespace Oxide.Plugins
                     newPopulationSettings.Add(spawnPopulation.name, new PopulationSetting { targetCount = targetCount });
                 }
             }
-            configData.populationSettings = newPopulationSettings;
+            _configData.populationSettings = newPopulationSettings;
             SaveConfig();
         }
 
         private void ApplySpawnHandler()
         {
-            SpawnPopulation[] allSpawnPopulations = SpawnHandler.Instance.AllSpawnPopulations;
-            SpawnDistribution[] spawnDistributions = SpawnHandler.Instance.SpawnDistributions;
+            var allSpawnPopulations = SpawnHandler.Instance.AllSpawnPopulations;
+            var spawnDistributions = SpawnHandler.Instance.SpawnDistributions;
             for (var i = 0; i < allSpawnPopulations.Length; i++)
             {
                 var spawnPopulation = allSpawnPopulations[i];
@@ -79,10 +85,10 @@ namespace Oxide.Plugins
                 }
 
                 PopulationSetting populationSetting;
-                if (configData.populationSettings.TryGetValue(spawnPopulation.name, out populationSetting) && populationSetting.enabled)
+                if (_configData.populationSettings.TryGetValue(spawnPopulation.name, out populationSetting) && populationSetting.enabled)
                 {
-                    float num = TerrainMeta.Size.x * TerrainMeta.Size.z;
-                    float num2 = /*2f **/ Spawn.max_density * 1E-06f;
+                    var num = TerrainMeta.Size.x * TerrainMeta.Size.z;
+                    var num2 = /*2f **/ Spawn.max_density * 1E-06f;
                     if (!spawnPopulation.ScaleWithLargeMaps)
                     {
                         num = Mathf.Min(num, 1.6E+07f);
@@ -98,33 +104,8 @@ namespace Oxide.Plugins
                     var convarControlled = spawnPopulation as ConvarControlledSpawnPopulation;
                     if (convarControlled != null)
                     {
-                        var railRing = convarControlled as ConvarControlledSpawnPopulationRailRing;
-                        if (railRing != null)
-                        {
-                            // They use the same command(traincar.population) and you can't modify them all, only one
-                            switch (railRing.trainCarType)
-                            {
-                                case ConvarControlledSpawnPopulationRailRing.TrainCarType.WorkCart:
-                                    targetDensity /= 1f - TrainCar.variant_ratio;
-                                    break;
-
-                                case ConvarControlledSpawnPopulationRailRing.TrainCarType.WorkCartWithCover:
-                                    targetDensity /= TrainCar.variant_ratio;
-                                    break;
-
-                                case ConvarControlledSpawnPopulationRailRing.TrainCarType.Wagon:
-                                    targetDensity /= TrainCar.wagons_per_engine * 1.1f;
-
-                                    ConsoleSystem.Command command = ConsoleSystem.Index.Server.Find(convarControlled.PopulationConvar);
-                                    command?.Set(targetDensity);
-                                    break;
-                            }
-                        }
-                        else
-                        {
-                            ConsoleSystem.Command command = ConsoleSystem.Index.Server.Find(convarControlled.PopulationConvar);
-                            command?.Set(targetDensity);
-                        }
+                        var command = ConsoleSystem.Index.Server.Find(convarControlled.PopulationConvar);
+                        command?.Set(targetDensity);
                     }
                     else
                     {
@@ -132,28 +113,40 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            // SpawnHandler.Instance.EnforceLimits(true);
+            SpawnHandler.Instance.EnforceLimits(true);
         }
 
         public string GetReport()
         {
-            SpawnPopulation[] allSpawnPopulations = SpawnHandler.Instance.AllSpawnPopulations;
-            SpawnDistribution[] spawnDistributions = SpawnHandler.Instance.SpawnDistributions;
-            StringBuilder stringBuilder = new StringBuilder();
-            if (allSpawnPopulations == null) stringBuilder.AppendLine("Spawn population array is null.");
-            if (spawnDistributions == null) stringBuilder.AppendLine("Spawn distribution array is null.");
+            var allSpawnPopulations = SpawnHandler.Instance.AllSpawnPopulations;
+            var spawnDistributions = SpawnHandler.Instance.SpawnDistributions;
+            var stringBuilder = new StringBuilder();
+            if (allSpawnPopulations == null)
+            {
+                stringBuilder.AppendLine("Spawn population array is null.");
+            }
+            if (spawnDistributions == null)
+            {
+                stringBuilder.AppendLine("Spawn distribution array is null.");
+            }
             if (allSpawnPopulations != null && spawnDistributions != null)
             {
                 stringBuilder.AppendLine();
                 stringBuilder.AppendLine("SpawnPopulationName".PadRight(40) + "CurrentPopulation".PadRight(25) + "MaximumPopulation");
-                for (int i = 0; i < allSpawnPopulations.Length; i++)
+                for (var i = 0; i < allSpawnPopulations.Length; i++)
                 {
                     var spawnPopulation = allSpawnPopulations[i];
-                    if (spawnPopulation == null) continue;
+                    if (spawnPopulation == null)
+                    {
+                        continue;
+                    }
                     var spawnDistribution = spawnDistributions[i];
-                    if (spawnDistribution == null) continue;
-                    int currentCount = SpawnHandler.Instance.GetCurrentCount(spawnPopulation, spawnDistribution);
-                    int targetCount = SpawnHandler.Instance.GetTargetCount(spawnPopulation, spawnDistribution);
+                    if (spawnDistribution == null)
+                    {
+                        continue;
+                    }
+                    var currentCount = SpawnHandler.Instance.GetCurrentCount(spawnPopulation, spawnDistribution);
+                    var targetCount = SpawnHandler.Instance.GetTargetCount(spawnPopulation, spawnDistribution);
                     stringBuilder.AppendLine(spawnPopulation.name.PadRight(40) + currentCount.ToString().PadRight(25) + targetCount);
                 }
             }
@@ -172,7 +165,10 @@ namespace Oxide.Plugins
         }
 
         [ConsoleCommand("er.getreport")]
-        private void CmdGetReport(ConsoleSystem.Arg arg) => SendReply(arg, GetReport());
+        private void CmdGetReport(ConsoleSystem.Arg arg)
+        {
+            SendReply(arg, GetReport());
+        }
 
         [ConsoleCommand("er.enforcelimits")]
         private void CmdEnforceLimits(ConsoleSystem.Arg arg)
@@ -185,12 +181,12 @@ namespace Oxide.Plugins
 
         #region ConfigurationFile
 
-        private ConfigData configData;
+        private ConfigData _configData;
 
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Enabled Plugin")]
-            public bool pluginEnabled = false;
+            public readonly bool pluginEnabled = false;
 
             [JsonProperty(PropertyName = "Population Settings")]
             public Dictionary<string, PopulationSetting> populationSettings = new Dictionary<string, PopulationSetting>();
@@ -199,7 +195,7 @@ namespace Oxide.Plugins
         private class PopulationSetting
         {
             [JsonProperty(PropertyName = "Enabled")]
-            public bool enabled = true;
+            public readonly bool enabled = true;
 
             [JsonProperty(PropertyName = "Target Count")]
             public int targetCount;
@@ -210,9 +206,11 @@ namespace Oxide.Plugins
             base.LoadConfig();
             try
             {
-                configData = Config.ReadObject<ConfigData>();
-                if (configData == null)
+                _configData = Config.ReadObject<ConfigData>();
+                if (_configData == null)
+                {
                     LoadDefaultConfig();
+                }
             }
             catch (Exception ex)
             {
@@ -225,10 +223,13 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             PrintWarning("Creating a new configuration file");
-            configData = new ConfigData();
+            _configData = new ConfigData();
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(_configData);
+        }
 
         #endregion ConfigurationFile
     }
