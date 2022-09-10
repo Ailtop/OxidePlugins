@@ -1351,7 +1351,7 @@ namespace Oxide.Plugins
             }
             if (removeType != RemoveType.Normal)
             {
-                var result = Interface.CallHook("CanAdminRemove", player, targetEntity, removeType);
+                var result = Interface.CallHook("CanAdminRemove", player, targetEntity, removeType.ToString());
                 if (result != null)
                 {
                     Print(player, result is string ? (string)result : Lang("BeBlocked", player.UserIDString));
