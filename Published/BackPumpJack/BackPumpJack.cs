@@ -5,7 +5,9 @@ using Facepunch;
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Plugins;
+using Rust;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
@@ -15,12 +17,13 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        [PluginReference] private Plugin Friends, Clans;
+        [PluginReference]
+        private Plugin Friends, Clans;
 
         private const string PREFAB_CRATER_OIL = "assets/prefabs/tools/surveycharge/survey_crater_oil.prefab";
 
         private readonly List<QuarryData> _activeCraters = new List<QuarryData>();
-        private readonly HashSet<SurveyCrater> _checkedCraters = new HashSet<SurveyCrater>();
+        private readonly HashSet<uint> _checkedCraters = new HashSet<uint>();
         private readonly Dictionary<uint, PermissionSetting> _activeSurveyCharges = new Dictionary<uint, PermissionSetting>();
         private readonly List<MiningQuarry> _miningQuarries = new List<MiningQuarry>();
         private readonly object _true = true;
@@ -104,7 +107,10 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), () => RefillMiningQuarries());
+        private void OnServerSave()
+        {
+            timer.Once(Random.Range(0f, 60f), () => RefillMiningQuarries());
+        }
 
         private void OnEntitySpawned(MiningQuarry miningQuarry)
         {
@@ -151,6 +157,11 @@ namespace Oxide.Plugins
                 _activeSurveyCharges.Remove(surveyCharge.net.ID);
                 ModifyResourceDeposit(permissionSetting, surveyCharge.transform.position, surveyCharge.OwnerID);
             }
+        }
+
+        private void OnEntityKill(SurveyCrater surveyCrater)
+        {
+            _checkedCraters.Remove(surveyCrater.net?.ID ?? 0);
         }
 
         private void OnEntityBuilt(Planner planner, GameObject obj)
@@ -221,13 +232,19 @@ namespace Oxide.Plugins
 
         private int RefillMiningQuarries()
         {
-            int count = 0;
+            var count = 0;
             foreach (var miningQuarry in _miningQuarries)
             {
-                if (miningQuarry == null || miningQuarry.IsDestroyed) continue;
+                if (miningQuarry == null || miningQuarry.IsDestroyed)
+                {
+                    continue;
+                }
                 foreach (var quarryData in storedData.quarryDataList)
                 {
-                    if (quarryData == null) continue;
+                    if (quarryData == null)
+                    {
+                        continue;
+                    }
                     if (Vector3.Distance(quarryData.position, miningQuarry.transform.position) < 2f)
                     {
                         count++;
@@ -292,19 +309,18 @@ namespace Oxide.Plugins
             NextTick(() =>
             {
                 var surveyCraterList = Pool.GetList<SurveyCrater>();
-                Vis.Entities(checkPosition, 1f, surveyCraterList, Rust.Layers.Mask.Default);
+                Vis.Entities(checkPosition, 1f, surveyCraterList, Layers.Mask.Default);
                 foreach (var surveyCrater in surveyCraterList)
                 {
-                    PrintError($"{surveyCrater.ShortPrefabName} {surveyCrater.OwnerID} {playerID}");
                     if (surveyCrater == null || surveyCrater.IsDestroyed)
                     {
                         continue;
                     }
-                    if (_checkedCraters.Contains(surveyCrater))
+                    if (_checkedCraters.Contains(surveyCrater.net?.ID ?? 0))
                     {
                         continue;
                     }
-                    if (UnityEngine.Random.Range(0f, 100f) < permissionSetting.OilCraterChance)
+                    if (Random.Range(0f, 100f) < permissionSetting.OilCraterChance)
                     {
                         var oilCrater = GameManager.server.CreateEntity(PREFAB_CRATER_OIL, surveyCrater.transform.position) as SurveyCrater;
                         if (oilCrater == null)
@@ -314,18 +330,18 @@ namespace Oxide.Plugins
                         surveyCrater.Kill();
                         oilCrater.OwnerID = playerID;
                         oilCrater.Spawn();
-                        _checkedCraters.Add(oilCrater);
+                        _checkedCraters.Add(oilCrater.net?.ID ?? 0);
                         var deposit = ResourceDepositManager.GetOrCreate(oilCrater.transform.position);
                         if (deposit != null)
                         {
                             deposit._resources.Clear();
-                            int amount = UnityEngine.Random.Range(10000, 100000);
-                            float workNeeded = 45f / UnityEngine.Random.Range(permissionSetting.PumpJack.PmMin, permissionSetting.PumpJack.PmMax);
+                            var amount = Random.Range(10000, 100000);
+                            var workNeeded = 45f / Random.Range(permissionSetting.PumpJack.PmMin, permissionSetting.PumpJack.PmMax);
                             var crudeItemDef = ItemManager.FindItemDefinition("crude.oil");
                             if (crudeItemDef != null)
                             {
                                 deposit.Add(crudeItemDef, 1, amount, workNeeded, ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM, true);
-                                List<MineralItemData> mineralItemDatas = new List<MineralItemData>
+                                var mineralItemDatas = new List<MineralItemData>
                                 {
                                     new MineralItemData
                                     {
@@ -343,31 +359,34 @@ namespace Oxide.Plugins
                             }
                         }
                     }
-                    else if (UnityEngine.Random.Range(0f, 100f) < permissionSetting.Quarry.ModifyChance)
+                    else if (Random.Range(0f, 100f) < permissionSetting.Quarry.ModifyChance)
                     {
                         var deposit = ResourceDepositManager.GetOrCreate(surveyCrater.transform.position);
                         if (deposit != null)
                         {
                             deposit._resources.Clear();
                             surveyCrater.OwnerID = playerID;
-                            int amountsRemaining = UnityEngine.Random.Range(permissionSetting.Quarry.AmountMin, permissionSetting.Quarry.AmountMax + 1);
+                            var amountsRemaining = Random.Range(permissionSetting.Quarry.AmountMin, permissionSetting.Quarry.AmountMax + 1);
                             var mineralItemDataList = new List<MineralItemData>();
 
-                            for (int i = 0; i < 200; i++)
+                            for (var i = 0; i < 200; i++)
                             {
-                                if (amountsRemaining <= 0) break;
+                                if (amountsRemaining <= 0)
+                                {
+                                    break;
+                                }
                                 var mineralItem = permissionSetting.Quarry.MineralItems.GetRandom();
                                 if (!permissionSetting.Quarry.AllowDuplication && deposit._resources.Any(x => x.type.shortname == mineralItem.ShortName))
                                 {
                                     continue;
                                 }
-                                if (UnityEngine.Random.Range(0f, 100f) < mineralItem.Chance)
+                                if (Random.Range(0f, 100f) < mineralItem.Chance)
                                 {
                                     var itemDef = ItemManager.FindItemDefinition(mineralItem.ShortName);
                                     if (itemDef != null)
                                     {
-                                        int amount = UnityEngine.Random.Range(10000, 100000);
-                                        float workNeeded = 45f / UnityEngine.Random.Range(mineralItem.PmMin, mineralItem.PmMax);
+                                        var amount = Random.Range(10000, 100000);
+                                        var workNeeded = 45f / Random.Range(mineralItem.PmMin, mineralItem.PmMax);
                                         deposit.Add(itemDef, 1, amount, workNeeded, ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM);
                                         mineralItemDataList.Add(new MineralItemData
                                         {
@@ -388,7 +407,9 @@ namespace Oxide.Plugins
                         }
                     }
                     if (!surveyCrater.IsDestroyed)
-                        _checkedCraters.Add(surveyCrater);
+                    {
+                        _checkedCraters.Add(surveyCrater.net?.ID ?? 0);
+                    }
                 }
                 Pool.FreeList(ref surveyCraterList);
             });
@@ -397,7 +418,7 @@ namespace Oxide.Plugins
         private PermissionSetting GetPermissionSetting(BasePlayer player)
         {
             PermissionSetting permissionSetting = null;
-            int priority = 0;
+            var priority = 0;
             foreach (var p in configData.Permissions)
             {
                 if (p.Priority >= priority && permission.UserHasPermission(player.UserIDString, p.Permission))
@@ -413,40 +434,76 @@ namespace Oxide.Plugins
 
         private bool AreFriends(ulong playerID, ulong friendID)
         {
-            if (playerID == friendID) return true;
-            if (configData.Global.UseTeams && SameTeam(playerID, friendID)) return true;
-            if (configData.Global.UseFriends && HasFriend(playerID, friendID)) return true;
-            if (configData.Global.UseClans && SameClan(playerID, friendID)) return true;
+            if (playerID == friendID)
+            {
+                return true;
+            }
+            if (configData.Global.UseTeams && SameTeam(playerID, friendID))
+            {
+                return true;
+            }
+            if (configData.Global.UseFriends && HasFriend(playerID, friendID))
+            {
+                return true;
+            }
+            if (configData.Global.UseClans && SameClan(playerID, friendID))
+            {
+                return true;
+            }
             return false;
         }
 
         private bool HasFriend(ulong playerID, ulong friendID)
         {
-            if (Friends == null) return false;
+            if (Friends == null)
+            {
+                return false;
+            }
             return (bool)Friends.Call("HasFriend", playerID, friendID);
         }
 
         private bool SameTeam(ulong playerID, ulong friendID)
         {
-            if (!RelationshipManager.TeamsEnabled()) return false;
+            if (!RelationshipManager.TeamsEnabled())
+            {
+                return false;
+            }
             var playerTeam = RelationshipManager.ServerInstance.FindPlayersTeam(playerID);
-            if (playerTeam == null) return false;
+            if (playerTeam == null)
+            {
+                return false;
+            }
             var friendTeam = RelationshipManager.ServerInstance.FindPlayersTeam(friendID);
-            if (friendTeam == null) return false;
+            if (friendTeam == null)
+            {
+                return false;
+            }
             return playerTeam == friendTeam;
         }
 
         private bool SameClan(ulong playerID, ulong friendID)
         {
-            if (Clans == null) return false;
+            if (Clans == null)
+            {
+                return false;
+            }
             //Clans
             var isMember = Clans.Call("IsClanMember", playerID.ToString(), friendID.ToString());
-            if (isMember != null) return (bool)isMember;
+            if (isMember != null)
+            {
+                return (bool)isMember;
+            }
             //Rust:IO Clans
             var playerClan = Clans.Call("GetClanOf", playerID);
-            if (playerClan == null) return false;
+            if (playerClan == null)
+            {
+                return false;
+            }
             var friendClan = Clans.Call("GetClanOf", friendID);
-            if (friendClan == null) return false;
+            if (friendClan == null)
+            {
+                return false;
+            }
             return (string)playerClan == (string)friendClan;
         }
 
@@ -546,7 +603,7 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Version")]
             public VersionNumber Version { get; set; }
         }
-        
+
         private class GlobalSetting
         {
             [JsonProperty(PropertyName = "Use Teams")]
@@ -564,6 +621,7 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Block deploy a quarry on another player's survey crater")]
             public bool CantDeploy { get; set; } = true;
         }
+
         private class ChatSetting
         {
             [JsonProperty(PropertyName = "Chat Prefix")]
@@ -589,7 +647,6 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Normal Crater Settings")]
             public QuarrySetting Quarry { get; set; } = new QuarrySetting();
-
         }
 
         private class PumpJackSetting
@@ -664,7 +721,10 @@ namespace Oxide.Plugins
             configData.Version = Version;
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData);
+        }
 
         private void UpdateConfigValues()
         {
@@ -710,8 +770,8 @@ namespace Oxide.Plugins
             public Vector3 position;
             public bool isLiquid;
             public List<MineralItemData> mineralItems = new List<MineralItemData>();
-
         }
+
         private class MineralItemData
         {
             public string shortname;
@@ -741,9 +801,15 @@ namespace Oxide.Plugins
             SaveData();
         }
 
-        private void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        private void SaveData()
+        {
+            Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        }
 
-        private void OnNewSave() => ClearData();
+        private void OnNewSave()
+        {
+            ClearData();
+        }
 
         #endregion DataFile
 
@@ -772,16 +838,15 @@ namespace Oxide.Plugins
             lang.RegisterMessages(new Dictionary<string, string>
             {
                 ["NoDamage"] = "You can't damage another player's survey crater.",
-                ["NoDeploy"] = "You can't deploy a quarry on another player's survey crater.",
+                ["NoDeploy"] = "You can't deploy a quarry on another player's survey crater."
             }, this);
             lang.RegisterMessages(new Dictionary<string, string>
             {
                 ["NoDamage"] = "您不能伤害别人的矿坑",
-                ["NoDeploy"] = "您不能放置挖矿机到别人的矿坑上",
+                ["NoDeploy"] = "您不能放置挖矿机到别人的矿坑上"
             }, this, "zh-CN");
         }
 
         #endregion LanguageFile
-
     }
 }
