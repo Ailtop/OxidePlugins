@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Building Grades", "Default/Arainrr", "1.0.5")]
+    [Info("Building Grades", "Default/Arainrr", "1.0.6")]
     [Description("Allows players to easily upgrade or downgrade an entire building")]
     public class BuildingGrades : RustPlugin
     {
