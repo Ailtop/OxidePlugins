@@ -1190,6 +1190,30 @@ namespace Oxide.Plugins
                 ["FinishedUpgrade"] = "<color=#FF1919>{0}</color> 个建筑成功升级了",
                 ["FinishedDowngrade"] = "<color=#FF1919>{0}</color> 个建筑成功降级了"
             }, this, "zh-CN");
+            lang.RegisterMessages(new Dictionary<string, string>
+            {
+                ["NotAllowed"] = "<color=#FF1919>Ви не маєте дозволу на використання цієї команди.</color>",
+                ["UnknownGrade"] = "<color=#FF1919>Невідоме поліпшення.</color>",
+                ["UnknownCategory"] = "<color=#FF1919>Невідома категорія.</color> Доступні категорії: <color=#009EFF>{0}</color>",
+                ["NotLookingAt"] = "<color=#FF1919>Ви не дивитеся на будівельний блок.</color>",
+                ["RaidBlocked"] = "<color=#FF1919>Ви не можете цього робити, поки рейд заблоковано.</color>.",
+                ["CombatBlocked"] = "<color=#FF1919>Ви не можете цього робити, коли бій заблоковано.</color>.",
+                ["OnCooldown"] = "Ви повинні почекати <color=#FF1919>{0}</color> секунд, перш ніж ви зможете використовувати цю команду.",
+                ["BuildingBlocked"] = "Ви не можете використовувати цю команду, якщо у вас немає привілеїв будівництва.",
+
+                ["MissingItemsFormat"] = "* <color=#FF1919>{0}</color> x{1}",
+                ["StartUpgrade"] = "Почніть запуск оновлення, зачекайте.",
+                ["StartDowngrade"] = "Почніть роботу з пониженням, зачекайте.",
+                ["AlreadyProcess"] = "Процес уже запущений, зачекайте.",
+
+                ["UpgradeNotEnoughItems"] = "Жодна з будівель не була модернізована. Ви пропали: \n{0}",
+                ["UpgradeNotEnoughItemsSuccess"] = "<color=#FF1919>{0}</color> будівельні блоки були модернізовані. Деякі будівлі неможливо покращити, ви пропали: \n{1}",
+
+                ["NotUpgraded"] = "Жодна з будівель не була модернізована.",
+                ["NotDowngraded"] = "Жодна з будівель не була понижена.",
+                ["FinishedUpgrade"] = "<color=#FF1919>{0}</color> будівельні блоки були модернізовані.",
+                ["FinishedDowngrade"] = "<color=#FF1919>{0}</color> будівельні блоки були знижені."
+            }, this, "uk");
         }
 
         #endregion LanguageFile
