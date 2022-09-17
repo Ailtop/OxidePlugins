@@ -1,20 +1,22 @@
-﻿using Newtonsoft.Json;
-using Oxide.Core.Plugins;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Newtonsoft.Json;
+using Oxide.Core.Plugins;
 
 namespace Oxide.Plugins
 {
-    [Info("Online Quarries", "mvrb/Arainrr", "1.2.7", ResourceId = 2216)]
+    [Info("Online Quarries", "mvrb/Arainrr", "1.2.8", ResourceId = 2216)]
     [Description("Automatically disable players' quarries when offline")]
     public class OnlineQuarries : RustPlugin
     {
         #region Fields
 
-        [PluginReference] private Plugin Friends, Clans;
-        private Dictionary<ulong, Timer> stopEngineTimer = new Dictionary<ulong, Timer>();
-        private HashSet<MiningQuarry> miningQuarries = new HashSet<MiningQuarry>();
+        [PluginReference]
+        private Plugin Friends, Clans;
+
+        private readonly Dictionary<ulong, Timer> _stopEngineTimer = new Dictionary<ulong, Timer>();
+        private readonly HashSet<MiningQuarry> _miningQuarries = new HashSet<MiningQuarry>();
 
         #endregion Fields
 
@@ -40,18 +42,24 @@ namespace Oxide.Plugins
 
         private void OnEntitySpawned(MiningQuarry miningQuarry)
         {
-            if (miningQuarry == null || miningQuarry.OwnerID == 0) return;
-            miningQuarries.Add(miningQuarry);
+            if (miningQuarry == null || miningQuarry.OwnerID == 0)
+            {
+                return;
+            }
+            _miningQuarries.Add(miningQuarry);
         }
 
         private void OnPlayerConnected(BasePlayer player)
         {
-            if (player == null) return;
+            if (player == null)
+            {
+                return;
+            }
             Timer value;
-            if (stopEngineTimer.TryGetValue(player.userID, out value))
+            if (_stopEngineTimer.TryGetValue(player.userID, out value))
             {
                 value?.Destroy();
-                stopEngineTimer.Remove(player.userID);
+                _stopEngineTimer.Remove(player.userID);
             }
 
             if (configData.autoStart)
@@ -62,29 +70,38 @@ namespace Oxide.Plugins
 
         private void OnPlayerDisconnected(BasePlayer player)
         {
-            if (player == null) return;
-            ulong playerId = player.userID;
+            if (player == null)
+            {
+                return;
+            }
+            var playerId = player.userID;
             Timer value;
-            if (stopEngineTimer.TryGetValue(playerId, out value))
+            if (_stopEngineTimer.TryGetValue(playerId, out value))
             {
                 value?.Destroy();
-                stopEngineTimer.Remove(playerId);
+                _stopEngineTimer.Remove(playerId);
             }
-            stopEngineTimer.Add(playerId, timer.Once(configData.offlineTime, () =>
+            _stopEngineTimer.Add(playerId, timer.Once(configData.offlineTime, () =>
             {
                 CheckQuarries();
-                stopEngineTimer.Remove(playerId);
+                _stopEngineTimer.Remove(playerId);
             }));
         }
 
         private object OnEntityDistanceCheck(EngineSwitch engineSwitch, BasePlayer player, uint id, string debugName, float maximumDistance)
         {
-            if (player == null || engineSwitch == null) return null;
+            if (player == null || engineSwitch == null)
+            {
+                return null;
+            }
             if (id == 1739656243u && debugName == "StopEngine" || id == 1249530220u && debugName == "StartEngine")
             {
                 var parentEntity = engineSwitch.GetParentEntity();
-                if (parentEntity == null) return null;
-                if (!AreFriends(parentEntity.OwnerID, player.userID))
+                if (parentEntity == null || !parentEntity.OwnerID.IsSteamId())
+                {
+                    return null;
+                }
+                if (AreFriends(parentEntity.OwnerID, player.userID))
                 {
                     return false;
                 }
@@ -98,7 +115,7 @@ namespace Oxide.Plugins
 
         private void CheckQuarries(BasePlayer player = null, bool isOn = false)
         {
-            foreach (var miningQuarry in miningQuarries)
+            foreach (var miningQuarry in _miningQuarries)
             {
                 if (miningQuarry == null)
                 {
@@ -137,40 +154,76 @@ namespace Oxide.Plugins
 
         private bool AreFriends(ulong playerID, ulong friendID)
         {
-            if (playerID == friendID) return true;
-            if (configData.useTeam && SameTeam(friendID, playerID)) return true;
-            if (configData.useFriends && HasFriend(friendID, playerID)) return true;
-            if (configData.useClans && SameClan(friendID, playerID)) return true;
+            if (playerID == friendID)
+            {
+                return true;
+            }
+            if (configData.useTeam && SameTeam(friendID, playerID))
+            {
+                return true;
+            }
+            if (configData.useFriends && HasFriend(friendID, playerID))
+            {
+                return true;
+            }
+            if (configData.useClans && SameClan(friendID, playerID))
+            {
+                return true;
+            }
             return false;
         }
 
         private bool SameTeam(ulong playerID, ulong friendID)
         {
-            if (!RelationshipManager.TeamsEnabled()) return false;
+            if (!RelationshipManager.TeamsEnabled())
+            {
+                return false;
+            }
             var playerTeam = RelationshipManager.ServerInstance.FindPlayersTeam(playerID);
-            if (playerTeam == null) return false;
+            if (playerTeam == null)
+            {
+                return false;
+            }
             var friendTeam = RelationshipManager.ServerInstance.FindPlayersTeam(friendID);
-            if (friendTeam == null) return false;
+            if (friendTeam == null)
+            {
+                return false;
+            }
             return playerTeam == friendTeam;
         }
 
         private bool HasFriend(ulong playerID, ulong friendID)
         {
-            if (Friends == null) return false;
+            if (Friends == null)
+            {
+                return false;
+            }
             return (bool)Friends.Call("HasFriend", playerID, friendID);
         }
 
         private bool SameClan(ulong playerID, ulong friendID)
         {
-            if (Clans == null) return false;
+            if (Clans == null)
+            {
+                return false;
+            }
             //Clans
             var isMember = Clans.Call("IsClanMember", playerID.ToString(), friendID.ToString());
-            if (isMember != null) return (bool)isMember;
+            if (isMember != null)
+            {
+                return (bool)isMember;
+            }
             //Rust:IO Clans
             var playerClan = Clans.Call("GetClanOf", playerID);
-            if (playerClan == null) return false;
+            if (playerClan == null)
+            {
+                return false;
+            }
             var friendClan = Clans.Call("GetClanOf", friendID);
-            if (friendClan == null) return false;
+            if (friendClan == null)
+            {
+                return false;
+            }
             return (string)playerClan == (string)friendClan;
         }
 
@@ -185,22 +238,22 @@ namespace Oxide.Plugins
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Use team")]
-            public bool useTeam = false;
+            public readonly bool useTeam = false;
 
             [JsonProperty(PropertyName = "Use clans")]
-            public bool useClans = false;
+            public readonly bool useClans = false;
 
             [JsonProperty(PropertyName = "Use friends")]
-            public bool useFriends = false;
+            public readonly bool useFriends = false;
 
             [JsonProperty(PropertyName = "Prevent other players from turning the quarry on or off")]
-            public bool preventOther = false;
+            public readonly bool preventOther = false;
 
             [JsonProperty(PropertyName = "Automatically disable the delay of quarry (seconds)")]
-            public float offlineTime = 120f;
+            public readonly float offlineTime = 120f;
 
             [JsonProperty(PropertyName = "Quarry automatically starts after players are online")]
-            public bool autoStart = true;
+            public readonly bool autoStart = true;
         }
 
         protected override void LoadConfig()
@@ -228,7 +281,10 @@ namespace Oxide.Plugins
             configData = new ConfigData();
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData);
+        }
 
         #endregion ConfigurationFile
     }
