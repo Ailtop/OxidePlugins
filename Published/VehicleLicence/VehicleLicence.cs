@@ -19,7 +19,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.35")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.36")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -2083,7 +2083,7 @@ namespace Oxide.Plugins
         }
 
         #endregion Command Helpers
- 
+
         #endregion Commands
 
         #region RustTranslationAPI
@@ -3089,9 +3089,9 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            protected virtual ItemContainer GetInventory(BaseEntity entity)
+            protected virtual IEnumerable<ItemContainer> GetInventories(BaseEntity entity)
             {
-                return null;
+                yield break;
             }
 
             #region Spawn
@@ -3176,7 +3176,7 @@ namespace Oxide.Plugins
                 entity.OwnerID = player.userID;
             }
 
-            public virtual void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool giveFuel = true)
+            public virtual void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool justCreated = true)
             {
                 if (MaxHealth > 0 && Math.Abs(MaxHealth - entity.MaxHealth()) > 0f)
                 {
@@ -3263,10 +3263,13 @@ namespace Oxide.Plugins
 
             protected virtual DroppedItemContainer DropVehicleInventory(BasePlayer player, Vehicle vehicle)
             {
-                var inventory = GetInventory(vehicle.Entity);
-                if (inventory != null)
+                var inventories = GetInventories(vehicle.Entity);
+                foreach (var inventory in inventories)
                 {
-                    return inventory.Drop(PREFAB_ITEM_DROP, vehicle.Entity.GetDropPosition(), vehicle.Entity.transform.rotation);
+                    if (inventory != null)
+                    {
+                        return inventory.Drop(PREFAB_ITEM_DROP, vehicle.Entity.GetDropPosition(), vehicle.Entity.transform.rotation);
+                    }
                 }
                 return null;
             }
@@ -3382,8 +3385,8 @@ namespace Oxide.Plugins
                 }
                 if (CanRefundInventory(isCrash, isUnload))
                 {
-                    var inventory = GetInventory(vehicle.Entity);
-                    if (inventory != null)
+                    var inventories = GetInventories(vehicle.Entity);
+                    foreach (var inventory in inventories)
                     {
                         items.AddRange(inventory.itemList);
                     }
@@ -3615,13 +3618,13 @@ namespace Oxide.Plugins
             public bool RefundFuelOnKill { get; set; } = true;
             public bool RefundFuelOnCrash { get; set; } = true;
 
-            public override void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool giveFuel = true)
+            public override void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool justCreated = true)
             {
-                if (giveFuel)
+                if (justCreated)
                 {
                     TryGiveFuel(entity, this);
                 }
-                base.SetupVehicle(entity, vehicle, player, giveFuel);
+                base.SetupVehicle(entity, vehicle, player, justCreated);
             }
 
             protected override bool CanRefundFuel(bool isCrash, bool isUnload)
@@ -3656,13 +3659,13 @@ namespace Oxide.Plugins
             public bool RefundInventoryOnCrash { get; set; } = true;
             public bool DropInventoryOnRecall { get; set; }
 
-            public override void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool giveFuel = true)
+            public override void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool justCreated = true)
             {
-                if (giveFuel)
+                if (justCreated)
                 {
                     TryGiveFuel(entity, this);
                 }
-                base.SetupVehicle(entity, vehicle, player, giveFuel);
+                base.SetupVehicle(entity, vehicle, player, justCreated);
             }
 
             protected override bool CanDropInventory()
@@ -3724,6 +3727,12 @@ namespace Oxide.Plugins
             bool RefundModuleOnCrash { get; set; }
         }
 
+        public interface IAmmoVehicle
+        {
+            [JsonProperty(PropertyName = "Amount Of Ammo To Spawn", Order = 20)]
+            int SpawnAmmoAmount { get; set; }
+        }
+
         public interface ITrainVehicle
         {
         }
@@ -3782,9 +3791,9 @@ namespace Oxide.Plugins
                 return (entity as MotorRowboat)?.GetFuelSystem();
             }
 
-            protected override ItemContainer GetInventory(BaseEntity entity)
+            protected override IEnumerable<ItemContainer> GetInventories(BaseEntity entity)
             {
-                return (entity as MotorRowboat)?.storageUnitInstance.Get(true)?.inventory;
+                yield return (entity as MotorRowboat)?.storageUnitInstance.Get(true)?.inventory;
             }
         }
 
@@ -3804,9 +3813,9 @@ namespace Oxide.Plugins
                 return (entity as HotAirBalloon)?.fuelSystem;
             }
 
-            protected override ItemContainer GetInventory(BaseEntity entity)
+            protected override IEnumerable<ItemContainer> GetInventories(BaseEntity entity)
             {
-                return (entity as HotAirBalloon)?.storageUnitInstance.Get(true)?.inventory;
+                yield return (entity as HotAirBalloon)?.storageUnitInstance.Get(true)?.inventory;
             }
         }
 
@@ -3826,9 +3835,9 @@ namespace Oxide.Plugins
 
         public class RidableHorseSettings : InventoryVehicleSettings
         {
-            protected override ItemContainer GetInventory(BaseEntity entity)
+            protected override IEnumerable<ItemContainer> GetInventories(BaseEntity entity)
             {
-                return (entity as RidableHorse)?.inventory;
+                yield return (entity as RidableHorse)?.inventory;
             }
 
             public override void PostRecallVehicle(BasePlayer player, Vehicle vehicle, Vector3 position, Quaternion rotation)
@@ -3896,8 +3905,11 @@ namespace Oxide.Plugins
             }
         }
 
-        public class SubmarineSoloSettings : InvFuelVehicleSettings
+        public class SubmarineSoloSettings : InvFuelVehicleSettings, IAmmoVehicle
         {
+            private const int AMMO_ITEM_ID = -1671551935;
+
+            public int SpawnAmmoAmount { get; set; }
             public override bool IsWaterVehicle => true;
 
             protected override EntityFuelSystem GetFuelSystem(BaseEntity entity)
@@ -3905,9 +3917,36 @@ namespace Oxide.Plugins
                 return (entity as BaseSubmarine)?.GetFuelSystem();
             }
 
-            protected override ItemContainer GetInventory(BaseEntity entity)
+            protected override IEnumerable<ItemContainer> GetInventories(BaseEntity entity)
             {
-                return (entity as BaseSubmarine)?.GetTorpedoContainer()?.inventory;
+                yield return (entity as BaseSubmarine)?.GetItemContainer()?.inventory;
+                yield return (entity as BaseSubmarine)?.GetTorpedoContainer()?.inventory;
+            }
+
+            public override void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool justCreated = true)
+            {
+                if (justCreated)
+                {
+                    TryGiveAmmo(entity);
+                }
+                base.SetupVehicle(entity, vehicle, player, justCreated);
+            }
+
+            private void TryGiveAmmo(BaseEntity entity)
+            {
+                if (entity == null || SpawnAmmoAmount <= 0)
+                {
+                    return;
+                }
+                var ammoContainer = (entity as BaseSubmarine)?.GetTorpedoContainer();
+                if (ammoContainer != null && ammoContainer.inventory != null)
+                {
+                    var ammoItem = ItemManager.CreateByItemID(AMMO_ITEM_ID, SpawnAmmoAmount);
+                    if (!ammoItem.MoveToContainer(ammoContainer.inventory))
+                    {
+                        ammoItem.Remove();
+                    }
+                }
             }
         }
 
@@ -3922,9 +3961,9 @@ namespace Oxide.Plugins
                 return (entity as Snowmobile)?.GetFuelSystem();
             }
 
-            protected override ItemContainer GetInventory(BaseEntity entity)
+            protected override IEnumerable<ItemContainer> GetInventories(BaseEntity entity)
             {
-                return (entity as Snowmobile)?.GetItemContainer()?.inventory;
+                yield return (entity as Snowmobile)?.GetItemContainer()?.inventory;
             }
         }
 
@@ -4067,7 +4106,7 @@ namespace Oxide.Plugins
 
             #region Setup
 
-            public override void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool giveFuel = true)
+            public override void SetupVehicle(BaseEntity entity, Vehicle vehicle, BasePlayer player, bool justCreated = true)
             {
                 var modularCar = entity as ModularCar;
                 if (modularCar != null)
@@ -4084,7 +4123,7 @@ namespace Oxide.Plugins
                         });
                     }
                 }
-                base.SetupVehicle(entity, vehicle, player, giveFuel);
+                base.SetupVehicle(entity, vehicle, player, justCreated);
             }
 
             #endregion Setup
