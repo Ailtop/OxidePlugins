@@ -8,10 +8,11 @@ using Oxide.Core.Libraries.Covalence;
 using Oxide.Game.Rust;
 using Rust;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode", "Wulf/lukespragg/Arainrr", "4.2.11", ResourceId = 673)]
+    [Info("Godmode", "Wulf/lukespragg/Arainrr", "4.2.12", ResourceId = 673)]
     [Description("Allows players with permission to be invulnerable and god-like")]
     internal class Godmode : RustPlugin
     {
@@ -48,8 +49,14 @@ namespace Oxide.Plugins
 
             AddCovalenceCommand(configData.godCommand, nameof(GodCommand));
             AddCovalenceCommand(configData.godsCommand, nameof(GodsCommand));
-            if (configData.informOnAttack) _informHistory = new Dictionary<ulong, float>();
-            if (!configData.disconnectDisable) Unsubscribe(nameof(OnPlayerDisconnected));
+            if (configData.informOnAttack)
+            {
+                _informHistory = new Dictionary<ulong, float>();
+            }
+            if (!configData.disconnectDisable)
+            {
+                Unsubscribe(nameof(OnPlayerDisconnected));
+            }
         }
 
         private void OnServerInitialized()
@@ -70,13 +77,17 @@ namespace Oxide.Plugins
             CheckHooks();
         }
 
-        private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), SaveData);
+        private void OnServerSave()
+        {
+            timer.Once(Random.Range(0f, 60f), SaveData);
+        }
 
         private void OnPlayerConnected(BasePlayer player)
         {
             if (IsGod(player))
             {
                 PlayerRename(player, true);
+                ModifyMetabolism(player, true);
             }
             else if (permission.UserHasPermission(player.UserIDString, PermAutoEnable))
             {
@@ -94,18 +105,24 @@ namespace Oxide.Plugins
 
         private void Unload()
         {
-            foreach (var god in storedData.godPlayers)
+            foreach (var god in storedData.godPlayers.ToArray())
             {
                 DisableGodmode(god, true);
             }
             SaveData();
         }
 
-        private object CanBeWounded(BasePlayer player) => IsGod(player) ? _false : null;
+        private object CanBeWounded(BasePlayer player)
+        {
+            return IsGod(player) ? _false : null;
+        }
 
         private object CanLootPlayer(BasePlayer target, BasePlayer looter)
         {
-            if (target == null || looter == null || target == looter) return null;
+            if (target == null || looter == null || target == looter)
+            {
+                return null;
+            }
             if (IsGod(target) && permission.UserHasPermission(target.UserIDString, PermLootProtection) && !permission.UserHasPermission(looter.UserIDString, PermLootPlayers))
             {
                 Print(looter, Lang("NoLooting", looter.UserIDString));
@@ -116,7 +133,10 @@ namespace Oxide.Plugins
 
         private object OnEntityTakeDamage(BasePlayer player, HitInfo info)
         {
-            if (player == null || !player.userID.IsSteamId()) return null;
+            if (player == null || !player.userID.IsSteamId())
+            {
+                return null;
+            }
             var attacker = info?.InitiatorPlayer;
             if (IsGod(player) && permission.UserHasPermission(player.UserIDString, PermInvulnerable))
             {
@@ -135,9 +155,15 @@ namespace Oxide.Plugins
 
         private object OnRunPlayerMetabolism(PlayerMetabolism metabolism, BasePlayer player, float delta)
         {
-            if (!IsGod(player)) return null;
-            metabolism.hydration.value = 250;
-            if (!permission.UserHasPermission(player.UserIDString, PermUntiring)) return null;
+            if (!IsGod(player))
+            {
+                return null;
+            }
+            metabolism.hydration.value = _storedMetabolism.GetMaxHydration();
+            if (!permission.UserHasPermission(player.UserIDString, PermUntiring))
+            {
+                return null;
+            }
             var currentCraftLevel = player.currentCraftLevel;
             player.SetPlayerFlag(BasePlayer.PlayerFlags.Workbench1, currentCraftLevel == 1f);
             player.SetPlayerFlag(BasePlayer.PlayerFlags.Workbench2, currentCraftLevel == 2f);
@@ -221,45 +247,69 @@ namespace Oxide.Plugins
 
         private bool? ToggleGodmode(BasePlayer target, BasePlayer player)
         {
-            bool isGod = IsGod(target);
-            if (Interface.CallHook("OnGodmodeToggle", target.UserIDString, !isGod) != null) return null;
+            var isGod = IsGod(target);
+            if (Interface.CallHook("OnGodmodeToggle", target.UserIDString, !isGod) != null)
+            {
+                return null;
+            }
             if (isGod)
             {
                 DisableGodmode(target.UserIDString);
                 if (player != null)
                 {
-                    if (target == player) Print(player, Lang("GodmodeDisabled", player.UserIDString));
+                    if (target == player)
+                    {
+                        Print(player, Lang("GodmodeDisabled", player.UserIDString));
+                    }
                     else
                     {
                         Print(player, Lang("GodmodeDisabledFor", player.UserIDString, target.displayName));
                         Print(target, Lang("GodmodeDisabledBy", target.UserIDString, player.displayName));
                     }
                 }
-                else Print(target, Lang("GodmodeDisabledBy", target.UserIDString, "server console"));
+                else
+                {
+                    Print(target, Lang("GodmodeDisabledBy", target.UserIDString, "server console"));
+                }
                 return false;
             }
 
             EnableGodmode(target.UserIDString);
             if (player != null)
             {
-                if (target == player) Print(player, Lang("GodmodeEnabled", player.UserIDString));
+                if (target == player)
+                {
+                    Print(player, Lang("GodmodeEnabled", player.UserIDString));
+                }
                 else
                 {
                     Print(player, Lang("GodmodeEnabledFor", player.UserIDString, target.displayName));
                     Print(target, Lang("GodmodeEnabledBy", target.UserIDString, player.displayName));
                 }
             }
-            else Print(target, Lang("GodmodeEnabledBy", target.UserIDString, "server console"));
-            string targetId = target.UserIDString;
-            if (configData.timeLimit > 0) timer.Once(configData.timeLimit, () => DisableGodmode(targetId));
+            else
+            {
+                Print(target, Lang("GodmodeEnabledBy", target.UserIDString, "server console"));
+            }
+            var targetId = target.UserIDString;
+            if (configData.timeLimit > 0)
+            {
+                timer.Once(configData.timeLimit, () => DisableGodmode(targetId));
+            }
             return true;
         }
 
         private bool EnableGodmode(string playerId, bool isInit = false)
         {
-            if (string.IsNullOrEmpty(playerId) || IsGod(playerId)) return false;
+            if (string.IsNullOrEmpty(playerId) || !isInit && IsGod(playerId))
+            {
+                return false;
+            }
             var player = RustCore.FindPlayerByIdString(playerId);
-            if (player == null) return false;
+            if (player == null)
+            {
+                return false;
+            }
             PlayerRename(player, true);
             ModifyMetabolism(player, true);
             if (!isInit)
@@ -273,9 +323,15 @@ namespace Oxide.Plugins
 
         private bool DisableGodmode(string playerId, bool isUnload = false)
         {
-            if (string.IsNullOrEmpty(playerId) || !IsGod(playerId)) return false;
+            if (string.IsNullOrEmpty(playerId) || !IsGod(playerId))
+            {
+                return false;
+            }
             var player = RustCore.FindPlayerByIdString(playerId);
-            if (player == null) return false;
+            if (player == null)
+            {
+                return false;
+            }
             PlayerRename(player, false);
             ModifyMetabolism(player, false);
             if (!isUnload)
@@ -289,18 +345,36 @@ namespace Oxide.Plugins
 
         private void PlayerRename(BasePlayer player, bool isGod)
         {
-            if (player == null || !configData.showNamePrefix || string.IsNullOrEmpty(configData.namePrefix)) return;
+            if (player == null || !configData.showNamePrefix || string.IsNullOrEmpty(configData.namePrefix))
+            {
+                return;
+            }
             var originalName = GetPayerOriginalName(player.userID);
-            if (isGod) Rename(player, configData.namePrefix + originalName);
-            else Rename(player, originalName);
+            if (isGod)
+            {
+                Rename(player, configData.namePrefix + originalName);
+            }
+            else
+            {
+                Rename(player, originalName);
+            }
         }
 
         private void Rename(BasePlayer player, string newName)
         {
-            if (player == null || string.IsNullOrEmpty(newName.Trim())) return;
+            if (player == null || string.IsNullOrEmpty(newName.Trim()))
+            {
+                return;
+            }
             player._name = player.displayName = newName;
-            if (player.IPlayer != null) player.IPlayer.Name = newName;
-            if (player.net?.connection != null) player.net.connection.username = newName;
+            if (player.IPlayer != null)
+            {
+                player.IPlayer.Name = newName;
+            }
+            if (player.net?.connection != null)
+            {
+                player.net.connection.username = newName;
+            }
             permission.UpdateNickname(player.UserIDString, newName);
             Player.Teleport(player, player.transform.position);
             player.SendNetworkUpdateImmediate();
@@ -309,7 +383,10 @@ namespace Oxide.Plugins
 
         private void ModifyMetabolism(BasePlayer player, bool isGod)
         {
-            if (player == null || player.metabolism == null) return;
+            if (player == null || player.metabolism == null)
+            {
+                return;
+            }
             if (isGod)
             {
                 player.health = player.MaxHealth();
@@ -317,6 +394,7 @@ namespace Oxide.Plugins
             }
             else
             {
+                player.health = player.MaxHealth();
                 _storedMetabolism.Restore(player.metabolism);
             }
         }
@@ -329,19 +407,19 @@ namespace Oxide.Plugins
         {
             private struct Attribute
             {
-                private readonly float _min;
-                private readonly float _max;
+                public float Min { get; private set; }
+                public float Max { get; private set; }
 
                 public Attribute(MetabolismAttribute attribute)
                 {
-                    _min = attribute.min;
-                    _max = attribute.max;
+                    Min = attribute.min;
+                    Max = attribute.max;
                 }
 
                 public void Reset(MetabolismAttribute attribute)
                 {
-                    attribute.min = _min;
-                    attribute.max = _max;
+                    attribute.min = Min;
+                    attribute.max = Max;
                 }
             }
 
@@ -368,8 +446,13 @@ namespace Oxide.Plugins
             private Attribute dirtyness;
             private Attribute oxygen;
             private Attribute bleeding;
-            // private Attribute comfort; private Attribute pending_health;
 
+            // private Attribute comfort;
+            // private Attribute pending_health;
+            public float GetMaxHydration()
+            {
+                return hydration.Max;
+            }
             public void Store(PlayerMetabolism playerMetabolism)
             {
                 calories = new Attribute(playerMetabolism.calories);
@@ -383,35 +466,35 @@ namespace Oxide.Plugins
                 dirtyness = new Attribute(playerMetabolism.dirtyness);
                 oxygen = new Attribute(playerMetabolism.oxygen);
                 bleeding = new Attribute(playerMetabolism.bleeding);
-                // comfort = new Attribute(playerMetabolism.comfort); pending_health = new Attribute(playerMetabolism.pending_health);
+                // comfort = new Attribute(playerMetabolism.comfort);
+                // pending_health = new Attribute(playerMetabolism.pending_health);
             }
 
             public void Unlimited(PlayerMetabolism playerMetabolism)
             {
-                playerMetabolism.calories.min = 500;
-                playerMetabolism.calories.value = 500;
-                // playerMetabolism.hydration.min = 250;
-                playerMetabolism.hydration.value = 250;
-                playerMetabolism.heartrate.min = 0.5f;
-                playerMetabolism.heartrate.max = 0.5f;
-                playerMetabolism.heartrate.value = 0.5f;
-                playerMetabolism.temperature.min = 32;
-                playerMetabolism.temperature.max = 32;
-                playerMetabolism.temperature.value = 32;
-                playerMetabolism.poison.max = 0;
-                playerMetabolism.poison.value = 0;
-                playerMetabolism.radiation_level.max = 0;
-                playerMetabolism.radiation_level.value = 0;
-                playerMetabolism.radiation_poison.max = 0;
-                playerMetabolism.radiation_poison.value = 0;
-                playerMetabolism.wetness.max = 0;
-                playerMetabolism.wetness.value = 0;
-                playerMetabolism.dirtyness.max = 0;
-                playerMetabolism.dirtyness.value = 0;
-                playerMetabolism.oxygen.min = 1;
-                playerMetabolism.oxygen.value = 1;
-                playerMetabolism.bleeding.max = 0;
-                playerMetabolism.bleeding.value = 0;
+                playerMetabolism.calories.min = calories.Max;
+                playerMetabolism.calories.value = calories.Max;
+                // playerMetabolism.hydration.min = hydration.Max; // It causes the character to walk slowly
+                playerMetabolism.hydration.value = hydration.Max;
+                playerMetabolism.heartrate.min = heartrate.Max;
+                playerMetabolism.heartrate.value = heartrate.Max;
+                playerMetabolism.temperature.min = 37;
+                playerMetabolism.temperature.max = 37;
+                playerMetabolism.temperature.value = 37;
+                playerMetabolism.poison.max = poison.Min;
+                playerMetabolism.poison.value = poison.Min;
+                playerMetabolism.radiation_level.max = radiation_level.Min;
+                playerMetabolism.radiation_level.value = radiation_level.Min;
+                playerMetabolism.radiation_poison.max = radiation_poison.Min;
+                playerMetabolism.radiation_poison.value = radiation_poison.Min;
+                playerMetabolism.wetness.max = wetness.Min;
+                playerMetabolism.wetness.value = wetness.Min;
+                playerMetabolism.dirtyness.max = dirtyness.Min;
+                playerMetabolism.dirtyness.value = dirtyness.Min;
+                playerMetabolism.oxygen.min = oxygen.Max;
+                playerMetabolism.oxygen.value = oxygen.Max;
+                playerMetabolism.bleeding.max = bleeding.Min;
+                playerMetabolism.bleeding.value = bleeding.Min;
 
                 playerMetabolism.SendChangesToClient();
             }
@@ -429,9 +512,14 @@ namespace Oxide.Plugins
                 dirtyness.Reset(playerMetabolism.dirtyness);
                 oxygen.Reset(playerMetabolism.oxygen);
                 bleeding.Reset(playerMetabolism.bleeding);
-                // comfort.Reset(playerMetabolism.comfort); pending_health.Reset(playerMetabolism.pending_health);
+                // comfort.Reset(playerMetabolism.comfort);
+                // pending_health.Reset(playerMetabolism.pending_health);
 
                 playerMetabolism.Reset();
+
+                playerMetabolism.calories.value = calories.Max;
+                playerMetabolism.hydration.value = hydration.Max;
+
                 playerMetabolism.SendChangesToClient();
             }
         }
@@ -458,21 +546,46 @@ namespace Oxide.Plugins
 
         #region API
 
-        private bool EnableGodmode(IPlayer iPlayer) => EnableGodmode(iPlayer.Id);
+        private bool EnableGodmode(IPlayer iPlayer)
+        {
+            return EnableGodmode(iPlayer.Id);
+        }
 
-        private bool EnableGodmode(ulong playerId) => EnableGodmode(playerId.ToString());
+        private bool EnableGodmode(ulong playerId)
+        {
+            return EnableGodmode(playerId.ToString());
+        }
 
-        private bool DisableGodmode(IPlayer iPlayer) => DisableGodmode(iPlayer.Id);
+        private bool DisableGodmode(IPlayer iPlayer)
+        {
+            return DisableGodmode(iPlayer.Id);
+        }
 
-        private bool DisableGodmode(ulong playerId) => DisableGodmode(playerId.ToString());
+        private bool DisableGodmode(ulong playerId)
+        {
+            return DisableGodmode(playerId.ToString());
+        }
 
-        private bool IsGod(ulong playerId) => IsGod(playerId.ToString());
+        private bool IsGod(ulong playerId)
+        {
+            return IsGod(playerId.ToString());
+        }
 
-        private bool IsGod(BasePlayer player) => player != null && IsGod(player.UserIDString);
+        private bool IsGod(BasePlayer player)
+        {
+            return player != null && IsGod(player.UserIDString);
+        }
 
-        private bool IsGod(string playerId) => storedData.godPlayers.Contains(playerId);
+        private bool IsGod(string playerId)
+        {
+            return storedData.godPlayers.Contains(playerId);
+        }
 
-        private string[] AllGods(string playerId) => storedData.godPlayers.ToArray();
+        private string[] AllGods(string playerId) => AllGods();
+        private string[] AllGods()
+        {
+            return storedData.godPlayers.ToArray();
+        }
 
         #endregion API
 
@@ -499,8 +612,14 @@ namespace Oxide.Plugins
             var obj = ToggleGodmode(target, iPlayer.Object as BasePlayer);
             if (obj.HasValue && iPlayer.Id == "server_console" && args.Length > 0)
             {
-                if (obj.Value) Print(iPlayer, $"'{target?.displayName}' have enabled godmode");
-                else Print(iPlayer, $"'{target?.displayName}' have disabled godmode");
+                if (obj.Value)
+                {
+                    Print(iPlayer, $"'{target?.displayName}' have enabled godmode");
+                }
+                else
+                {
+                    Print(iPlayer, $"'{target?.displayName}' have disabled godmode");
+                }
             }
         }
 
@@ -516,7 +635,7 @@ namespace Oxide.Plugins
                 Print(iPlayer, Lang("NoGods", iPlayer.Id));
                 return;
             }
-            StringBuilder stringBuilder = new StringBuilder();
+            var stringBuilder = new StringBuilder();
             stringBuilder.AppendLine();
             foreach (var god in storedData.godPlayers)
             {
@@ -575,7 +694,9 @@ namespace Oxide.Plugins
             {
                 configData = Config.ReadObject<ConfigData>();
                 if (configData == null)
+                {
                     LoadDefaultConfig();
+                }
             }
             catch (Exception ex)
             {
@@ -591,7 +712,10 @@ namespace Oxide.Plugins
             configData = new ConfigData();
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData);
+        }
 
         #endregion ConfigurationFile
 
@@ -620,7 +744,10 @@ namespace Oxide.Plugins
             }
         }
 
-        private void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        private void SaveData()
+        {
+            Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        }
 
         private void ClearData()
         {
@@ -635,9 +762,9 @@ namespace Oxide.Plugins
         private void Print(IPlayer iPlayer, string message)
         {
             iPlayer?.Reply(message,
-                iPlayer.Id == "server_console"
-                    ? $"{configData.prefix}"
-                    : $"<color={configData.prefixColor}>{configData.prefix}</color>");
+                           iPlayer.Id == "server_console"
+                                   ? $"{configData.prefix}"
+                                   : $"<color={configData.prefixColor}>{configData.prefix}</color>");
         }
 
         private void Print(BasePlayer player, string message)
@@ -674,7 +801,7 @@ namespace Oxide.Plugins
                 ["NoGods"] = "No players currently have godmode enabled",
                 ["NoLooting"] = "You are not allowed to loot a player with godmode",
                 ["NotAllowed"] = "You are not allowed to use the '{0}' command",
-                ["PlayerNotFound"] = "Player '{0}' was not found",
+                ["PlayerNotFound"] = "Player '{0}' was not found"
             }, this);
             lang.RegisterMessages(new Dictionary<string, string>
             {
@@ -690,7 +817,7 @@ namespace Oxide.Plugins
                 ["NoGods"] = "当前没有玩家启用上帝模式",
                 ["NoLooting"] = "您不能掠夺处于上帝模式的玩家",
                 ["NotAllowed"] = "您没有权限使用 '{0}' 命令",
-                ["PlayerNotFound"] = "玩家 '{0}' 未找到",
+                ["PlayerNotFound"] = "玩家 '{0}' 未找到"
             }, this, "zh-CN");
         }
 
