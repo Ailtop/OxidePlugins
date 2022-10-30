@@ -9,14 +9,14 @@ using Rust;
 
 namespace Oxide.Plugins
 {
-    [Info("Loot Bouncer", "Sorrow/Arainrr", "1.0.8")]
+    [Info("Loot Bouncer", "Sorrow/Arainrr", "1.0.9")]
     [Description("Empty the containers when players do not pick up all the items")]
     public class LootBouncer : RustPlugin
     {
         #region Fields
 
         [PluginReference]
-        private readonly Plugin Slap, Trade;
+        private Plugin Slap, Trade;
 
         private readonly Dictionary<uint, int> _lootEntities = new Dictionary<uint, int>();
         private readonly Dictionary<uint, HashSet<ulong>> _entityPlayers = new Dictionary<uint, HashSet<ulong>>();
@@ -89,7 +89,7 @@ namespace Oxide.Plugins
 
             // If looted again, the timer for emptying will stop
             Timer value;
-            if (_lootDestroyTimer.TryGetValue(entityID,out value))
+            if (_lootDestroyTimer.TryGetValue(entityID, out value))
             {
                 _lootEntities[entityID] = 666;
                 value?.Destroy();
@@ -238,7 +238,10 @@ namespace Oxide.Plugins
 
         #region Methods
 
-        private static bool IsBarrel(string shortPrefabName) => shortPrefabName.Contains("barrel") || shortPrefabName.Contains("roadsign");
+        private static bool IsBarrel(string shortPrefabName)
+        {
+            return shortPrefabName.Contains("barrel") || shortPrefabName.Contains("roadsign");
+        }
 
         private void DropItems(LootContainer lootContainer)
         {
@@ -268,9 +271,8 @@ namespace Oxide.Plugins
             {
                 return;
             }
-
             var junkPiles = Pool.GetList<JunkPile>();
-            Vis.Entities(lootContainer.transform.position, 10f, junkPiles, Layers.Mask.Default);
+            Vis.Entities(lootContainer.transform.position, 10f, junkPiles, Layers.Solid);
             var junkPile = junkPiles.FirstOrDefault(x => x.spawngroups.Contains(spawnGroup));
             var flag = junkPile == null || junkPile.net == null;
             Pool.FreeList(ref junkPiles);
@@ -290,7 +292,7 @@ namespace Oxide.Plugins
                     if (configData.dropNearbyLoot)
                     {
                         var lootContainers = Pool.GetList<LootContainer>();
-                        Vis.Entities(junkPile.transform.position, 10f, lootContainers, Layers.Mask.Default);
+                        Vis.Entities(junkPile.transform.position, 10f, lootContainers, Layers.Solid);
                         foreach (var loot in lootContainers)
                         {
                             var lootSpawnGroup = loot.GetComponent<SpawnPointInstance>()?.parentSpawnPointUser as SpawnGroup;
@@ -332,25 +334,25 @@ namespace Oxide.Plugins
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Time before the loot containers are empties (seconds)")]
-            public readonly float timeBeforeLootEmpty = 30f;
+            public float timeBeforeLootEmpty = 30f;
 
             [JsonProperty(PropertyName = "Empty the entire junkpile when automatically empty loot")]
-            public readonly bool emptyJunkpile = false;
+            public bool emptyJunkpile = false;
 
             [JsonProperty(PropertyName = "Empty the nearby loot when emptying junkpile")]
-            public readonly bool dropNearbyLoot = false;
+            public bool dropNearbyLoot = false;
 
             [JsonProperty(PropertyName = "Time before the junkpile are empties (seconds)")]
-            public readonly float timeBeforeJunkpileEmpty = 150f;
+            public float timeBeforeJunkpileEmpty = 150f;
 
             [JsonProperty(PropertyName = "Slaps players who don't empty containers")]
-            public readonly bool slapPlayer = false;
+            public bool slapPlayer = false;
 
             [JsonProperty(PropertyName = "Remove instead bouncing")]
-            public readonly bool removeItems = false;
+            public bool removeItems = false;
 
             [JsonProperty(PropertyName = "Chat Settings")]
-            public readonly ChatSettings chat = new ChatSettings();
+            public ChatSettings chat = new ChatSettings();
 
             public class ChatSettings
             {
@@ -362,7 +364,7 @@ namespace Oxide.Plugins
             }
 
             [JsonProperty(PropertyName = "Loot container settings")]
-            public readonly Dictionary<string, bool> lootContainers = new Dictionary<string, bool>();
+            public Dictionary<string, bool> lootContainers = new Dictionary<string, bool>();
 
             [JsonProperty(PropertyName = "Version")]
             public VersionNumber version;
@@ -398,7 +400,10 @@ namespace Oxide.Plugins
             configData.version = Version;
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData);
+        }
 
         private void UpdateConfigValues()
         {
@@ -438,7 +443,10 @@ namespace Oxide.Plugins
 
         #region LanguageFile
 
-        private void Print(BasePlayer player, string message) => Player.Message(player, message, configData.chat.prefix, configData.chat.steamIDIcon);
+        private void Print(BasePlayer player, string message)
+        {
+            Player.Message(player, message, configData.chat.prefix, configData.chat.steamIDIcon);
+        }
 
         private string Lang(string key, string id = null, params object[] args)
         {
