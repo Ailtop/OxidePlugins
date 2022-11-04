@@ -19,7 +19,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.36")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.37")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -45,7 +45,7 @@ namespace Oxide.Plugins
         private const string PREFAB_TRANSPORTCOPTER = "assets/content/vehicles/scrap heli carrier/scraptransporthelicopter.prefab";
         private const string PREFAB_CHINOOK = "assets/prefabs/npc/ch47/ch47.entity.prefab";
         private const string PREFAB_RIDABLEHORSE = "assets/rust.ai/nextai/testridablehorse.prefab";
-        private const string PREFAB_WORKCART = "assets/content/vehicles/workcart/workcart.entity.prefab";
+        private const string PREFAB_WORKCART = "assets/content/vehicles/trains/workcart/workcart.entity.prefab";
         private const string PREFAB_SEDANRAIL = "assets/content/vehicles/sedan_a/sedanrail.entity.prefab";
         private const string PREFAB_MAGNET_CRANE = "assets/content/vehicles/crane_magnet/magnetcrane.entity.prefab";
         private const string PREFAB_SUBMARINE_DUO = "assets/content/vehicles/submarine/submarineduo.entity.prefab";
@@ -59,17 +59,18 @@ namespace Oxide.Plugins
         private const string PREFAB_SNOWMOBILE_TOMAHA = "assets/content/vehicles/snowmobiles/tomahasnowmobile.prefab";
 
         // Train Engine
-        private const string PREFAB_TRAINENGINE = "assets/content/vehicles/workcart/workcart_aboveground.entity.prefab";
-        private const string PREFAB_TRAINENGINE_COVERED = "assets/content/vehicles/workcart/workcart_aboveground2.entity.prefab";
-        private const string PREFAB_TRAINENGINE_LOCOMOTIVE = "assets/content/vehicles/locomotive/locomotive.entity.prefab";
+        private const string PREFAB_TRAINENGINE = "assets/content/vehicles/trains/workcart/workcart_aboveground.entity.prefab";
+        private const string PREFAB_TRAINENGINE_COVERED = "assets/content/vehicles/trains/workcart/workcart_aboveground2.entity.prefab";
+        private const string PREFAB_TRAINENGINE_LOCOMOTIVE = "assets/content/vehicles/trains/locomotive/locomotive.entity.prefab";
 
         // Train Car
-        private const string PREFAB_TRAINWAGON_A = "assets/content/vehicles/train/trainwagona.entity.prefab";
-        private const string PREFAB_TRAINWAGON_B = "assets/content/vehicles/train/trainwagonb.entity.prefab";
-        private const string PREFAB_TRAINWAGON_C = "assets/content/vehicles/train/trainwagonc.entity.prefab";
-        private const string PREFAB_TRAINWAGON_UNLOADABLE = "assets/content/vehicles/train/trainwagonunloadable.entity.prefab";
-        private const string PREFAB_TRAINWAGON_UNLOADABLE_FUEL = "assets/content/vehicles/train/trainwagonunloadablefuel.entity.prefab";
-        private const string PREFAB_TRAINWAGON_UNLOADABLE_LOOT = "assets/content/vehicles/train/trainwagonunloadableloot.entity.prefab";
+        private const string PREFAB_TRAINWAGON_A = "assets/content/vehicles/trains/wagons/trainwagona.entity.prefab";
+        private const string PREFAB_TRAINWAGON_B = "assets/content/vehicles/trains/wagons/trainwagonb.entity.prefab";
+        private const string PREFAB_TRAINWAGON_C = "assets/content/vehicles/trains/wagons/trainwagonc.entity.prefab";
+        private const string PREFAB_TRAINWAGON_UNLOADABLE = "assets/content/vehicles/trains/wagons/trainwagonunloadable.entity.prefab";
+        private const string PREFAB_TRAINWAGON_UNLOADABLE_FUEL = "assets/content/vehicles/trains/wagons/trainwagonunloadablefuel.entity.prefab";
+        private const string PREFAB_TRAINWAGON_UNLOADABLE_LOOT = "assets/content/vehicles/trains/wagons/trainwagonunloadableloot.entity.prefab";
+        private const string PREFAB_CABOOSE = "assets/content/vehicles/trains/caboose/traincaboose.entity.prefab";
 
         private const int LAYER_GROUND = Layers.Solid | Layers.Mask.Water;
 
@@ -119,7 +120,8 @@ namespace Oxide.Plugins
             WagonC,
             Unloadable,
             UnloadableLoot,
-            UnloadableFuel
+            UnloadableFuel,
+            Caboose,
         }
 
         #endregion Fields
@@ -4360,6 +4362,8 @@ namespace Oxide.Plugins
                         return PREFAB_TRAINWAGON_UNLOADABLE_LOOT;
                     case TrainComponentType.UnloadableFuel:
                         return PREFAB_TRAINWAGON_UNLOADABLE_FUEL;
+                    case TrainComponentType.Caboose:
+                        return PREFAB_CABOOSE;
                     default:
                         return null;
                 }
