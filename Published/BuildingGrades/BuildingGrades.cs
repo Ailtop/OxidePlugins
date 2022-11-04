@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Building Grades", "Default/Arainrr", "1.0.6")]
+    [Info("Building Grades", "Default/Arainrr", "1.0.7")]
     [Description("Allows players to easily upgrade or downgrade an entire building")]
     public class BuildingGrades : RustPlugin
     {
@@ -20,19 +20,19 @@ namespace Oxide.Plugins
         [PluginReference]
         private readonly Plugin Friends, Clans, NoEscape, RustTranslationAPI;
 
-        private const string PermissionUp = "buildinggrades.up.";
-        private const string PermissionDown = "buildinggrades.down.";
+        private const string PermissionUpPrefix = "buildinggrades.up.";
+        private const string PermissionDownPrefx = "buildinggrades.down.";
 
         private const string PermissionUse = "buildinggrades.use";
-        private const string PermissionUpAll = PermissionUp + "all";
-        private const string PermissionDownAll = PermissionDown + "all";
+        private const string PermissionUpAll = PermissionUpPrefix + "all";
+        private const string PermissionDownAll = PermissionDownPrefx + "all";
         private const string PermissionNoCost = "buildinggrades.nocost";
         private const string PermissionAdmin = "buildinggrades.admin";
 
         private static BuildingGrades _instance;
 
-        private HashSet<ulong> _blockedPlayers;
-        private readonly Dictionary<ulong, float> _cooldowns = new Dictionary<ulong, float>();
+        private BuildingGradeAssistant _assistant = new BuildingGradeAssistant();
+
         private readonly Dictionary<string, HashSet<uint>> _categories = new Dictionary<string, HashSet<uint>>(StringComparer.OrdinalIgnoreCase);
 
         private static readonly List<BuildingGrade.Enum> ValidGrades = new List<BuildingGrade.Enum>
@@ -47,7 +47,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             _instance = this;
-            foreach (var kvp in configData.Permissions)
+            foreach (var kvp in _configData.Permissions)
             {
                 if (!permission.PermissionExists(kvp.Key, this))
                 {
@@ -68,28 +68,24 @@ namespace Oxide.Plugins
             {
                 if (validGrade > BuildingGrade.Enum.Twigs)
                 {
-                    permission.RegisterPermission(PermissionUp + (int)validGrade, this);
+                    permission.RegisterPermission(PermissionUpPrefix + (int)validGrade, this);
                 }
 
                 if (validGrade < BuildingGrade.Enum.TopTier)
                 {
-                    permission.RegisterPermission(PermissionDown + (int)validGrade, this);
+                    permission.RegisterPermission(PermissionDownPrefx + (int)validGrade, this);
                 }
             }
-            cmd.AddChatCommand(configData.Chat.UpgradeCommand, this, nameof(CmdUpgrade));
-            cmd.AddChatCommand(configData.Chat.DowngradeCommand, this, nameof(CmdDowngrade));
-            cmd.AddChatCommand(configData.Chat.UpgradeAllCommand, this, nameof(CmdUpgradeAll));
-            cmd.AddChatCommand(configData.Chat.DowngradeAllCommand, this, nameof(CmdDowngradeAll));
+            cmd.AddChatCommand(_configData.Chat.UpgradeCommand, this, nameof(CmdUpgrade));
+            cmd.AddChatCommand(_configData.Chat.DowngradeCommand, this, nameof(CmdDowngrade));
+            cmd.AddChatCommand(_configData.Chat.UpgradeAllCommand, this, nameof(CmdUpgradeAll));
+            cmd.AddChatCommand(_configData.Chat.DowngradeAllCommand, this, nameof(CmdDowngradeAll));
 
-            if (configData.Global.UseCombatBlocker || configData.Global.UseRaidBlocker)
-            {
-                _blockedPlayers = new HashSet<ulong>();
-            }
-            if (!configData.Global.UseRaidBlocker)
+            if (!_configData.Global.UseRaidBlocker)
             {
                 Unsubscribe(nameof(OnRaidBlock));
             }
-            if (!configData.Global.UseCombatBlocker)
+            if (!_configData.Global.UseCombatBlocker)
             {
                 Unsubscribe(nameof(OnCombatBlock));
             }
@@ -97,7 +93,7 @@ namespace Oxide.Plugins
 
         private void OnServerInitialized()
         {
-            foreach (var entry in configData.Categories)
+            foreach (var entry in _configData.Categories)
             {
                 var values = new HashSet<uint>();
                 foreach (var prefab in entry.Value)
@@ -115,10 +111,7 @@ namespace Oxide.Plugins
 
         private void Unload()
         {
-            if (_changeGradeCoroutine != null)
-            {
-                ServerMgr.Instance.StopCoroutine(_changeGradeCoroutine);
-            }
+            _assistant.Unload();
             _instance = null;
         }
 
@@ -129,9 +122,9 @@ namespace Oxide.Plugins
 
         private void OnCombatBlock(BasePlayer player)
         {
-            if (_changeGradeCoroutine != null)
+            if (_assistant.IsRunning())
             {
-                _blockedPlayers?.Add(player.userID);
+                _assistant.BlockPlayer(player.userID);
             }
         }
 
@@ -170,12 +163,11 @@ namespace Oxide.Plugins
                 Print(player, Lang("NotAllowed", player.UserIDString));
                 return;
             }
-            if (_changeGradeCoroutine != null)
+            if (_assistant.IsRunning())
             {
                 Print(player, Lang("AlreadyProcess", player.UserIDString));
                 return;
             }
-
             if (IsPlayerBlocked(player))
             {
                 return;
@@ -187,8 +179,7 @@ namespace Oxide.Plugins
             {
                 if (!_categories.TryGetValue(args[0], out filter))
                 {
-                    if (!Enum.TryParse(args[0], true, out targetGrade) || !ValidGrades.Contains(targetGrade) ||
-                            isUpgrade ? targetGrade <= BuildingGrade.Enum.Twigs : targetGrade >= BuildingGrade.Enum.TopTier)
+                    if (!Enum.TryParse(args[0], true, out targetGrade) || !ValidGrades.Contains(targetGrade) || isUpgrade ? targetGrade <= BuildingGrade.Enum.Twigs : targetGrade >= BuildingGrade.Enum.TopTier)
                     {
                         Print(player, Lang("UnknownGrade", player.UserIDString));
                         return;
@@ -202,15 +193,14 @@ namespace Oxide.Plugins
 
                     if (args.Length > 1 && !_categories.TryGetValue(args[1], out filter))
                     {
-                        Print(player, Lang("UnknownCategory", player.UserIDString, string.Join(", ", configData.Categories.Keys)));
+                        Print(player, Lang("UnknownCategory", player.UserIDString, string.Join(", ", _configData.Categories.Keys)));
                         return;
                     }
                 }
             }
             else
             {
-                FindPlayerGrantedGrades(player, isUpgrade);
-                if (_tempGrantedGrades.Count <= 0)
+                if (!_assistant.FindPlayerGrantedGrades(player, isUpgrade))
                 {
                     Print(player, Lang("NotAllowed", player.UserIDString));
                     return;
@@ -218,17 +208,13 @@ namespace Oxide.Plugins
             }
 
             var permissionSettings = GetPermissionSettings(player);
-            if (permissionSettings.Cooldown > 0f && !(configData.Global.CooldownExclude && player.IsAdmin))
+            if (permissionSettings.Cooldown > 0f && !(_configData.Global.CooldownExclude && player.IsAdmin))
             {
-                float lastUse;
-                if (_cooldowns.TryGetValue(player.userID, out lastUse))
+                var timeLeft = _assistant.GetCooldownLeft(player.userID, permissionSettings.Cooldown);
+                if (timeLeft > 0f)
                 {
-                    var timeLeft = permissionSettings.Cooldown - (Time.realtimeSinceStartup - lastUse);
-                    if (timeLeft > 0f)
-                    {
-                        Print(player, Lang("OnCooldown", player.UserIDString, Mathf.CeilToInt(timeLeft)));
-                        return;
-                    }
+                    Print(player, Lang("OnCooldown", player.UserIDString, Mathf.CeilToInt(timeLeft)));
+                    return;
                 }
             }
 
@@ -245,15 +231,14 @@ namespace Oxide.Plugins
                 Print(player, Lang("BuildingBlocked", player.UserIDString));
                 return;
             }
-
-            _changeGradeCoroutine = ServerMgr.Instance.StartCoroutine(StartChangeBuildingGrade(targetBuildingBlock, player, targetGrade, filter, permissionSettings, isUpgrade, isAll, isAdmin));
+            _assistant.Run(targetBuildingBlock, player, targetGrade, filter, permissionSettings, isUpgrade, isAll, isAdmin);
         }
 
         private PermissionSettings GetPermissionSettings(BasePlayer player)
         {
             var priority = 0;
             PermissionSettings permissionSettings = null;
-            foreach (var entry in configData.Permissions)
+            foreach (var entry in _configData.Permissions)
             {
                 if (entry.Value.Priority >= priority && permission.UserHasPermission(player.UserIDString, entry.Key))
                 {
@@ -268,9 +253,9 @@ namespace Oxide.Plugins
         {
             return isUpgrade
                     ? permission.UserHasPermission(player.UserIDString, PermissionUpAll) ||
-                    permission.UserHasPermission(player.UserIDString, PermissionUp + (int)grade)
+                    permission.UserHasPermission(player.UserIDString, PermissionUpPrefix + (int)grade)
                     : permission.UserHasPermission(player.UserIDString, PermissionDownAll) ||
-                    permission.UserHasPermission(player.UserIDString, PermissionDown + (int)grade);
+                    permission.UserHasPermission(player.UserIDString, PermissionDownPrefx + (int)grade);
         }
 
         #region AreFriends
@@ -285,15 +270,15 @@ namespace Oxide.Plugins
             {
                 return true;
             }
-            if (configData.Global.UseTeams && SameTeam(playerId, friendId))
+            if (_configData.Global.UseTeams && SameTeam(playerId, friendId))
             {
                 return true;
             }
-            if (configData.Global.UseFriends && HasFriend(playerId, friendId))
+            if (_configData.Global.UseFriends && HasFriend(playerId, friendId))
             {
                 return true;
             }
-            if (configData.Global.UseClans && SameClan(playerId, friendId))
+            if (_configData.Global.UseClans && SameClan(playerId, friendId))
             {
                 return true;
             }
@@ -364,12 +349,12 @@ namespace Oxide.Plugins
             {
                 return false;
             }
-            if (configData.Global.UseRaidBlocker && IsRaidBlocked(player.UserIDString))
+            if (_configData.Global.UseRaidBlocker && IsRaidBlocked(player.UserIDString))
             {
                 Print(player, Lang("RaidBlocked", player.UserIDString));
                 return true;
             }
-            if (configData.Global.UseCombatBlocker && IsCombatBlocked(player.UserIDString))
+            if (_configData.Global.UseCombatBlocker && IsCombatBlocked(player.UserIDString))
             {
                 Print(player, Lang("CombatBlocked", player.UserIDString));
                 return true;
@@ -413,461 +398,526 @@ namespace Oxide.Plugins
 
         #endregion Methods
 
-        #region Building Grade Control
+        #region Assistant
 
-        private Coroutine _changeGradeCoroutine;
-        private readonly HashSet<BuildingBlock> _allBuildingBlocks = new HashSet<BuildingBlock>();
-        private readonly Dictionary<ulong, bool> _tempFriends = new Dictionary<ulong, bool>();
-        private readonly List<BuildingGrade.Enum> _tempGrantedGrades = new List<BuildingGrade.Enum>();
-
-        private readonly List<Item> _collect = new List<Item>();
-        private readonly Hash<int, float> _takeOutItems = new Hash<int, float>();
-        private readonly Hash<ItemDefinition, int> _missingDictionary = new Hash<ItemDefinition, int>();
-
-        public IEnumerator StartChangeBuildingGrade(BuildingBlock sourceEntity, BasePlayer player, BuildingGrade.Enum targetGrade, HashSet<uint> filter, PermissionSettings permissionSettings, bool isUpgrade, bool isAll, bool isAdmin)
+        private class BuildingGradeAssistant
         {
-            _blockedPlayers?.Clear();
-            yield return GetAllBuildingBlocks(sourceEntity, filter, isAll);
-            //if (pay) {
-            //    FindUpgradeCosts(targetGrade);
-            //    if (!CanAffordUpgrade(player)) {
-            //        Clear();
-            //        yield break;
-            //    }
-            //    PayForUpgrade(costs, player);
-            //}
+            private BuildingGrades Plugin => _instance;
 
-            Print(player, Lang(isUpgrade ? "StartUpgrade" : "StartDowngrade", player.UserIDString));
-            var playerId = player.userID;
-            yield return isUpgrade ? UpgradeBuildingBlocks(player, targetGrade, permissionSettings, isAdmin) : DowngradeBuildingBlocks(player, targetGrade, permissionSettings, isAdmin);
+            private Coroutine _changeGradeCoroutine;
+            private readonly Dictionary<ulong, bool> _tempFriends = new Dictionary<ulong, bool>();
+            private readonly HashSet<BuildingBlock> _allBuildingBlocks = new HashSet<BuildingBlock>();
+            private readonly List<BuildingGrade.Enum> _tempGrantedGrades = new List<BuildingGrade.Enum>();
 
-            _tempFriends.Clear();
-            _allBuildingBlocks.Clear();
-            _tempGrantedGrades.Clear();
-            _blockedPlayers?.Clear();
-            _cooldowns[playerId] = Time.realtimeSinceStartup;
-            _changeGradeCoroutine = null;
-        }
+            private readonly List<Item> _collect = new List<Item>();
+            private readonly Hash<int, float> _takeOutItems = new Hash<int, float>();
+            private readonly Hash<ItemDefinition, int> _missingItems = new Hash<ItemDefinition, int>();
 
-        private void FindPlayerGrantedGrades(BasePlayer player, bool isUpgrade)
-        {
-            var all = permission.UserHasPermission(player.UserIDString, isUpgrade ? PermissionUpAll : PermissionDownAll);
-            if (all)
+            private HashSet<ulong> _blockedPlayers = new HashSet<ulong>();
+            private readonly Dictionary<ulong, float> _cooldowns = new Dictionary<ulong, float>();
+
+            private BuildingBlock _processingBuildingBlock;
+            internal bool IsRunning()
             {
-                _tempGrantedGrades.AddRange(ValidGrades);
-                return;
+                return _changeGradeCoroutine != null;
             }
-            foreach (var validGrade in ValidGrades)
+
+            internal void Unload()
             {
-                if (isUpgrade)
+                if (_changeGradeCoroutine != null)
                 {
-                    if (validGrade > BuildingGrade.Enum.Twigs && permission.UserHasPermission(player.UserIDString, PermissionUp + (int)validGrade))
-                    {
-                        _tempGrantedGrades.Add(validGrade);
-                    }
-                }
-                else
-                {
-                    if (validGrade < BuildingGrade.Enum.TopTier && permission.UserHasPermission(player.UserIDString, PermissionDown + (int)validGrade))
-                    {
-                        _tempGrantedGrades.Add(validGrade);
-                    }
+                    ServerMgr.Instance.StopCoroutine(_changeGradeCoroutine);
                 }
             }
-        }
 
-        private bool ShouldInterrupt(ulong playerId)
-        {
-            return _blockedPlayers != null && _blockedPlayers.Contains(playerId);
-        }
-
-        #region Upgrade
-
-        private IEnumerator UpgradeBuildingBlocks(BasePlayer player, BuildingGrade.Enum targetGrade, PermissionSettings permissionSettings, bool isAdmin)
-        {
-            var pay = permissionSettings.Pay && !permission.UserHasPermission(player.UserIDString, PermissionNoCost);
-            int current = 0, success = 0;
-            var autoGrade = targetGrade == BuildingGrade.Enum.None;
-            foreach (var buildingBlock in _allBuildingBlocks)
+            internal void BlockPlayer(ulong playerId)
             {
-                if (buildingBlock == null || buildingBlock.IsDestroyed)
+                _blockedPlayers.Add(playerId);
+            }
+
+            internal bool IsProcessingBuildingBlock(BuildingBlock buildingBlock)
+            {
+                if (buildingBlock == null)
                 {
-                    continue;
+                    return false;
                 }
-                if (ShouldInterrupt(player.userID))
+                return _processingBuildingBlock == buildingBlock;
+            }
+
+            internal void Run(BuildingBlock sourceEntity, BasePlayer player, BuildingGrade.Enum targetGrade, HashSet<uint> filter, PermissionSettings permissionSettings, bool isUpgrade, bool isAll, bool isAdmin)
+            {
+                if (IsRunning())
                 {
-                    break;
+                    return;
                 }
-                var grade = targetGrade;
-                if (CheckBuildingGrade(buildingBlock, true, ref grade))
+                _changeGradeCoroutine = ServerMgr.Instance.StartCoroutine(StartChangeBuildingGrade(sourceEntity, player, targetGrade, filter, permissionSettings, isUpgrade, isAll, isAdmin));
+            }
+
+            internal float GetCooldownLeft(ulong playerId, float cooldown)
+            {
+                float lastUse;
+                if (_cooldowns.TryGetValue(playerId, out lastUse))
                 {
-                    if (!autoGrade || _tempGrantedGrades.Contains(grade))
+                    return cooldown - (Time.realtimeSinceStartup - lastUse);
+                }
+                return 0f;
+            }
+
+            internal bool FindPlayerGrantedGrades(BasePlayer player, bool isUpgrade)
+            {
+                var all = Plugin.permission.UserHasPermission(player.UserIDString, isUpgrade ? PermissionUpAll : PermissionDownAll);
+                if (all)
+                {
+                    _tempGrantedGrades.AddRange(ValidGrades);
+                    return _tempGrantedGrades.Count > 0;
+                }
+                foreach (var validGrade in ValidGrades)
+                {
+                    if (isUpgrade)
                     {
-                        if (TryUpgradeToGrade(buildingBlock, player, grade, pay, isAdmin))
+                        if (validGrade > BuildingGrade.Enum.Twigs && Plugin.permission.UserHasPermission(player.UserIDString, PermissionUpPrefix + (int)validGrade))
                         {
-                            success++;
+                            _tempGrantedGrades.Add(validGrade);
+                        }
+                    }
+                    else
+                    {
+                        if (validGrade < BuildingGrade.Enum.TopTier && Plugin.permission.UserHasPermission(player.UserIDString, PermissionDownPrefx + (int)validGrade))
+                        {
+                            _tempGrantedGrades.Add(validGrade);
                         }
                     }
                 }
-
-                if (++current % configData.Global.PerFrame == 0)
-                {
-                    yield return CoroutineEx.waitForEndOfFrame;
-                }
+                return _tempGrantedGrades.Count > 0;
             }
 
-            foreach (var item in _collect)
+            private IEnumerator StartChangeBuildingGrade(BuildingBlock sourceEntity, BasePlayer player, BuildingGrade.Enum targetGrade, HashSet<uint> filter, PermissionSettings permissionSettings, bool isUpgrade, bool isAll, bool isAdmin)
             {
-                _takeOutItems[item.info.itemid] += item.amount;
-                item.Remove();
-            }
-            foreach (var entry in _takeOutItems)
-            {
-                player.Command("note.inv " + entry.Key + " " + entry.Value * -1f);
-            }
-
-            if (player != null && player.IsConnected)
-            {
-                if (_missingDictionary.Count > 0)
-                {
-                    var stringBuilder = Pool.Get<StringBuilder>();
-                    var language = lang.GetLanguage(player.UserIDString);
-                    foreach (var entry in _missingDictionary)
-                    {
-                        stringBuilder.AppendLine(Lang("MissingItemsFormat", player.UserIDString, GetItemDisplayName(language, entry.Key), entry.Value));
-                    }
-                    var missingResources = stringBuilder.ToString();
-                    stringBuilder.Clear();
-                    Pool.Free(ref stringBuilder);
-                    Print(player, success > 0 ? Lang("UpgradeNotEnoughItemsSuccess", player.UserIDString, success, missingResources) : Lang("UpgradeNotEnoughItems", player.UserIDString, missingResources));
-                }
-                else
-                {
-                    Print(player, success > 0 ? Lang("FinishedUpgrade", player.UserIDString, success) : Lang("NotUpgraded", player.UserIDString));
-                }
-            }
-
-            _collect.Clear();
-            _takeOutItems.Clear();
-            _missingDictionary.Clear();
-        }
-
-        private bool TryUpgradeToGrade(BuildingBlock buildingBlock, BasePlayer player, BuildingGrade.Enum targetGrade, bool pay, bool isAdmin)
-        {
-            if (!CanUpgrade(buildingBlock, player, targetGrade, pay, isAdmin))
-            {
-                return false;
-            }
-            SetBuildingBlockGrade(buildingBlock, targetGrade);
-            return true;
-        }
-
-        private bool CanUpgrade(BuildingBlock buildingBlock, BasePlayer player, BuildingGrade.Enum targetGrade, bool pay, bool isAdmin)
-        {
-            if (player == null || !player.CanInteract())
-            {
-                return false;
-            }
-            var constructionGrade = buildingBlock.GetGrade(targetGrade);
-            if (constructionGrade == null)
-            {
-                return false;
-            }
-            if (!isAdmin)
-            {
-                if (Interface.Oxide.CallHook("OnStructureUpgrade", buildingBlock, player, targetGrade) != null)
-                {
-                    return false;
-                }
-                if (buildingBlock.SecondsSinceAttacked < 30f)
-                {
-                    return false;
-                }
-                if (!buildingBlock.CanChangeToGrade(targetGrade, player))
-                {
-                    return false;
-                }
-
-                if (!HasAccess(player, buildingBlock))
-                {
-                    return false;
-                }
-            }
-            if (pay)
-            {
-                //if (!buildingBlock.CanAffordUpgrade(targetGrade, player)) {
-                //    return false;
+                _blockedPlayers.Clear();
+                yield return GetAllBuildingBlocks(sourceEntity, filter, isAll);
+                //if (pay) {
+                //    FindUpgradeCosts(targetGrade);
+                //    if (!CanAffordUpgrade(player)) {
+                //        Clear();
+                //        yield break;
+                //    }
+                //    PayForUpgrade(costs, player);
                 //}
-                //buildingBlock.PayForUpgrade(constructionGrade, player);
-                if (!CanAffordUpgrade(buildingBlock, constructionGrade, player, targetGrade))
-                {
-                    return false;
-                }
-                PayForUpgrade(buildingBlock, constructionGrade, player);
-            }
-            return true;
-        }
 
-        public bool CanAffordUpgrade(BuildingBlock buildingBlock, ConstructionGrade constructionGrade, BasePlayer player, BuildingGrade.Enum grade)
-        {
-            var obj = Interface.CallHook("CanAffordUpgrade", player, buildingBlock, grade);
-            if (obj is bool)
-            {
-                return (bool)obj;
+                Plugin.Print(player, Plugin.Lang(isUpgrade ? "StartUpgrade" : "StartDowngrade", player.UserIDString));
+                var playerId = player.userID;
+                yield return isUpgrade ? UpgradeBuildingBlocks(player, targetGrade, permissionSettings, isAdmin) : DowngradeBuildingBlocks(player, targetGrade, permissionSettings, isAdmin);
+
+                _tempFriends.Clear();
+                _allBuildingBlocks.Clear();
+                _tempGrantedGrades.Clear();
+                _blockedPlayers.Clear();
+                _cooldowns[playerId] = Time.realtimeSinceStartup;
+                _processingBuildingBlock = null;
+                _changeGradeCoroutine = null;
             }
 
-            var flag = true;
-            foreach (var item in constructionGrade.costToBuild)
+            private bool ShouldInterrupt(ulong playerId)
             {
-                var missingAmount = item.amount - player.inventory.GetAmount(item.itemid);
-                if (missingAmount > 0f)
-                {
-                    flag = false;
-                    _missingDictionary[item.itemDef] += (int)missingAmount;
-                }
+                return _blockedPlayers.Contains(playerId);
             }
-            return flag;
-        }
 
-        public void PayForUpgrade(BuildingBlock buildingBlock, ConstructionGrade constructionGrade, BasePlayer player)
-        {
-            if (Interface.CallHook("OnPayForUpgrade", player, buildingBlock, constructionGrade) != null)
+            #region Upgrade
+
+            private IEnumerator UpgradeBuildingBlocks(BasePlayer player, BuildingGrade.Enum targetGrade, PermissionSettings permissionSettings, bool isAdmin)
             {
-                return;
-            }
-            foreach (var item in constructionGrade.costToBuild)
-            {
-                player.inventory.Take(_collect, item.itemid, (int)item.amount);
-                //player.Command("note.inv " + item.itemid + " " + item.amount * -1f);
-            }
-        }
-
-        #endregion Upgrade
-
-        #region Downgrade
-
-        private IEnumerator DowngradeBuildingBlocks(BasePlayer player, BuildingGrade.Enum targetGrade, PermissionSettings permissionSettings, bool isAdmin)
-        {
-            int current = 0, success = 0;
-            var autoGrade = targetGrade == BuildingGrade.Enum.None;
-            foreach (var buildingBlock in _allBuildingBlocks)
-            {
-                if (buildingBlock == null || buildingBlock.IsDestroyed)
+                var pay = permissionSettings.Pay && !Plugin.permission.UserHasPermission(player.UserIDString, PermissionNoCost);
+                int current = 0, success = 0;
+                var autoGrade = targetGrade == BuildingGrade.Enum.None;
+                foreach (var buildingBlock in _allBuildingBlocks)
                 {
-                    continue;
-                }
-                if (ShouldInterrupt(player.userID))
-                {
-                    break;
-                }
-                var grade = targetGrade;
-                if (CheckBuildingGrade(buildingBlock, false, ref grade))
-                {
-                    if (!autoGrade || _tempGrantedGrades.Contains(grade))
+                    if (buildingBlock == null || buildingBlock.IsDestroyed)
                     {
-                        if (TryDowngradeToGrade(buildingBlock, player, grade /*, permissionSettings.Refund*/, isAdmin: isAdmin))
+                        continue;
+                    }
+                    if (ShouldInterrupt(player.userID))
+                    {
+                        break;
+                    }
+                    var grade = targetGrade;
+                    if (CheckBuildingGrade(buildingBlock, true, ref grade))
+                    {
+                        if (!autoGrade || _tempGrantedGrades.Contains(grade))
                         {
-                            success++;
+                            _processingBuildingBlock = buildingBlock;
+                            if (TryUpgradeToGrade(buildingBlock, player, grade, pay, isAdmin))
+                            {
+                                success++;
+                            }
+                            _processingBuildingBlock = null;
                         }
                     }
+
+                    if (++current % Plugin._configData.Global.PerFrame == 0)
+                    {
+                        yield return CoroutineEx.waitForEndOfFrame;
+                    }
                 }
-                if (current++ % configData.Global.PerFrame == 0)
+
+                foreach (var item in _collect)
                 {
-                    yield return CoroutineEx.waitForEndOfFrame;
+                    _takeOutItems[item.info.itemid] += item.amount;
+                    item.Remove();
                 }
+                foreach (var entry in _takeOutItems)
+                {
+                    player.Command("note.inv " + entry.Key + " " + entry.Value * -1f);
+                }
+
+                if (player != null && player.IsConnected)
+                {
+                    if (_missingItems.Count > 0)
+                    {
+                        var stringBuilder = Pool.Get<StringBuilder>();
+                        var language = Plugin.lang.GetLanguage(player.UserIDString);
+                        foreach (var entry in _missingItems)
+                        {
+                            stringBuilder.AppendLine(Plugin.Lang("MissingItemsFormat", player.UserIDString, Plugin.GetItemDisplayName(language, entry.Key), entry.Value));
+                        }
+                        var missingResources = stringBuilder.ToString();
+                        stringBuilder.Clear();
+                        Pool.Free(ref stringBuilder);
+                        Plugin.Print(player, success > 0 ? Plugin.Lang("UpgradeNotEnoughItemsSuccess", player.UserIDString, success, missingResources) : Plugin.Lang("UpgradeNotEnoughItems", player.UserIDString, missingResources));
+                    }
+                    else
+                    {
+                        Plugin.Print(player, success > 0 ? Plugin.Lang("FinishedUpgrade", player.UserIDString, success) : Plugin.Lang("NotUpgraded", player.UserIDString));
+                    }
+                }
+
+                _collect.Clear();
+                _takeOutItems.Clear();
+                _missingItems.Clear();
             }
 
-            if (player != null && player.IsConnected)
+            private bool TryUpgradeToGrade(BuildingBlock buildingBlock, BasePlayer player, BuildingGrade.Enum targetGrade, bool pay, bool isAdmin)
             {
-                Print(player, success > 0 ? Lang("FinishedDowngrade", player.UserIDString, success) : Lang("NotDowngraded", player.UserIDString));
-            }
-        }
-
-        private bool TryDowngradeToGrade(BuildingBlock buildingBlock, BasePlayer player, BuildingGrade.Enum targetGrade, bool refund = false, bool isAdmin = false)
-        {
-            if (!CanDowngrade(buildingBlock, player, targetGrade, refund, isAdmin))
-            {
-                return false;
-            }
-
-            //if (refund)
-            //{
-            //    foreach (var itemAmount in buildingBlock.currentGrade.costToBuild)
-            //    {
-            //        var item = ItemManager.CreateByItemID(itemAmount.itemid, (int)itemAmount.amount);
-            //        player.GiveItem(item);
-            //    }
-            //}
-            SetBuildingBlockGrade(buildingBlock, targetGrade);
-            return true;
-        }
-
-        private bool CanDowngrade(BuildingBlock buildingBlock, BasePlayer player, BuildingGrade.Enum targetGrade, bool refund, bool isAdmin)
-        {
-            if (player == null || !player.CanInteract())
-            {
-                return false;
-            }
-
-            var constructionGrade = buildingBlock.GetGrade(targetGrade);
-            if (constructionGrade == null)
-            {
-                return false;
-            }
-
-            if (!isAdmin)
-            {
-                if (Interface.CallHook("OnStructureUpgrade", buildingBlock, player, targetGrade) != null)
+                if (!CanUpgrade(buildingBlock, player, targetGrade, pay, isAdmin))
                 {
                     return false;
                 }
-                if (buildingBlock.SecondsSinceAttacked < 30f)
+                var oldGrade = buildingBlock.grade;
+                SetBuildingBlockGrade(buildingBlock, targetGrade);
+                Interface.CallHook("OnStructureGradeUpdated", buildingBlock, player, oldGrade, targetGrade);
+                return true;
+            }
+
+            private bool CanUpgrade(BuildingBlock buildingBlock, BasePlayer player, BuildingGrade.Enum targetGrade, bool pay, bool isAdmin)
+            {
+                if (player == null || !player.CanInteract())
                 {
                     return false;
                 }
-                var obj = Interface.CallHook("CanChangeGrade", player, buildingBlock, targetGrade);
+                var constructionGrade = buildingBlock.GetGrade(targetGrade);
+                if (constructionGrade == null)
+                {
+                    return false;
+                }
+                if (!isAdmin)
+                {
+                    if (Interface.CallHook("OnStructureUpgrade", buildingBlock, player, targetGrade) != null)
+                    {
+                        return false;
+                    }
+                    if (buildingBlock.SecondsSinceAttacked < 30f)
+                    {
+                        return false;
+                    }
+                    if (!buildingBlock.CanChangeToGrade(targetGrade, player))
+                    {
+                        return false;
+                    }
+
+                    if (!HasAccess(player, buildingBlock))
+                    {
+                        return false;
+                    }
+                }
+                if (pay)
+                {
+                    //if (!buildingBlock.CanAffordUpgrade(targetGrade, player)) {
+                    //    return false;
+                    //}
+                    //buildingBlock.PayForUpgrade(constructionGrade, player);
+                    if (!CanAffordUpgrade(buildingBlock, constructionGrade, player, targetGrade))
+                    {
+                        return false;
+                    }
+                    PayForUpgrade(buildingBlock, constructionGrade, player);
+                }
+                return true;
+            }
+
+            public bool CanAffordUpgrade(BuildingBlock buildingBlock, ConstructionGrade constructionGrade, BasePlayer player, BuildingGrade.Enum grade)
+            {
+                var obj = Interface.CallHook("CanAffordUpgrade", player, buildingBlock, grade);
                 if (obj is bool)
                 {
                     return (bool)obj;
                 }
-                if (player.IsBuildingBlocked(buildingBlock.transform.position, buildingBlock.transform.rotation, buildingBlock.bounds))
+
+                var flag = true;
+                foreach (var item in constructionGrade.costToBuild)
                 {
-                    return false;
+                    var missingAmount = item.amount - player.inventory.GetAmount(item.itemid);
+                    if (missingAmount > 0f)
+                    {
+                        flag = false;
+                        _missingItems[item.itemDef] += (int)missingAmount;
+                    }
                 }
-                if (buildingBlock.IsUpgradeBlocked())
-                {
-                    return false;
-                }
-                if (!HasAccess(player, buildingBlock))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        #endregion Downgrade
-
-        #region Methods
-
-        private bool HasAccess(BasePlayer player, BuildingBlock buildingBlock)
-        {
-            bool flag;
-            if (_tempFriends.TryGetValue(buildingBlock.OwnerID, out flag))
-            {
                 return flag;
             }
-            var areFriends = AreFriends(buildingBlock.OwnerID, player.userID);
-            _tempFriends.Add(buildingBlock.OwnerID, areFriends);
-            return areFriends;
-        }
 
-        private IEnumerator GetAllBuildingBlocks(BuildingBlock sourceEntity, HashSet<uint> filter, bool isAll)
-        {
-            Func<BuildingBlock, bool> func = x => filter == null || filter.Contains(x.prefabID);
-            if (isAll)
+            public void PayForUpgrade(BuildingBlock buildingBlock, ConstructionGrade constructionGrade, BasePlayer player)
             {
-                yield return GetNearbyEntities(sourceEntity, _allBuildingBlocks, Layers.Mask.Construction, func);
-            }
-            else
-            {
-                var building = sourceEntity.GetBuilding();
-                if (building != null)
+                if (Interface.CallHook("OnPayForUpgrade", player, buildingBlock, constructionGrade) != null)
                 {
-                    foreach (var buildingBlock in building.buildingBlocks)
+                    return;
+                }
+                foreach (var item in constructionGrade.costToBuild)
+                {
+                    player.inventory.Take(_collect, item.itemid, (int)item.amount);
+                    //player.Command("note.inv " + item.itemid + " " + item.amount * -1f);
+                }
+            }
+
+            #endregion Upgrade
+
+            #region Downgrade
+
+            private IEnumerator DowngradeBuildingBlocks(BasePlayer player, BuildingGrade.Enum targetGrade, PermissionSettings permissionSettings, bool isAdmin)
+            {
+                int current = 0, success = 0;
+                var autoGrade = targetGrade == BuildingGrade.Enum.None;
+                foreach (var buildingBlock in _allBuildingBlocks)
+                {
+                    if (buildingBlock == null || buildingBlock.IsDestroyed)
                     {
-                        if (func(buildingBlock))
+                        continue;
+                    }
+                    if (ShouldInterrupt(player.userID))
+                    {
+                        break;
+                    }
+                    var grade = targetGrade;
+                    if (CheckBuildingGrade(buildingBlock, false, ref grade))
+                    {
+                        if (!autoGrade || _tempGrantedGrades.Contains(grade))
                         {
-                            _allBuildingBlocks.Add(buildingBlock);
+                            _processingBuildingBlock = buildingBlock;
+                            if (TryDowngradeToGrade(buildingBlock, player, grade /*, permissionSettings.Refund*/, isAdmin: isAdmin))
+                            {
+                                success++;
+                            }
+                            _processingBuildingBlock = null;
+                        }
+                    }
+                    if (current++ % Plugin._configData.Global.PerFrame == 0)
+                    {
+                        yield return CoroutineEx.waitForEndOfFrame;
+                    }
+                }
+
+                if (player != null && player.IsConnected)
+                {
+                    Plugin.Print(player, success > 0 ? Plugin.Lang("FinishedDowngrade", player.UserIDString, success) : Plugin.Lang("NotDowngraded", player.UserIDString));
+                }
+            }
+
+            private bool TryDowngradeToGrade(BuildingBlock buildingBlock, BasePlayer player, BuildingGrade.Enum targetGrade, bool refund = false, bool isAdmin = false)
+            {
+                if (!CanDowngrade(buildingBlock, player, targetGrade, refund, isAdmin))
+                {
+                    return false;
+                }
+
+                //if (refund)
+                //{
+                //    foreach (var itemAmount in buildingBlock.currentGrade.costToBuild)
+                //    {
+                //        var item = ItemManager.CreateByItemID(itemAmount.itemid, (int)itemAmount.amount);
+                //        player.GiveItem(item);
+                //    }
+                //}
+                var oldGrade = buildingBlock.grade;
+                SetBuildingBlockGrade(buildingBlock, targetGrade);
+                Interface.CallHook("OnStructureGradeUpdated", buildingBlock, player, oldGrade, targetGrade);
+                return true;
+            }
+
+            private bool CanDowngrade(BuildingBlock buildingBlock, BasePlayer player, BuildingGrade.Enum targetGrade, bool refund, bool isAdmin)
+            {
+                if (player == null || !player.CanInteract())
+                {
+                    return false;
+                }
+
+                var constructionGrade = buildingBlock.GetGrade(targetGrade);
+                if (constructionGrade == null)
+                {
+                    return false;
+                }
+
+                if (!isAdmin)
+                {
+                    if (Interface.CallHook("OnStructureUpgrade", buildingBlock, player, targetGrade) != null)
+                    {
+                        return false;
+                    }
+                    if (buildingBlock.SecondsSinceAttacked < 30f)
+                    {
+                        return false;
+                    }
+                    var obj = Interface.CallHook("CanChangeGrade", player, buildingBlock, targetGrade);
+                    if (obj is bool)
+                    {
+                        return (bool)obj;
+                    }
+                    if (player.IsBuildingBlocked(buildingBlock.transform.position, buildingBlock.transform.rotation, buildingBlock.bounds))
+                    {
+                        return false;
+                    }
+                    if (buildingBlock.IsUpgradeBlocked())
+                    {
+                        return false;
+                    }
+                    if (!HasAccess(player, buildingBlock))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            #endregion Downgrade
+
+            #region Methods
+
+            private bool HasAccess(BasePlayer player, BuildingBlock buildingBlock)
+            {
+                bool flag;
+                if (_tempFriends.TryGetValue(buildingBlock.OwnerID, out flag))
+                {
+                    return flag;
+                }
+                var areFriends = Plugin.AreFriends(buildingBlock.OwnerID, player.userID);
+                _tempFriends.Add(buildingBlock.OwnerID, areFriends);
+                return areFriends;
+            }
+
+            private IEnumerator GetAllBuildingBlocks(BuildingBlock sourceEntity, HashSet<uint> filter, bool isAll)
+            {
+                Func<BuildingBlock, bool> func = x => filter == null || filter.Contains(x.prefabID);
+                if (isAll)
+                {
+                    yield return GetNearbyEntities(sourceEntity, _allBuildingBlocks, Layers.Mask.Construction, func);
+                }
+                else
+                {
+                    var building = sourceEntity.GetBuilding();
+                    if (building != null)
+                    {
+                        foreach (var buildingBlock in building.buildingBlocks)
+                        {
+                            if (func(buildingBlock))
+                            {
+                                _allBuildingBlocks.Add(buildingBlock);
+                            }
                         }
                     }
                 }
             }
+
+            //#region TryPay
+
+            //private readonly Hash<int, int> costs = new Hash<int, int>();
+            //private readonly Hash<string , int> missingDictionary = new Hash<string, int>();
+            //private readonly HashSet<BuildingBlock> toRemove = new HashSet<BuildingBlock>();
+
+            //private bool TryPay(BasePlayer player, BuildingGrade.Enum targetGrade, out string missingResources) {
+            //    FindUpgradeCosts(player, targetGrade);
+            //    if (!CanPay(player, out missingResources)) {
+            //        return false;
+            //    }
+
+            //    var collect = Pool.GetList<Item>();
+            //    foreach (var entry in costs) {
+            //        player.inventory.Take(collect, entry.Key, entry.Value);
+            //        player.Command(string.Concat("note.inv ", entry.Key, " ", entry.Value * -1f));
+            //    }
+            //    foreach (var item in collect) {
+            //        item.Remove();
+            //    }
+            //    Pool.FreeList(ref collect);
+            //    missingResources = null;
+            //    return true;
+            //}
+
+            //private bool CanPay(BasePlayer player, out string missingResources) {
+            //    foreach (var entry in costs) {
+            //        if (entry.Value <= 0) continue;
+            //        var missingAmount = entry.Value - player.inventory.GetAmount(entry.Key);
+            //        if (missingAmount <= 0) continue;
+            //       var displayName=  ItemManager.FindItemDefinition(entry.Key)?.displayName.english;
+            //       if (string.IsNullOrEmpty(displayName)) displayName = entry.Key.ToString();
+            //         missingDictionary[displayName] += missingAmount;
+            //    }
+            //    if (missingDictionary.Count > 0) {
+            //        StringBuilder stringBuilder = Pool.Get<StringBuilder>();
+            //        foreach (var entry in missingDictionary) {
+            //            stringBuilder.AppendLine(Lang("MissingResourceFormat", player.UserIDString, entry.Key, entry.Value));
+            //        }
+            //        missingResources = stringBuilder.ToString();
+            //        stringBuilder.Clear();
+            //        missingDictionary.Clear();
+            //        Pool.Free(ref stringBuilder);
+            //        return false;
+            //    }
+            //    missingResources = null;
+            //    return true;
+            //}
+
+            //private void FindUpgradeCosts(BasePlayer player, BuildingGrade.Enum targetGrade) {
+            //    var autoGrade = targetGrade == BuildingGrade.Enum.None;
+            //    foreach (var buildingBlock in allBuildingBlocks) {
+            //        if (buildingBlock == null || buildingBlock.IsDestroyed) {
+            //            toRemove.Add(buildingBlock);
+            //            continue;
+            //        }
+            //        BuildingGrade.Enum grade = targetGrade;
+            //        if (CheckBuildingGrade(buildingBlock, false, ref grade)) {
+            //            if (!autoGrade || tempGrantedGrades.Contains(grade)) {
+            //                if (!CanUpgrade(buildingBlock, player, grade)) {
+            //                    toRemove.Add(buildingBlock);
+            //                    continue;
+            //                }
+            //            }
+            //        }
+            //        var costToBuild = buildingBlock.blockDefinition.grades[(int)grade].costToBuild;
+            //        foreach (var itemAmount in costToBuild) {
+            //            costs[itemAmount.itemid] += (int)itemAmount.amount;
+            //        }
+            //    }
+
+            //    foreach (var buildingBlock in toRemove) {
+            //        allBuildingBlocks.Remove(buildingBlock);
+            //    }
+            //    toRemove.Clear();
+            //}
+
+            //#endregion TryPay
+
+            #endregion Methods
         }
 
-        //#region TryPay
-
-        //private readonly Hash<int, int> costs = new Hash<int, int>();
-        //private readonly Hash<string , int> missingDictionary = new Hash<string, int>();
-        //private readonly HashSet<BuildingBlock> toRemove = new HashSet<BuildingBlock>();
-
-        //private bool TryPay(BasePlayer player, BuildingGrade.Enum targetGrade, out string missingResources) {
-        //    FindUpgradeCosts(player, targetGrade);
-        //    if (!CanPay(player, out missingResources)) {
-        //        return false;
-        //    }
-
-        //    var collect = Pool.GetList<Item>();
-        //    foreach (var entry in costs) {
-        //        player.inventory.Take(collect, entry.Key, entry.Value);
-        //        player.Command(string.Concat("note.inv ", entry.Key, " ", entry.Value * -1f));
-        //    }
-        //    foreach (var item in collect) {
-        //        item.Remove();
-        //    }
-        //    Pool.FreeList(ref collect);
-        //    missingResources = null;
-        //    return true;
-        //}
-
-        //private bool CanPay(BasePlayer player, out string missingResources) {
-        //    foreach (var entry in costs) {
-        //        if (entry.Value <= 0) continue;
-        //        var missingAmount = entry.Value - player.inventory.GetAmount(entry.Key);
-        //        if (missingAmount <= 0) continue;
-        //       var displayName=  ItemManager.FindItemDefinition(entry.Key)?.displayName.english;
-        //       if (string.IsNullOrEmpty(displayName)) displayName = entry.Key.ToString();
-        //         missingDictionary[displayName] += missingAmount;
-        //    }
-        //    if (missingDictionary.Count > 0) {
-        //        StringBuilder stringBuilder = Pool.Get<StringBuilder>();
-        //        foreach (var entry in missingDictionary) {
-        //            stringBuilder.AppendLine(Lang("MissingResourceFormat", player.UserIDString, entry.Key, entry.Value));
-        //        }
-        //        missingResources = stringBuilder.ToString();
-        //        stringBuilder.Clear();
-        //        missingDictionary.Clear();
-        //        Pool.Free(ref stringBuilder);
-        //        return false;
-        //    }
-        //    missingResources = null;
-        //    return true;
-        //}
-
-        //private void FindUpgradeCosts(BasePlayer player, BuildingGrade.Enum targetGrade) {
-        //    var autoGrade = targetGrade == BuildingGrade.Enum.None;
-        //    foreach (var buildingBlock in allBuildingBlocks) {
-        //        if (buildingBlock == null || buildingBlock.IsDestroyed) {
-        //            toRemove.Add(buildingBlock);
-        //            continue;
-        //        }
-        //        BuildingGrade.Enum grade = targetGrade;
-        //        if (CheckBuildingGrade(buildingBlock, false, ref grade)) {
-        //            if (!autoGrade || tempGrantedGrades.Contains(grade)) {
-        //                if (!CanUpgrade(buildingBlock, player, grade)) {
-        //                    toRemove.Add(buildingBlock);
-        //                    continue;
-        //                }
-        //            }
-        //        }
-        //        var costToBuild = buildingBlock.blockDefinition.grades[(int)grade].costToBuild;
-        //        foreach (var itemAmount in costToBuild) {
-        //            costs[itemAmount.itemid] += (int)itemAmount.amount;
-        //        }
-        //    }
-
-        //    foreach (var buildingBlock in toRemove) {
-        //        allBuildingBlocks.Remove(buildingBlock);
-        //    }
-        //    toRemove.Clear();
-        //}
-
-        //#endregion TryPay
-
-        #endregion Methods
-
-        #endregion Building Grade Control
+        #endregion Assistant
 
         #region Helpers
 
@@ -945,7 +995,7 @@ namespace Oxide.Plugins
                     }
                     checkFrom.Enqueue(entity.transform.position);
                 }
-                if (++current % _instance.configData.Global.PerFrame == 0)
+                if (++current % _instance._configData.Global.PerFrame == 0)
                 {
                     yield return CoroutineEx.waitForEndOfFrame;
                 }
@@ -956,9 +1006,18 @@ namespace Oxide.Plugins
 
         #endregion Helpers
 
+        #region API
+
+        private bool IsProcessingBuildingBlock(BuildingBlock buildingBlock)
+        {
+            return _assistant.IsProcessingBuildingBlock(buildingBlock);
+        }
+
+        #endregion
+
         #region ConfigurationFile
 
-        private ConfigData configData;
+        private ConfigData _configData;
 
         private class ConfigData
         {
@@ -1093,8 +1152,8 @@ namespace Oxide.Plugins
             base.LoadConfig();
             try
             {
-                configData = Config.ReadObject<ConfigData>();
-                if (configData == null)
+                _configData = Config.ReadObject<ConfigData>();
+                if (_configData == null)
                 {
                     LoadDefaultConfig();
                 }
@@ -1110,12 +1169,12 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             PrintWarning("Creating a new configuration file");
-            configData = new ConfigData();
+            _configData = new ConfigData();
         }
 
         protected override void SaveConfig()
         {
-            Config.WriteObject(configData);
+            Config.WriteObject(_configData);
         }
 
         #endregion ConfigurationFile
@@ -1124,7 +1183,7 @@ namespace Oxide.Plugins
 
         private void Print(BasePlayer player, string message)
         {
-            Player.Message(player, message, configData.Chat.Prefix, configData.Chat.SteamIdIcon);
+            Player.Message(player, message, _configData.Chat.Prefix, _configData.Chat.SteamIdIcon);
         }
 
         private string Lang(string key, string id = null, params object[] args)
