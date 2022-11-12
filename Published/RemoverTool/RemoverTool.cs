@@ -2790,6 +2790,7 @@ namespace Oxide.Plugins
                     case "h":
                     case "help":
                         var stringBuilder = Pool.Get<StringBuilder>();
+                        stringBuilder.Clear();
                         stringBuilder.AppendLine(Lang("Syntax", player.UserIDString, _configData.chat.command, GetRemoveTypeName(RemoveType.Normal)));
                         stringBuilder.AppendLine(Lang("Syntax1", player.UserIDString, _configData.chat.command, GetRemoveTypeName(RemoveType.Admin)));
                         stringBuilder.AppendLine(Lang("Syntax2", player.UserIDString, _configData.chat.command, GetRemoveTypeName(RemoveType.All)));
@@ -2922,6 +2923,7 @@ namespace Oxide.Plugins
             if (arg.Args == null || arg.Args.Length <= 1)
             {
                 var stringBuilder = Pool.Get<StringBuilder>();
+                stringBuilder.Clear();
                 stringBuilder.AppendLine("Syntax error of target command");
                 stringBuilder.AppendLine("remove.target <disable | d> <player (name or id)> - Disable remover tool for player");
                 stringBuilder.AppendLine("remove.target <normal | n> <player (name or id)> [time (seconds)] [max removable objects (integer)] - Enable remover tool for player (Normal)");
@@ -2988,6 +2990,7 @@ namespace Oxide.Plugins
 
                 default:
                     var stringBuilder = Pool.Get<StringBuilder>();
+                    stringBuilder.Clear();
                     stringBuilder.AppendLine("Syntax error of target command");
                     stringBuilder.AppendLine("remove.target <disable | d> <player (name or id)> - Disable remover tool for player");
                     stringBuilder.AppendLine("remove.target <normal | n> <player (name or id)> [time (seconds)] [max removable objects (integer)] - Enable remover tool for player (Normal)");
@@ -3162,6 +3165,7 @@ namespace Oxide.Plugins
             if (arg.Args == null || arg.Args.Length <= 1 || !arg.IsAdmin)
             {
                 var stringBuilder = Pool.Get<StringBuilder>();
+                stringBuilder.Clear();
                 stringBuilder.AppendLine("Syntax error of remove.playerentity command");
                 stringBuilder.AppendLine("remove.playerentity <all | a> <player id> - Remove all entities of the player");
                 stringBuilder.AppendLine("remove.playerentity <building | b> <player id> - Remove all buildings of the player");

@@ -437,6 +437,7 @@ namespace Oxide.Plugins
                 case "help":
                     {
                         StringBuilder stringBuilder = Pool.Get<StringBuilder>();
+                        stringBuilder.Clear();
                         stringBuilder.AppendLine();
                         var firstCmd = configData.chatS.commands[0];
                         stringBuilder.AppendLine(Lang("AutoDoorSyntax", player.UserIDString, firstCmd));

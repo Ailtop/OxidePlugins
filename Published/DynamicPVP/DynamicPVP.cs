@@ -1113,7 +1113,7 @@ namespace Oxide.Plugins
                 }
 
                 var stringBuilder = Pool.Get<StringBuilder>();
-
+                stringBuilder.Clear(); 
                 var domeEvent = baseEvent as IDomeEvent;
                 var sphereZone = dynamicZone as ISphereZone;
                 if (DomeCreateAllowed(domeEvent, sphereZone))
@@ -1228,6 +1228,7 @@ namespace Oxide.Plugins
             }
 
             var stringBuilder = Pool.Get<StringBuilder>();
+            stringBuilder.Clear();
             var dynamicZone = baseEvent.GetDynamicZone();
             if (DomeCreateAllowed(baseEvent as IDomeEvent, dynamicZone as ISphereZone))
             {

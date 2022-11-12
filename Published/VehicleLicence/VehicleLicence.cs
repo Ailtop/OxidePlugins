@@ -132,9 +132,9 @@ namespace Oxide.Plugins
         {
             LoadData();
             Instance = this;
-            permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_ALL, this);
             permission.RegisterPermission(PERMISSION_ADMIN, this);
+            permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_BYPASS_COST, this);
 
             foreach (NormalVehicleType value in Enum.GetValues(typeof(NormalVehicleType)))
