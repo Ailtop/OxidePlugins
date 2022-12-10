@@ -1,24 +1,32 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Facepunch;
 using Newtonsoft.Json;
 using Oxide.Core.Plugins;
+using Rust;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Survey Info", "Diesel_42o/Arainrr", "1.0.3", ResourceId = 2463)]
+    [Info("Survey Info", "Diesel_42o/Arainrr", "1.0.4", ResourceId = 2463)]
     [Description("Displays loot from survey charges")]
     internal class SurveyInfo : RustPlugin
     {
         #region Fields
 
-        [PluginReference] private Plugin RustTranslationAPI;
-        private static SurveyInfo instance;
+        [PluginReference]
+        private Plugin RustTranslationAPI;
+
         private const string PERMISSION_USE = "surveyinfo.use";
         private const string PERMISSION_CHECK = "surveyinfo.check";
-        private readonly HashSet<uint> checkedCraters = new HashSet<uint>();
+
+        private static SurveyInfo _instance;
+
+        private float _quarryWorkPerMinute;
+        private float _pumpjackWorkPerMinute;
+        private readonly HashSet<uint> _checkedCraters = new HashSet<uint>();
 
         #endregion Fields
 
@@ -26,10 +34,24 @@ namespace Oxide.Plugins
 
         private void Init()
         {
-            instance = this;
+            _instance = this;
             permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_CHECK, this);
             cmd.AddChatCommand(configData.command, this, nameof(CmdCraterInfo));
+        }
+
+        private void OnServerInitialized()
+        {
+            var quarry = GameManager.server.FindPrefab("assets/prefabs/deployable/quarry/mining_quarry.prefab")?.GetComponent<MiningQuarry>();
+            if (quarry != null)
+            {
+                _quarryWorkPerMinute = 60f / quarry.processRate * quarry.workToAdd;
+            }
+            var pumpjack = GameManager.server.FindPrefab("assets/prefabs/deployable/oil jack/mining.pumpjack.prefab")?.GetComponent<MiningQuarry>();
+            if (pumpjack != null)
+            {
+                _pumpjackWorkPerMinute = 60f / pumpjack.processRate * pumpjack.workToAdd;
+            }
         }
 
         private void Unload()
@@ -38,14 +60,20 @@ namespace Oxide.Plugins
             {
                 UnityEngine.Object.Destroy(player.GetComponent<SurveyerComponent>());
             }
-            instance = null;
+            _instance = null;
         }
 
         private void OnAnalysisComplete(SurveyCrater crater, BasePlayer player)
         {
-            if (player == null || crater == null) return;
+            if (player == null || crater == null)
+            {
+                return;
+            }
             var deposit = ResourceDepositManager.GetOrCreate(crater.transform.position);
-            if (deposit?._resources == null) return;
+            if (deposit?._resources == null)
+            {
+                return;
+            }
             var stringBuilder = new StringBuilder();
             stringBuilder.AppendLine(Lang("MineralAnalysis", player.UserIDString));
             stringBuilder.AppendLine();
@@ -53,7 +81,8 @@ namespace Oxide.Plugins
             var language = lang.GetLanguage(player.UserIDString);
             foreach (var resource in deposit._resources)
             {
-                var pM = 45f / resource.workNeeded;
+                var workPerMinute = crater.ShortPrefabName == "survey_crater_oil" ? _pumpjackWorkPerMinute : _quarryWorkPerMinute;
+                var pM = workPerMinute / resource.workNeeded;
                 var displayName = GetItemDisplayName(language, resource.type);
                 stringBuilder.AppendLine($"{displayName} : {pM:0.00} pM");
             }
@@ -64,40 +93,62 @@ namespace Oxide.Plugins
 
         private void OnEntityKill(SurveyCharge surveyCharge)
         {
-            if (surveyCharge == null) return;
+            if (surveyCharge == null)
+            {
+                return;
+            }
             var player = surveyCharge.creatorEntity as BasePlayer;
-            if (player == null) return;
-            if (!permission.UserHasPermission(player.UserIDString, PERMISSION_USE)) return;
+            if (player == null)
+            {
+                return;
+            }
+            if (!permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
+            {
+                return;
+            }
             var checkPosition = surveyCharge.transform.position;
             timer.Once(0.5f, () =>
             {
                 var list = Pool.GetList<SurveyCrater>();
-                Vis.Entities(checkPosition, 1f, list, Rust.Layers.Mask.Default);
-                var surveyItems = Pool.GetList<SurveyItem>();
-                foreach (var surveyCrater in list)
+                Vis.Entities(checkPosition, 1f, list, Layers.Mask.Default);
+                var surveyCrater = list.FirstOrDefault();
+                if (surveyCrater != null)
                 {
-                    if (surveyCrater == null || surveyCrater.net == null) return;
-                    if (checkedCraters.Contains(surveyCrater.net.ID)) continue;
-                    var deposit = ResourceDepositManager.GetOrCreate(surveyCrater.transform.position);
-                    if (deposit == null) continue;
-                    foreach (var resource in deposit._resources)
+                    var surveyItems = Pool.GetList<SurveyItem>();
+                    if (!_checkedCraters.Contains(surveyCrater.net?.ID ?? 0))
                     {
-                        surveyItems.Add(new SurveyItem { itemDefinition = resource.type, amount = resource.amount, workNeeded = resource.workNeeded });
+                        var deposit = ResourceDepositManager.GetOrCreate(surveyCrater.transform.position);
+                        if (deposit != null)
+                        {
+                            foreach (var resource in deposit._resources)
+                            {
+                                surveyItems.Add(new SurveyItem { itemDefinition = resource.type, amount = resource.amount, workNeeded = resource.workNeeded });
+                            }
+                            _checkedCraters.Add(surveyCrater.net?.ID ?? 0);
+                        }
                     }
-                    checkedCraters.Add(surveyCrater.net.ID);
+                    if (surveyItems.Count > 0)
+                    {
+                        SendMineralAnalysis(player, surveyItems, surveyCrater.ShortPrefabName == "survey_crater_oil");
+                    }
+                    Pool.FreeList(ref surveyItems);
                 }
-                if (surveyItems.Count > 0) SendMineralAnalysis(player, surveyItems);
                 Pool.FreeList(ref list);
-                Pool.FreeList(ref surveyItems);
             });
         }
 
         private void OnActiveItemChanged(BasePlayer player, Item oldItem, Item newItem)
         {
-            if (player == null || newItem == null) return;
+            if (player == null || newItem == null)
+            {
+                return;
+            }
             if (oldItem?.info?.shortname != "surveycharge" && newItem.info.shortname == "surveycharge")
             {
-                if (!permission.UserHasPermission(player.UserIDString, PERMISSION_CHECK)) return;
+                if (!permission.UserHasPermission(player.UserIDString, PERMISSION_CHECK))
+                {
+                    return;
+                }
                 UnityEngine.Object.Destroy(player.GetComponent<SurveyerComponent>());
                 player.gameObject.AddComponent<SurveyerComponent>();
             }
@@ -109,66 +160,80 @@ namespace Oxide.Plugins
 
         private class SurveyerComponent : MonoBehaviour
         {
-            private BasePlayer player;
-            private Item heldItem;
-            private float lastCheck;
-            private uint currentItemID;
+            private BasePlayer _player;
+            private Item _heldItem;
+            private float _lastCheck;
+            private uint _currentItemID;
 
             private void Awake()
             {
-                player = GetComponent<BasePlayer>();
-                heldItem = player.GetActiveItem();
-                currentItemID = player.svActiveItemID;
+                _player = GetComponent<BasePlayer>();
+                _heldItem = _player.GetActiveItem();
+                _currentItemID = _player.svActiveItemID;
             }
 
             private void Update()
             {
-                if (player == null || !player.IsConnected || !player.CanInteract())
+                if (_player == null || !_player.IsConnected || !_player.CanInteract())
                 {
                     Destroy(this);
                     return;
                 }
-                if (player.svActiveItemID != currentItemID)
+                if (_player.svActiveItemID != _currentItemID)
                 {
-                    heldItem = player.GetActiveItem();
-                    if (heldItem != null && heldItem.info.shortname != "surveycharge")
+                    _heldItem = _player.GetActiveItem();
+                    if (_heldItem != null && _heldItem.info.shortname != "surveycharge")
                     {
                         Destroy(this);
                         return;
                     }
-                    currentItemID = player.svActiveItemID;
+                    _currentItemID = _player.svActiveItemID;
                 }
-                if (Time.realtimeSinceStartup - lastCheck >= 0.5f)
+                if (Time.realtimeSinceStartup - _lastCheck >= 0.5f)
                 {
-                    if (!player.serverInput.IsDown(BUTTON.FIRE_SECONDARY)) return;
+                    if (!_player.serverInput.IsDown(BUTTON.FIRE_SECONDARY))
+                    {
+                        return;
+                    }
                     var surveyPosition = GetSurveyPosition();
-                    instance.Print(player, CanSpawnCrater(surveyPosition) ? instance.Lang("CanSpawnCrater", player.UserIDString) : instance.Lang("CantSpawnCrater", player.UserIDString));
-                    lastCheck = Time.realtimeSinceStartup;
+                    _instance.Print(_player, CanSpawnCrater(surveyPosition) ? _instance.Lang("CanSpawnCrater", _player.UserIDString) : _instance.Lang("CantSpawnCrater", _player.UserIDString));
+                    _lastCheck = Time.realtimeSinceStartup;
                 }
             }
 
             private Vector3 GetSurveyPosition()
             {
                 RaycastHit hitInfo;
-                return Physics.Raycast(player.eyes.HeadRay(), out hitInfo, 100f, Rust.Layers.Solid) ? hitInfo.point : player.transform.position;
+                return Physics.Raycast(_player.eyes.HeadRay(), out hitInfo, 100f, Layers.Solid) ? hitInfo.point : _player.transform.position;
             }
 
             private static bool CanSpawnCrater(Vector3 position)
             {
-                if (WaterLevel.Test(position)) return false;
+                if (WaterLevel.Test(position))
+                {
+                    return false;
+                }
                 var deposit = ResourceDepositManager.GetOrCreate(position);
-                if (deposit?._resources == null || Time.realtimeSinceStartup - deposit.lastSurveyTime < 10f) return false;
+                if (deposit?._resources == null || Time.realtimeSinceStartup - deposit.lastSurveyTime < 10f)
+                {
+                    return false;
+                }
                 RaycastHit hitOut;
-                if (!TransformUtil.GetGroundInfo(position, out hitOut, 0.3f, 8388608)) return false;
+                if (!TransformUtil.GetGroundInfo(position, out hitOut, 0.3f, 8388608))
+                {
+                    return false;
+                }
                 var list = Pool.GetList<SurveyCrater>();
                 Vis.Entities(position, 10f, list, 1);
                 var flag = list.Count > 0;
                 Pool.FreeList(ref list);
-                if (flag) return false;
+                if (flag)
+                {
+                    return false;
+                }
                 foreach (var resource in deposit._resources)
                 {
-                    if (resource.spawnType == ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM &&
-                        !resource.isLiquid && resource.amount >= 1000)
+                    if (resource.spawnType == ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM && !resource.isLiquid && resource.amount >= 1000)
                     {
                         return true;
                     }
@@ -189,7 +254,7 @@ namespace Oxide.Plugins
                 return;
             }
             RaycastHit hitInfo;
-            if (!Physics.Raycast(player.eyes.HeadRay(), out hitInfo, 10f, Rust.Layers.Mask.Default) || !(hitInfo.GetEntity() is SurveyCrater))
+            if (!Physics.Raycast(player.eyes.HeadRay(), out hitInfo, 10f, Layers.Mask.Default) || !(hitInfo.GetEntity() is SurveyCrater))
             {
                 Print(player, Lang("NotLookingAtCrater", player.UserIDString));
                 return;
@@ -209,7 +274,7 @@ namespace Oxide.Plugins
                 Print(player, Lang("NoMinerals", player.UserIDString));
                 return;
             }
-            SendMineralAnalysis(player, surveyItems);
+            SendMineralAnalysis(player, surveyItems, surveyCrater.ShortPrefabName == "survey_crater_oil");
             Pool.FreeList(ref surveyItems);
         }
 
@@ -217,14 +282,15 @@ namespace Oxide.Plugins
 
         #region Methods
 
-        private void SendMineralAnalysis(BasePlayer player, List<SurveyItem> surveyItems)
+        private void SendMineralAnalysis(BasePlayer player, List<SurveyItem> surveyItems, bool isOilCrater)
         {
             var stringBuilder = new StringBuilder();
             stringBuilder.AppendLine(Lang("MineralAnalysis", player.UserIDString));
             var language = lang.GetLanguage(player.UserIDString);
             foreach (var surveyItem in surveyItems)
             {
-                float pM = 45f / surveyItem.workNeeded;
+                var workPerMinute = isOilCrater ? _pumpjackWorkPerMinute : _quarryWorkPerMinute;
+                var pM = workPerMinute / surveyItem.workNeeded;
                 stringBuilder.AppendLine(Lang("MineralInfo", player.UserIDString, GetItemDisplayName(language, surveyItem.itemDefinition), surveyItem.amount, pM.ToString("0.00")));
             }
             Print(player, stringBuilder.ToString());
@@ -239,7 +305,10 @@ namespace Oxide.Plugins
 
         #region RustTranslationAPI
 
-        private string GetItemTranslationByShortName(string language, string itemShortName) => (string)RustTranslationAPI.Call("GetItemTranslationByShortName", language, itemShortName);
+        private string GetItemTranslationByShortName(string language, string itemShortName)
+        {
+            return (string)RustTranslationAPI.Call("GetItemTranslationByShortName", language, itemShortName);
+        }
 
         private string GetItemDisplayName(string language, ItemDefinition itemDefinition)
         {
@@ -291,7 +360,9 @@ namespace Oxide.Plugins
             {
                 configData = Config.ReadObject<ConfigData>();
                 if (configData == null)
+                {
                     LoadDefaultConfig();
+                }
             }
             catch (Exception ex)
             {
@@ -307,13 +378,19 @@ namespace Oxide.Plugins
             configData = new ConfigData();
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData);
+        }
 
         #endregion ConfigurationFile
 
         #region LanguageFile
 
-        private void Print(BasePlayer player, string message) => Player.Message(player, message, configData.prefix, configData.steamIDIcon);
+        private void Print(BasePlayer player, string message)
+        {
+            Player.Message(player, message, configData.prefix, configData.steamIDIcon);
+        }
 
         private string Lang(string key, string id = null, params object[] args)
         {
@@ -338,7 +415,7 @@ namespace Oxide.Plugins
                 ["CanSpawnCrater"] = "A crater <color=#8ee700>can</color> be spawned at the position you are looking at.",
                 ["CantSpawnCrater"] = "A crater <color=#ce422b>cannot</color> be spawned at the position you are looking at.",
                 ["NotLookingAtCrater"] = "You must be looking at a crater.",
-                ["NoMinerals"] = "There are no minerals in this crater",
+                ["NoMinerals"] = "There are no minerals in this crater"
             }, this);
             lang.RegisterMessages(new Dictionary<string, string>
             {
@@ -348,7 +425,7 @@ namespace Oxide.Plugins
                 ["CanSpawnCrater"] = "您看着的位置 <color=#8ee700>可以</color> 勘探出矿物",
                 ["CantSpawnCrater"] = "您看着的位置 <color=#ce422b>不能</color> 勘探出矿物",
                 ["NotLookingAtCrater"] = "您必须看着一个矿坑",
-                ["NoMinerals"] = "这个矿坑内没有任何矿物",
+                ["NoMinerals"] = "这个矿坑内没有任何矿物"
             }, this, "zh-CN");
         }
 
