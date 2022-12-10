@@ -11,7 +11,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Back Pump Jack", "Arainrr", "1.4.12")]
+    [Info("Back Pump Jack", "Arainrr", "1.4.13")]
     [Description("Allows players to use survey charges to create an oil crater")]
     public class BackPumpJack : RustPlugin
     {
@@ -22,10 +22,10 @@ namespace Oxide.Plugins
 
         private const string PREFAB_CRATER_OIL = "assets/prefabs/tools/surveycharge/survey_crater_oil.prefab";
 
-        private readonly List<QuarryData> _activeCraters = new List<QuarryData>();
         private readonly HashSet<uint> _checkedCraters = new HashSet<uint>();
-        private readonly Dictionary<uint, PermissionSetting> _activeSurveyCharges = new Dictionary<uint, PermissionSetting>();
+        private readonly List<QuarryData> _activeCraters = new List<QuarryData>();
         private readonly List<MiningQuarry> _miningQuarries = new List<MiningQuarry>();
+        private readonly Dictionary<uint, PermissionSettings> _activeSurveyCharges = new Dictionary<uint, PermissionSettings>();
         private readonly object _true = true;
         private readonly object _false = false;
 
@@ -36,7 +36,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
-            foreach (var permissionSetting in configData.Permissions)
+            foreach (var permissionSetting in _configData.Permissions)
             {
                 if (!permission.PermissionExists(permissionSetting.Permission, this))
                 {
@@ -50,13 +50,24 @@ namespace Oxide.Plugins
 
         private void OnServerInitialized(bool initial)
         {
-            if (configData.Global.CantDeploy)
+            if (_configData.Global.CantDeploy)
             {
                 Subscribe(nameof(CanBuild));
             }
-            if (configData.Global.CantDamage)
+            if (_configData.Global.CantDamage)
             {
                 Subscribe(nameof(OnEntityTakeDamage));
+            }
+
+            var quarry = GameManager.server.FindPrefab("assets/prefabs/deployable/quarry/mining_quarry.prefab")?.GetComponent<MiningQuarry>();
+            if (quarry != null)
+            {
+                QuarrySettings.WorkPerMinute = 60f / quarry.processRate * quarry.workToAdd;
+            }
+            var pumpjack = GameManager.server.FindPrefab("assets/prefabs/deployable/oil jack/mining.pumpjack.prefab")?.GetComponent<MiningQuarry>();
+            if (pumpjack != null)
+            {
+                PumpJackSettings.WorkPerMinute = 60f / pumpjack.processRate * pumpjack.workToAdd;
             }
 
             foreach (var serverEntity in BaseNetworkable.serverEntities)
@@ -85,14 +96,12 @@ namespace Oxide.Plugins
                         isLiquid = surveyCrater.ShortPrefabName == "survey_crater_oil",
                         mineralItems = mineralItems
                     });
+                    continue;
                 }
-                else
+                var miningQuarry = serverEntity as MiningQuarry;
+                if (miningQuarry != null)
                 {
-                    var miningQuarry = serverEntity as MiningQuarry;
-                    if (miningQuarry != null)
-                    {
-                        OnEntitySpawned(miningQuarry);
-                    }
+                    OnEntitySpawned(miningQuarry);
                 }
             }
 
@@ -151,17 +160,12 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            PermissionSetting permissionSetting;
-            if (_activeSurveyCharges.TryGetValue(surveyCharge.net.ID, out permissionSetting))
+            PermissionSettings permissionSettings;
+            if (_activeSurveyCharges.TryGetValue(surveyCharge.net.ID, out permissionSettings))
             {
                 _activeSurveyCharges.Remove(surveyCharge.net.ID);
-                ModifyResourceDeposit(permissionSetting, surveyCharge.transform.position, surveyCharge.OwnerID);
+                ModifyResourceDeposit(permissionSettings, surveyCharge.transform.position, surveyCharge.OwnerID);
             }
-        }
-
-        private void OnEntityKill(SurveyCrater surveyCrater)
-        {
-            _checkedCraters.Remove(surveyCrater.net?.ID ?? 0);
         }
 
         private void OnEntityBuilt(Planner planner, GameObject obj)
@@ -171,14 +175,16 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            foreach (var quarryData in _activeCraters.ToArray())
+            for (var i = _activeCraters.Count - 1; i >= 0; i--)
             {
-                if (Vector3.Distance(quarryData.position, miningQuarry.transform.position) < 2f)
+                var quarryData = _activeCraters[i];
+                if (Vector3Ex.Distance2D(quarryData.position, miningQuarry.transform.position) < 2f)
                 {
-                    storedData.quarryDataList.Add(quarryData);
+                    _storedData.quarryDataList.Add(quarryData);
                     CreateResourceDeposit(miningQuarry, quarryData);
-                    _activeCraters.Remove(quarryData);
+                    _activeCraters.RemoveAt(i);
                     SaveData();
+                    break;
                 }
             }
         }
@@ -204,12 +210,12 @@ namespace Oxide.Plugins
 
         private object CanBuild(Planner planner, Construction prefab, Construction.Target target)
         {
-            var surveyCrater = target.entity as SurveyCrater;
-            if (surveyCrater == null || !surveyCrater.OwnerID.IsSteamId())
+            if (planner == null)
             {
                 return null;
             }
-            if (planner == null)
+            var surveyCrater = target.entity as SurveyCrater;
+            if (surveyCrater == null || !surveyCrater.OwnerID.IsSteamId())
             {
                 return null;
             }
@@ -239,13 +245,13 @@ namespace Oxide.Plugins
                 {
                     continue;
                 }
-                foreach (var quarryData in storedData.quarryDataList)
+                foreach (var quarryData in _storedData.quarryDataList)
                 {
                     if (quarryData == null)
                     {
                         continue;
                     }
-                    if (Vector3.Distance(quarryData.position, miningQuarry.transform.position) < 2f)
+                    if (Vector3Ex.Distance2D(quarryData.position, miningQuarry.transform.position) < 2f)
                     {
                         count++;
                         CreateResourceDeposit(miningQuarry, quarryData);
@@ -261,12 +267,12 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            foreach (var quarryData in storedData.quarryDataList.ToArray())
+            foreach (var quarryData in _storedData.quarryDataList.ToArray())
             {
                 var validData = false;
                 foreach (var miningQuarry in _miningQuarries)
                 {
-                    if (Vector3.Distance(quarryData.position, miningQuarry.transform.position) < 2f)
+                    if (Vector3Ex.Distance2D(quarryData.position, miningQuarry.transform.position) < 2f)
                     {
                         validData = true;
                         break;
@@ -274,7 +280,7 @@ namespace Oxide.Plugins
                 }
                 if (!validData)
                 {
-                    storedData.quarryDataList.Remove(quarryData);
+                    _storedData.quarryDataList.Remove(quarryData);
                 }
             }
             SaveData();
@@ -304,7 +310,7 @@ namespace Oxide.Plugins
             miningQuarry.SendNetworkUpdateImmediate();
         }
 
-        private void ModifyResourceDeposit(PermissionSetting permissionSetting, Vector3 checkPosition, ulong playerID)
+        private void ModifyResourceDeposit(PermissionSettings permissionSettings, Vector3 checkPosition, ulong playerID)
         {
             NextTick(() =>
             {
@@ -320,7 +326,7 @@ namespace Oxide.Plugins
                     {
                         continue;
                     }
-                    if (Random.Range(0f, 100f) < permissionSetting.OilCraterChance)
+                    if (Random.Range(0f, 100f) < permissionSettings.OilCraterChance)
                     {
                         var oilCrater = GameManager.server.CreateEntity(PREFAB_CRATER_OIL, surveyCrater.transform.position) as SurveyCrater;
                         if (oilCrater == null)
@@ -328,81 +334,39 @@ namespace Oxide.Plugins
                             continue;
                         }
                         surveyCrater.Kill();
-                        oilCrater.OwnerID = playerID;
                         oilCrater.Spawn();
                         _checkedCraters.Add(oilCrater.net?.ID ?? 0);
-                        var deposit = ResourceDepositManager.GetOrCreate(oilCrater.transform.position);
-                        if (deposit != null)
                         {
-                            deposit._resources.Clear();
-                            var amount = Random.Range(10000, 100000);
-                            var workNeeded = 45f / Random.Range(permissionSetting.PumpJack.PmMin, permissionSetting.PumpJack.PmMax);
-                            var crudeItemDef = ItemManager.FindItemDefinition("crude.oil");
-                            if (crudeItemDef != null)
+                            var deposit = ResourceDepositManager.GetOrCreate(oilCrater.transform.position);
+                            if (deposit != null)
                             {
-                                deposit.Add(crudeItemDef, 1, amount, workNeeded, ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM, true);
-                                var mineralItemDatas = new List<MineralItemData>
-                                {
-                                    new MineralItemData
-                                    {
-                                        amount = amount,
-                                        shortname = crudeItemDef.shortname,
-                                        workNeeded = workNeeded
-                                    }
-                                };
+                                oilCrater.OwnerID = playerID;
+                                deposit._resources.Clear();
+
+                                var mineralItems = permissionSettings.PumpJack.RefillResourceDeposit(deposit);
                                 _activeCraters.Add(new QuarryData
                                 {
                                     position = oilCrater.transform.position,
-                                    isLiquid = true,
-                                    mineralItems = mineralItemDatas
+                                    isLiquid = permissionSettings.PumpJack.IsLiquid,
+                                    mineralItems = mineralItems
                                 });
                             }
                         }
                     }
-                    else if (Random.Range(0f, 100f) < permissionSetting.Quarry.ModifyChance)
+                    else if (Random.Range(0f, 100f) < permissionSettings.Quarry.ModifyChance)
                     {
                         var deposit = ResourceDepositManager.GetOrCreate(surveyCrater.transform.position);
                         if (deposit != null)
                         {
-                            deposit._resources.Clear();
                             surveyCrater.OwnerID = playerID;
-                            var amountsRemaining = Random.Range(permissionSetting.Quarry.AmountMin, permissionSetting.Quarry.AmountMax + 1);
-                            var mineralItemDataList = new List<MineralItemData>();
+                            deposit._resources.Clear();
 
-                            for (var i = 0; i < 200; i++)
-                            {
-                                if (amountsRemaining <= 0)
-                                {
-                                    break;
-                                }
-                                var mineralItem = permissionSetting.Quarry.MineralItems.GetRandom();
-                                if (!permissionSetting.Quarry.AllowDuplication && deposit._resources.Any(x => x.type.shortname == mineralItem.ShortName))
-                                {
-                                    continue;
-                                }
-                                if (Random.Range(0f, 100f) < mineralItem.Chance)
-                                {
-                                    var itemDef = ItemManager.FindItemDefinition(mineralItem.ShortName);
-                                    if (itemDef != null)
-                                    {
-                                        var amount = Random.Range(10000, 100000);
-                                        var workNeeded = 45f / Random.Range(mineralItem.PmMin, mineralItem.PmMax);
-                                        deposit.Add(itemDef, 1, amount, workNeeded, ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM);
-                                        mineralItemDataList.Add(new MineralItemData
-                                        {
-                                            amount = amount,
-                                            shortname = itemDef.shortname,
-                                            workNeeded = workNeeded
-                                        });
-                                    }
-                                    amountsRemaining--;
-                                }
-                            }
+                            var mineralItems = permissionSettings.Quarry.RefillResourceDeposit(deposit);
                             _activeCraters.Add(new QuarryData
                             {
                                 position = surveyCrater.transform.position,
-                                isLiquid = false,
-                                mineralItems = mineralItemDataList
+                                isLiquid = permissionSettings.Quarry.IsLiquid,
+                                mineralItems = mineralItems
                             });
                         }
                     }
@@ -415,19 +379,19 @@ namespace Oxide.Plugins
             });
         }
 
-        private PermissionSetting GetPermissionSetting(BasePlayer player)
+        private PermissionSettings GetPermissionSetting(BasePlayer player)
         {
-            PermissionSetting permissionSetting = null;
+            PermissionSettings permissionSettings = null;
             var priority = 0;
-            foreach (var p in configData.Permissions)
+            foreach (var perm in _configData.Permissions)
             {
-                if (p.Priority >= priority && permission.UserHasPermission(player.UserIDString, p.Permission))
+                if (perm.Priority >= priority && permission.UserHasPermission(player.UserIDString, perm.Permission))
                 {
-                    priority = p.Priority;
-                    permissionSetting = p;
+                    priority = perm.Priority;
+                    permissionSettings = perm;
                 }
             }
-            return permissionSetting;
+            return permissionSettings;
         }
 
         #region AreFriends
@@ -438,15 +402,15 @@ namespace Oxide.Plugins
             {
                 return true;
             }
-            if (configData.Global.UseTeams && SameTeam(playerID, friendID))
+            if (_configData.Global.UseTeams && SameTeam(playerID, friendID))
             {
                 return true;
             }
-            if (configData.Global.UseFriends && HasFriend(playerID, friendID))
+            if (_configData.Global.UseFriends && HasFriend(playerID, friendID))
             {
                 return true;
             }
-            if (configData.Global.UseClans && SameClan(playerID, friendID))
+            if (_configData.Global.UseClans && SameClan(playerID, friendID))
             {
                 return true;
             }
@@ -524,42 +488,78 @@ namespace Oxide.Plugins
 
         #region ConfigurationFile
 
-        private ConfigData configData;
+        private ConfigData _configData;
 
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Settings")]
-            public GlobalSetting Global { get; set; } = new GlobalSetting();
+            public GlobalSettings Global { get; set; } = new GlobalSettings();
 
             [JsonProperty(PropertyName = "Chat Settings")]
-            public ChatSetting Chat { get; set; } = new ChatSetting();
+            public ChatSettings Chat { get; set; } = new ChatSettings();
 
             [JsonProperty(PropertyName = "Permission List", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<PermissionSetting> Permissions { get; set; } = new List<PermissionSetting>
+            public List<PermissionSettings> Permissions { get; set; } = new List<PermissionSettings>
             {
-                new PermissionSetting
+                new PermissionSettings
                 {
                     Permission = "backpumpjack.use",
                     Priority = 0,
                     OilCraterChance = 20f,
-                    PumpJack = new PumpJackSetting
+                    PumpJack = new PumpJackSettings
                     {
-                        PmMin = 5f,
-                        PmMax = 10f
+                        AmountMin = 1,
+                        AmountMax = 1,
+                        AllowDuplication = false,
+                        MineralItems = new List<MineralItem>
+                        {
+                            new MineralItem
+                            {
+                                ShortName = "crude.oil",
+                                Chance = 50f,
+                                PmMin = 28.8f,
+                                PmMax = 28.8f
+                            },
+                            new MineralItem
+                            {
+                                ShortName = "lowgradefuel",
+                                Chance = 50f,
+                                PmMin = 81.6f,
+                                PmMax = 81.6f,
+                            }
+                        }
                     },
-                    Quarry = new QuarrySetting()
+                    Quarry = new QuarrySettings()
                 },
-                new PermissionSetting
+                new PermissionSettings
                 {
                     Permission = "backpumpjack.vip",
                     Priority = 1,
                     OilCraterChance = 40f,
-                    PumpJack = new PumpJackSetting
+                    PumpJack = new PumpJackSettings
                     {
-                        PmMin = 10f,
-                        PmMax = 20f
+                        AmountMin = 2,
+                        AmountMax = 2,
+                        AllowDuplication = false,
+                        MineralItems = new List<MineralItem>
+                        {
+                            new MineralItem
+                            {
+                                ShortName = "crude.oil",
+                                Chance = 50f,
+                                PmMin = 38f,
+                                PmMax = 38f
+                            },
+                            new MineralItem
+                            {
+                                ShortName = "lowgradefuel",
+                                Chance = 50f,
+                                PmMin = 100f,
+                                PmMax = 100f,
+                            }
+                        }
                     },
-                    Quarry = new QuarrySetting
+                    Quarry = new QuarrySettings
                     {
                         AmountMin = 1,
                         AmountMax = 3,
@@ -604,7 +604,7 @@ namespace Oxide.Plugins
             public VersionNumber Version { get; set; }
         }
 
-        private class GlobalSetting
+        private class GlobalSettings
         {
             [JsonProperty(PropertyName = "Use Teams")]
             public bool UseTeams { get; set; } = true;
@@ -622,7 +622,7 @@ namespace Oxide.Plugins
             public bool CantDeploy { get; set; } = true;
         }
 
-        private class ChatSetting
+        private class ChatSettings
         {
             [JsonProperty(PropertyName = "Chat Prefix")]
             public string Prefix { get; set; } = "<color=#00FFFF>[BackPumpJack]</color>: ";
@@ -631,7 +631,7 @@ namespace Oxide.Plugins
             public ulong SteamIdIcon { get; set; } = 0;
         }
 
-        private class PermissionSetting
+        private class PermissionSettings
         {
             [JsonProperty(PropertyName = "Permission")]
             public string Permission { get; set; }
@@ -643,26 +643,14 @@ namespace Oxide.Plugins
             public float OilCraterChance { get; set; }
 
             [JsonProperty(PropertyName = "Oil Crater Settings")]
-            public PumpJackSetting PumpJack { get; set; } = new PumpJackSetting();
+            public PumpJackSettings PumpJack { get; set; } = new PumpJackSettings();
 
             [JsonProperty(PropertyName = "Normal Crater Settings")]
-            public QuarrySetting Quarry { get; set; } = new QuarrySetting();
+            public QuarrySettings Quarry { get; set; } = new QuarrySettings();
         }
 
-        private class PumpJackSetting
+        private abstract class MiningSettings
         {
-            [JsonProperty(PropertyName = "Minimum pM")]
-            public float PmMin { get; set; }
-
-            [JsonProperty(PropertyName = "Maximum pM")]
-            public float PmMax { get; set; }
-        }
-
-        private class QuarrySetting
-        {
-            [JsonProperty(PropertyName = "Modify Chance (If not modified, use default mineral)")]
-            public float ModifyChance { get; set; }
-
             [JsonProperty(PropertyName = "Minimum Mineral Amount")]
             public int AmountMin { get; set; }
 
@@ -670,10 +658,68 @@ namespace Oxide.Plugins
             public int AmountMax { get; set; }
 
             [JsonProperty(PropertyName = "Allow Duplication Of Mineral Item")]
-            public bool AllowDuplication { get; set; } = true;
+            public bool AllowDuplication { get; set; }
 
-            [JsonProperty(PropertyName = "Mineral Items")]
+            [JsonProperty(PropertyName = "Mineral Items", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public List<MineralItem> MineralItems { get; set; } = new List<MineralItem>();
+
+            [JsonIgnore]
+            public abstract bool IsLiquid { get; }
+
+            public abstract float GetWorkPerMinute();
+
+            public List<MineralItemData> RefillResourceDeposit(ResourceDepositManager.ResourceDeposit deposit)
+            {
+                var amountsRemaining = Random.Range(AmountMin, AmountMax + 1);
+                var mineralItems = new List<MineralItemData>();
+                for (var i = 0; i < 200; i++)
+                {
+                    if (amountsRemaining <= 0)
+                    {
+                        break;
+                    }
+                    var mineralItem = MineralItems.GetRandom();
+                    if (!AllowDuplication && deposit._resources.Any(x => x.type.shortname == mineralItem.ShortName))
+                    {
+                        continue;
+                    }
+                    if (Random.Range(0f, 100f) < mineralItem.Chance)
+                    {
+                        var itemDef = ItemManager.FindItemDefinition(mineralItem.ShortName);
+                        if (itemDef != null)
+                        {
+                            var amount = Random.Range(10000, 100000);
+                            var workNeeded = GetWorkPerMinute() / Random.Range(mineralItem.PmMin, mineralItem.PmMax);
+                            deposit.Add(itemDef, 1, amount, workNeeded, ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM, IsLiquid);
+                            mineralItems.Add(new MineralItemData
+                            {
+                                amount = amount,
+                                shortname = itemDef.shortname,
+                                workNeeded = workNeeded
+                            });
+                        }
+                        amountsRemaining--;
+                    }
+                }
+                return mineralItems;
+            }
+        }
+
+        private class QuarrySettings : MiningSettings
+        {
+            [JsonProperty(PropertyName = "Modify Chance (If not modified, use default mineral)", Order = -1)]
+            public float ModifyChance { get; set; }
+
+            public static float WorkPerMinute { get; set; }
+            public override bool IsLiquid => false;
+            public override float GetWorkPerMinute() => WorkPerMinute;
+        }
+
+        private class PumpJackSettings : MiningSettings
+        {
+            public static float WorkPerMinute { get; set; }
+            public override bool IsLiquid => true;
+            public override float GetWorkPerMinute() => WorkPerMinute;
         }
 
         private class MineralItem
@@ -696,8 +742,8 @@ namespace Oxide.Plugins
             base.LoadConfig();
             try
             {
-                configData = Config.ReadObject<ConfigData>();
-                if (configData == null)
+                _configData = Config.ReadObject<ConfigData>();
+                if (_configData == null)
                 {
                     LoadDefaultConfig();
                 }
@@ -717,28 +763,28 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             PrintWarning("Creating a new configuration file");
-            configData = new ConfigData();
-            configData.Version = Version;
+            _configData = new ConfigData();
+            _configData.Version = Version;
         }
 
         protected override void SaveConfig()
         {
-            Config.WriteObject(configData);
+            Config.WriteObject(_configData);
         }
 
         private void UpdateConfigValues()
         {
-            if (configData.Version < Version)
+            if (_configData.Version < Version)
             {
-                if (configData.Version <= default(VersionNumber))
+                if (_configData.Version <= default(VersionNumber))
                 {
                     string prefix, prefixColor;
                     if (GetConfigValue(out prefix, "Chat Settings", "Chat Prefix") && GetConfigValue(out prefixColor, "Chat Settings", "Chat Prefix Color"))
                     {
-                        configData.Chat.Prefix = $"<color={prefixColor}>{prefix}</color>: ";
+                        _configData.Chat.Prefix = $"<color={prefixColor}>{prefix}</color>: ";
                     }
                 }
-                configData.Version = Version;
+                _configData.Version = Version;
             }
         }
 
@@ -758,7 +804,7 @@ namespace Oxide.Plugins
 
         #region DataFile
 
-        private StoredData storedData;
+        private StoredData _storedData;
 
         private class StoredData
         {
@@ -783,13 +829,13 @@ namespace Oxide.Plugins
         {
             try
             {
-                storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(Name);
+                _storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(Name);
             }
             catch
             {
-                storedData = null;
+                _storedData = null;
             }
-            if (storedData == null)
+            if (_storedData == null)
             {
                 ClearData();
             }
@@ -797,13 +843,13 @@ namespace Oxide.Plugins
 
         private void ClearData()
         {
-            storedData = new StoredData();
+            _storedData = new StoredData();
             SaveData();
         }
 
         private void SaveData()
         {
-            Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+            Interface.Oxide.DataFileSystem.WriteObject(Name, _storedData);
         }
 
         private void OnNewSave()
@@ -817,7 +863,7 @@ namespace Oxide.Plugins
 
         private void Print(BasePlayer player, string message)
         {
-            Player.Message(player, message, configData.Chat.Prefix, configData.Chat.SteamIdIcon);
+            Player.Message(player, message, _configData.Chat.Prefix, _configData.Chat.SteamIdIcon);
         }
 
         private string Lang(string key, string id = null, params object[] args)
