@@ -11,6 +11,7 @@ using Oxide.Game.Rust;
 using Oxide.Game.Rust.Cui;
 using ProtoBuf;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
@@ -20,7 +21,9 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        [PluginReference] private readonly Plugin Clans, Friends, Bank;
+        [PluginReference]
+        private readonly Plugin Clans, Friends, Bank;
+
         private const string PERMISSION_USE = "automaticauthorization.use";
 
         private readonly object _true = true;
@@ -31,7 +34,7 @@ namespace Oxide.Plugins
             None,
             Teams,
             Friends,
-            Clans,
+            Clans
         }
 
         private enum AutoAuthType
@@ -39,12 +42,14 @@ namespace Oxide.Plugins
             All,
             Turret,
             Cupboard,
+            CodeLock
         }
 
         private class EntityCache
         {
             public readonly HashSet<AutoTurret> autoTurrets = new HashSet<AutoTurret>();
             public readonly HashSet<BuildingPrivlidge> buildingPrivlidges = new HashSet<BuildingPrivlidge>();
+            public readonly HashSet<CodeLock> codeLocks = new HashSet<CodeLock>();
         }
 
         #endregion Fields
@@ -98,10 +103,18 @@ namespace Oxide.Plugins
                 {
                     CheckEntitySpawned(buildingPrivlidge);
                 }
+                var codeLock = serverEntity as CodeLock;
+                if (codeLock != null)
+                {
+                    CheckEntitySpawned(codeLock);
+                }
             }
         }
 
-        private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), SaveData);
+        private void OnServerSave()
+        {
+            timer.Once(Random.Range(0f, 60f), SaveData);
+        }
 
         private void Unload()
         {
@@ -112,13 +125,33 @@ namespace Oxide.Plugins
             SaveData();
         }
 
-        private void OnEntitySpawned(AutoTurret autoTurret) => CheckEntitySpawned(autoTurret, true);
+        private void OnEntitySpawned(AutoTurret autoTurret)
+        {
+            CheckEntitySpawned(autoTurret, true);
+        }
 
-        private void OnEntitySpawned(BuildingPrivlidge buildingPrivlidge) => CheckEntitySpawned(buildingPrivlidge, true);
+        private void OnEntitySpawned(BuildingPrivlidge buildingPrivlidge)
+        {
+            CheckEntitySpawned(buildingPrivlidge, true);
+        }
+        private void OnEntitySpawned(CodeLock codeLock)
+        {
+            CheckEntitySpawned(codeLock, true);
+        }
 
-        private void OnEntityKill(AutoTurret autoTurret) => CheckEntityKill(autoTurret);
+        private void OnEntityKill(AutoTurret autoTurret)
+        {
+            CheckEntityKill(autoTurret);
+        }
 
-        private void OnEntityKill(BuildingPrivlidge buildingPrivlidge) => CheckEntityKill(buildingPrivlidge);
+        private void OnEntityKill(BuildingPrivlidge buildingPrivlidge)
+        {
+            CheckEntityKill(buildingPrivlidge);
+        }
+        private void OnEntityKill(CodeLock codeLock)
+        {
+            CheckEntityKill(codeLock);
+        }
 
         private object CanUseLockedEntity(BasePlayer player, BaseLock baseLock)
         {
@@ -138,7 +171,7 @@ namespace Oxide.Plugins
             }
 
             // Ignore the bank boxes
-            if (IsBankBox(baseLock))
+            if (IsBankBox(parentEntity))
             {
                 return null;
             }
@@ -163,7 +196,7 @@ namespace Oxide.Plugins
 
         #region Helpers
 
-        private static bool CanUnlockEntity(BaseEntity parentEntity, StoredData.LockShareEntry lockShareEntry)
+        private static bool CanShareLockedEntity(BaseEntity parentEntity, StoredData.LockShareEntry lockShareEntry)
         {
             if (!lockShareEntry.enabled)
             {
@@ -183,17 +216,50 @@ namespace Oxide.Plugins
 
         private static void CheckShareData(StoredData.ShareEntry shareEntry, ConfigData.ShareSettings shareSettings)
         {
-            if (!shareSettings.Enabled) shareEntry.enabled = false;
-            if (!shareSettings.ShareCupboard) shareEntry.cupboard = false;
-            if (!shareSettings.ShareTurret) shareEntry.turret = false;
-            if (!shareSettings.KeyLock.Enabled) shareEntry.keyLock.enabled = false;
-            if (!shareSettings.KeyLock.ShareDoor) shareEntry.keyLock.door = false;
-            if (!shareSettings.KeyLock.ShareBox) shareEntry.keyLock.box = false;
-            if (!shareSettings.KeyLock.ShareOtherEntity) shareEntry.keyLock.other = false;
-            if (!shareSettings.CodeLock.Enabled) shareEntry.codeLock.enabled = false;
-            if (!shareSettings.CodeLock.ShareDoor) shareEntry.codeLock.door = false;
-            if (!shareSettings.CodeLock.ShareBox) shareEntry.codeLock.box = false;
-            if (!shareSettings.CodeLock.ShareOtherEntity) shareEntry.codeLock.other = false;
+            if (!shareSettings.Enabled)
+            {
+                shareEntry.enabled = false;
+            }
+            if (!shareSettings.ShareCupboard)
+            {
+                shareEntry.cupboard = false;
+            }
+            if (!shareSettings.ShareTurret)
+            {
+                shareEntry.turret = false;
+            }
+            if (!shareSettings.KeyLock.Enabled)
+            {
+                shareEntry.keyLock.enabled = false;
+            }
+            if (!shareSettings.KeyLock.ShareDoor)
+            {
+                shareEntry.keyLock.door = false;
+            }
+            if (!shareSettings.KeyLock.ShareBox)
+            {
+                shareEntry.keyLock.box = false;
+            }
+            if (!shareSettings.KeyLock.ShareOtherEntity)
+            {
+                shareEntry.keyLock.other = false;
+            }
+            if (!shareSettings.CodeLock.Enabled)
+            {
+                shareEntry.codeLock.enabled = false;
+            }
+            if (!shareSettings.CodeLock.ShareDoor)
+            {
+                shareEntry.codeLock.door = false;
+            }
+            if (!shareSettings.CodeLock.ShareBox)
+            {
+                shareEntry.codeLock.box = false;
+            }
+            if (!shareSettings.CodeLock.ShareOtherEntity)
+            {
+                shareEntry.codeLock.other = false;
+            }
         }
 
         #endregion Helpers
@@ -242,6 +308,36 @@ namespace Oxide.Plugins
             }
         }
 
+        private void CheckEntitySpawned(CodeLock codeLock, bool justCreated = false)
+        {
+            if (codeLock == null)
+            {
+                return;
+            }
+            var parentEntity = codeLock.GetParentEntity();
+            if (parentEntity != null && IsBankBox(parentEntity))
+            {
+                return;
+            }
+            var ownerId = codeLock.OwnerID.IsSteamId() ? codeLock.OwnerID : parentEntity != null ? parentEntity.OwnerID : 0;
+            if (!ownerId.IsSteamId())
+            {
+                return;
+            }
+            EntityCache entityCache;
+            if (!_playerEntities.TryGetValue(ownerId, out entityCache))
+            {
+                entityCache = new EntityCache();
+                _playerEntities.Add(ownerId, entityCache);
+            }
+            entityCache.codeLocks.Add(codeLock);
+
+            if (justCreated && permission.UserHasPermission(ownerId.ToString(), PERMISSION_USE))
+            {
+                AuthToCodeLock(new HashSet<CodeLock> { codeLock }, ownerId, true);
+            }
+        }
+
         private void CheckEntityKill(AutoTurret autoTurret)
         {
             if (autoTurret == null || !autoTurret.OwnerID.IsSteamId())
@@ -268,6 +364,25 @@ namespace Oxide.Plugins
             }
         }
 
+        private void CheckEntityKill(CodeLock codeLock)
+        {
+            if (codeLock == null)
+            {
+                return;
+            }
+            var parentEntity = codeLock.GetParentEntity();
+            var ownerId = codeLock.OwnerID.IsSteamId() ? codeLock.OwnerID : parentEntity != null ? parentEntity.OwnerID : 0;
+            if (!ownerId.IsSteamId())
+            {
+                return;
+            }
+            EntityCache entityCache;
+            if (_playerEntities.TryGetValue(ownerId, out entityCache))
+            {
+                entityCache.codeLocks.Remove(codeLock);
+            }
+        }
+
         #endregion Entity Spawn / Kill
 
         private void UpdateAuthList(ulong playerId, AutoAuthType autoAuthType)
@@ -286,6 +401,7 @@ namespace Oxide.Plugins
                 case AutoAuthType.All:
                     AuthToTurret(entityCache.autoTurrets, playerId);
                     AuthToCupboard(entityCache.buildingPrivlidges, playerId);
+                    AuthToCodeLock(entityCache.codeLocks, playerId);
                     return;
 
                 case AutoAuthType.Turret:
@@ -294,6 +410,10 @@ namespace Oxide.Plugins
 
                 case AutoAuthType.Cupboard:
                     AuthToCupboard(entityCache.buildingPrivlidges, playerId);
+                    return;
+
+                case AutoAuthType.CodeLock:
+                    AuthToCodeLock(entityCache.codeLocks, playerId);
                     return;
             }
         }
@@ -304,7 +424,7 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            var authList = GetPlayerNameIDs(playerId, AutoAuthType.Turret);
+            var authList = GetAuthorNameIDs(playerId, AutoAuthType.Turret);
             foreach (var autoTurret in autoTurrets)
             {
                 if (autoTurret == null || autoTurret.IsDestroyed)
@@ -345,7 +465,7 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            var authList = GetPlayerNameIDs(playerId, AutoAuthType.Cupboard);
+            var authList = GetAuthorNameIDs(playerId, AutoAuthType.Cupboard);
             foreach (var buildingPrivlidge in buildingPrivlidges)
             {
                 if (buildingPrivlidge == null || buildingPrivlidge.IsDestroyed)
@@ -369,17 +489,51 @@ namespace Oxide.Plugins
             }
         }
 
-        private List<PlayerNameID> GetPlayerNameIDs(ulong playerId, AutoAuthType autoAuthType)
+        private void AuthToCodeLock(HashSet<CodeLock> codeLocks, ulong playerId, bool justCreated = false)
         {
-            var authList = GetAuthList(playerId, autoAuthType);
+            if (codeLocks.Count <= 0)
+            {
+                return;
+            }
+            foreach (var codeLock in codeLocks)
+            {
+                if (codeLock == null || codeLock.IsDestroyed)
+                {
+                    continue;
+                }
+                codeLock.whitelistPlayers.Clear();
+                var authList = GetAuthorIDsForCodeLock(playerId, codeLock);
+                foreach (var friend in authList)
+                {
+                    codeLock.whitelistPlayers.Add(friend);
+                }
+                codeLock.SendNetworkUpdate();
+            }
+        }
+
+        private List<PlayerNameID> GetAuthorNameIDs(ulong playerId, AutoAuthType autoAuthType)
+        {
+            if (autoAuthType == AutoAuthType.CodeLock)
+            {
+                PrintError("Cannot be used for code locks");
+                return new List<PlayerNameID>();
+            }
+            var authList = GetAuthIds(playerId, autoAuthType);
             return authList.Select(userid => new PlayerNameID { userid = userid, username = RustCore.FindPlayerById(userid)?.displayName ?? string.Empty }).ToList();
         }
 
-        private HashSet<ulong> GetAuthList(ulong playerId, AutoAuthType autoAuthType)
+        private HashSet<ulong> GetAuthorIDsForCodeLock(ulong playerId, CodeLock codeLock)
         {
             var sharePlayers = new HashSet<ulong> { playerId };
+            var parentEntity = codeLock.GetParentEntity();
+            if (parentEntity == null)
+            {
+                return sharePlayers;
+            }
             var shareData = GetShareData(playerId, true);
-            if (shareData.teamsShare.enabled && (autoAuthType == AutoAuthType.Turret ? shareData.teamsShare.turret : shareData.teamsShare.cupboard))
+
+            var teamsShare = shareData.GetShareEntry(ShareType.Teams);
+            if (teamsShare.enabled && CanShareLockedEntity(parentEntity, teamsShare.codeLock))
             {
                 var teamMembers = GetTeamMembers(playerId);
                 if (teamMembers != null)
@@ -390,7 +544,8 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            if (shareData.friendsShare.enabled && (autoAuthType == AutoAuthType.Turret ? shareData.friendsShare.turret : shareData.friendsShare.cupboard))
+            var friendsShare = shareData.GetShareEntry(ShareType.Friends);
+            if (friendsShare.enabled && CanShareLockedEntity(parentEntity, friendsShare.codeLock))
             {
                 var friends = GetFriends(playerId);
                 if (friends != null)
@@ -401,7 +556,52 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            if (shareData.clansShare.enabled && (autoAuthType == AutoAuthType.Turret ? shareData.clansShare.turret : shareData.clansShare.cupboard))
+            var clansShare = shareData.GetShareEntry(ShareType.Clans);
+            if (clansShare.enabled && CanShareLockedEntity(parentEntity, clansShare.codeLock))
+            {
+                var clanMembers = GetClanMembers(playerId);
+                if (clanMembers != null)
+                {
+                    foreach (var member in clanMembers)
+                    {
+                        sharePlayers.Add(member);
+                    }
+                }
+            }
+            return sharePlayers;
+        }
+
+        private HashSet<ulong> GetAuthIds(ulong playerId, AutoAuthType autoAuthType)
+        {
+            var sharePlayers = new HashSet<ulong> { playerId };
+            var shareData = GetShareData(playerId, true);
+
+            var teamsShare = shareData.GetShareEntry(ShareType.Teams);
+            if (teamsShare.enabled && (autoAuthType == AutoAuthType.Turret ? teamsShare.turret : teamsShare.cupboard))
+            {
+                var teamMembers = GetTeamMembers(playerId);
+                if (teamMembers != null)
+                {
+                    foreach (var member in teamMembers)
+                    {
+                        sharePlayers.Add(member);
+                    }
+                }
+            }
+            var friendsShare = shareData.GetShareEntry(ShareType.Friends);
+            if (friendsShare.enabled && (autoAuthType == AutoAuthType.Turret ? friendsShare.turret : friendsShare.cupboard))
+            {
+                var friends = GetFriends(playerId);
+                if (friends != null)
+                {
+                    foreach (var friend in friends)
+                    {
+                        sharePlayers.Add(friend);
+                    }
+                }
+            }
+            var clansShare = shareData.GetShareEntry(ShareType.Clans);
+            if (clansShare.enabled && (autoAuthType == AutoAuthType.Turret ? clansShare.turret : clansShare.cupboard))
             {
                 var clanMembers = GetClanMembers(playerId);
                 if (clanMembers != null)
@@ -422,35 +622,49 @@ namespace Oxide.Plugins
             {
                 if (baseLock is KeyLock)
                 {
-                    return CanUnlockEntity(parentEntity, shareEntry.keyLock);
+                    return CanShareLockedEntity(parentEntity, shareEntry.keyLock);
                 }
                 var codeLock = baseLock as CodeLock;
-                if (codeLock != null && CanUnlockEntity(parentEntity, shareEntry.codeLock))
+                if (codeLock != null && CanShareLockedEntity(parentEntity, shareEntry.codeLock))
                 {
                     SendUnlockedEffect(codeLock);
                     return true;
                 }
             }
-
             return false;
         }
 
         private IEnumerable<ShareType> GetAvailableTypes()
         {
-            if (IsShareTypeEnabled(ShareType.Teams)) yield return ShareType.Teams;
-            if (IsShareTypeEnabled(ShareType.Friends)) yield return ShareType.Friends;
-            if (IsShareTypeEnabled(ShareType.Clans)) yield return ShareType.Clans;
+            if (IsShareTypeEnabled(ShareType.Teams))
+            {
+                yield return ShareType.Teams;
+            }
+            if (IsShareTypeEnabled(ShareType.Friends))
+            {
+                yield return ShareType.Friends;
+            }
+            if (IsShareTypeEnabled(ShareType.Clans))
+            {
+                yield return ShareType.Clans;
+            }
         }
 
         private bool IsShareTypeEnabled(ShareType shareType)
         {
             var shareSettings = configData.GetShareSettings(shareType);
-            if (!shareSettings.Enabled) return false;
+            if (!shareSettings.Enabled)
+            {
+                return false;
+            }
             switch (shareType)
             {
-                case ShareType.Teams: return RelationshipManager.TeamsEnabled();
-                case ShareType.Friends: return Friends != null;
-                case ShareType.Clans: return Clans != null;
+                case ShareType.Teams:
+                    return RelationshipManager.TeamsEnabled();
+                case ShareType.Friends:
+                    return Friends != null;
+                case ShareType.Clans:
+                    return Clans != null;
             }
             return false;
         }
@@ -459,9 +673,12 @@ namespace Oxide.Plugins
         {
             switch (shareType)
             {
-                case ShareType.Teams: return SameTeam(ownerId, playerId);
-                case ShareType.Friends: return HasFriend(ownerId, playerId);
-                case ShareType.Clans: return SameClan(ownerId, playerId);
+                case ShareType.Teams:
+                    return SameTeam(ownerId, playerId);
+                case ShareType.Friends:
+                    return HasFriend(ownerId, playerId);
+                case ShareType.Clans:
+                    return SameClan(ownerId, playerId);
             }
             return false;
         }
@@ -494,7 +711,7 @@ namespace Oxide.Plugins
             {
                 teamsShare = CreateShareEntry(ShareType.Teams),
                 friendsShare = CreateShareEntry(ShareType.Friends),
-                clansShare = CreateShareEntry(ShareType.Clans),
+                clansShare = CreateShareEntry(ShareType.Clans)
             };
         }
 
@@ -522,14 +739,14 @@ namespace Oxide.Plugins
                     enabled = defaultSettings.KeyLock.Enabled,
                     door = defaultSettings.KeyLock.ShareDoor,
                     box = defaultSettings.KeyLock.ShareBox,
-                    other = defaultSettings.KeyLock.ShareOtherEntity,
+                    other = defaultSettings.KeyLock.ShareOtherEntity
                 },
                 codeLock = new StoredData.LockShareEntry
                 {
                     enabled = defaultSettings.CodeLock.Enabled,
                     door = defaultSettings.CodeLock.ShareDoor,
                     box = defaultSettings.CodeLock.ShareBox,
-                    other = defaultSettings.CodeLock.ShareOtherEntity,
+                    other = defaultSettings.CodeLock.ShareOtherEntity
                 }
             };
             CheckShareData(shareEntry, configData.GetShareSettings(shareType));
@@ -566,7 +783,10 @@ namespace Oxide.Plugins
         {
             NextTick(() =>
             {
-                if (playerTeam == null || player == null) return;
+                if (playerTeam == null || player == null)
+                {
+                    return;
+                }
                 if (playerTeam.members.Contains(player.userID))
                 {
                     UpdateTeamAuthList(playerTeam.members);
@@ -578,7 +798,10 @@ namespace Oxide.Plugins
         {
             NextTick(() =>
             {
-                if (playerTeam == null || player == null) return;
+                if (playerTeam == null || player == null)
+                {
+                    return;
+                }
                 if (!playerTeam.members.Contains(player.userID))
                 {
                     var teamMembers = new List<ulong>(playerTeam.members) { player.userID };
@@ -591,7 +814,10 @@ namespace Oxide.Plugins
         {
             NextTick(() =>
             {
-                if (playerTeam == null) return;
+                if (playerTeam == null)
+                {
+                    return;
+                }
                 if (!playerTeam.members.Contains(target))
                 {
                     var teamMembers = new List<ulong>(playerTeam.members) { target };
@@ -602,7 +828,10 @@ namespace Oxide.Plugins
 
         private void OnTeamDisbanded(RelationshipManager.PlayerTeam playerTeam)
         {
-            if (playerTeam == null) return;
+            if (playerTeam == null)
+            {
+                return;
+            }
             UpdateTeamAuthList(playerTeam.members);
         }
 
@@ -655,9 +884,15 @@ namespace Oxide.Plugins
 
         #region Hooks
 
-        private void OnFriendAdded(string playerId, string friendId) => UpdateFriendAuthList(playerId, friendId);
+        private void OnFriendAdded(string playerId, string friendId)
+        {
+            UpdateFriendAuthList(playerId, friendId);
+        }
 
-        private void OnFriendRemoved(string playerId, string friendId) => UpdateFriendAuthList(playerId, friendId);
+        private void OnFriendRemoved(string playerId, string friendId)
+        {
+            UpdateFriendAuthList(playerId, friendId);
+        }
 
         #endregion Hooks
 
@@ -669,14 +904,20 @@ namespace Oxide.Plugins
 
         private IEnumerable<ulong> GetFriends(ulong playerId)
         {
-            if (Friends == null) return null;
+            if (Friends == null)
+            {
+                return null;
+            }
             var friends = Friends.Call("GetFriends", playerId) as ulong[];
             return friends;
         }
 
         private bool HasFriend(ulong playerId, ulong friendId)
         {
-            if (Friends == null) return false;
+            if (Friends == null)
+            {
+                return false;
+            }
             var hasFriend = Friends.Call("HasFriend", playerId, friendId);
             return hasFriend is bool && (bool)hasFriend;
         }
@@ -687,13 +928,22 @@ namespace Oxide.Plugins
 
         #region Hooks
 
-        private void OnClanDestroy(string clanName) => UpdateClanAuthList(clanName);
+        private void OnClanDestroy(string clanName)
+        {
+            UpdateClanAuthList(clanName);
+        }
 
-        private void OnClanUpdate(string clanName) => UpdateClanAuthList(clanName);
+        private void OnClanUpdate(string clanName)
+        {
+            UpdateClanAuthList(clanName);
+        }
 
         #region Clans Reborn Hooks
 
-        private void OnClanMemberGone(string playerId, List<string> memberUserIDs) => UpdateAuthList(Convert.ToUInt64(playerId), AutoAuthType.All);
+        private void OnClanMemberGone(string playerId, List<string> memberUserIDs)
+        {
+            UpdateAuthList(Convert.ToUInt64(playerId), AutoAuthType.All);
+        }
 
         #endregion Clans Reborn Hooks
 
@@ -786,16 +1036,16 @@ namespace Oxide.Plugins
             var titlePanel = container.Add(new CuiPanel
             {
                 Image = { Color = "0.31 0.88 0.71 1" },
-                RectTransform = { AnchorMin = "0 0.912", AnchorMax = "0.998 1" },
+                RectTransform = { AnchorMin = "0 0.912", AnchorMax = "0.998 1" }
             }, UINAME_MAIN);
             container.Add(new CuiElement
             {
                 Parent = titlePanel,
                 Components =
                 {
-                    new CuiTextComponent { Text = Lang("UI_Title", player.UserIDString), FontSize = 24, Align = TextAnchor.MiddleCenter, Color ="1 0 0 1" },
+                    new CuiTextComponent { Text = Lang("UI_Title", player.UserIDString), FontSize = 24, Align = TextAnchor.MiddleCenter, Color = "1 0 0 1" },
                     new CuiOutlineComponent { Distance = "0.5 0.5", Color = "1 1 1 1" },
-                    new CuiRectTransformComponent { AnchorMin = "0.2 0",  AnchorMax = "0.8 1" }
+                    new CuiRectTransformComponent { AnchorMin = "0.2 0", AnchorMax = "0.8 1" }
                 }
             });
             container.Add(new CuiButton
@@ -807,7 +1057,7 @@ namespace Oxide.Plugins
             container.Add(new CuiPanel
             {
                 Image = { Color = "0.1 0.1 0.1 0.4" },
-                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.908" },
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.908" }
             }, UINAME_MAIN, UINAME_MENU);
             CuiHelper.DestroyUi(player, UINAME_MAIN);
             CuiHelper.AddUi(player, container);
@@ -828,7 +1078,7 @@ namespace Oxide.Plugins
                 return;
             }
 
-            int i = 0;
+            var i = 0;
             var container = new CuiElementContainer();
 
             #region Teams UI
@@ -883,12 +1133,12 @@ namespace Oxide.Plugins
             var panelName = container.Add(new CuiPanel
             {
                 Image = { Color = "0.1 0.1 0.1 0.5" },
-                RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax },
+                RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax }
             }, UINAME_MENU, UINAME_MENU + shareType);
             var titlePanel = container.Add(new CuiPanel
             {
                 Image = { Color = "0.1 0.1 0.1 0.5" },
-                RectTransform = { AnchorMin = "0 0.9", AnchorMax = "1 1" },
+                RectTransform = { AnchorMin = "0 0.9", AnchorMax = "1 1" }
             }, panelName);
             container.Add(new CuiLabel
             {
@@ -899,10 +1149,10 @@ namespace Oxide.Plugins
             var contentPanel = container.Add(new CuiPanel
             {
                 Image = { Color = "0.1 0.1 0.1 0.55" },
-                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.895" },
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.895" }
             }, panelName);
 
-            int i = 0;
+            var i = 0;
             const float entrySize = 0.08f;
             const float spacingY = 0.012f;
 
@@ -913,43 +1163,43 @@ namespace Oxide.Plugins
 
             var anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix, Lang("UI_SubShare", playerId, Lang("UI_" + shareType, playerId)),
-                shareEntry.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}",
-                $"0.995 {anchors[1]}");
+                             shareEntry.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}",
+                             $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "Cupboard", Lang("UI_SubCupboard", playerId),
-                shareEntry.cupboard ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.cupboard ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "Turret", Lang("UI_SubTurret", playerId),
-                shareEntry.turret ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.turret ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock", Lang("UI_SubKeyLock", playerId),
-                shareEntry.keyLock.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.keyLock.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Door", Lang("UI_SubKeyLockDoor", playerId),
-                shareEntry.keyLock.door ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.keyLock.door ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Box", Lang("UI_SubKeyLockBox", playerId),
-                shareEntry.keyLock.box ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.keyLock.box ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Other", Lang("UI_SubKeyLockOther", playerId),
-                shareEntry.keyLock.other ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.keyLock.other ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock", Lang("UI_SubCodeLock", playerId),
-                shareEntry.codeLock.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.codeLock.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Door", Lang("UI_SubCodeLockDoor", playerId),
-                shareEntry.codeLock.door ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.codeLock.door ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Box", Lang("UI_SubCodeLockBox", playerId),
-                shareEntry.codeLock.box ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.codeLock.box ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
             CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Other", Lang("UI_SubCodeLockOther", playerId),
-                shareEntry.codeLock.other ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                             shareEntry.codeLock.other ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
         }
 
         private static void CreateEntrySubUI(ref CuiElementContainer container, string parentName, string command, string leftText, string rightText, string anchorMin, string anchorMax)
@@ -957,7 +1207,7 @@ namespace Oxide.Plugins
             var panelName = container.Add(new CuiPanel
             {
                 Image = { Color = "0.1 0.1 0.1 0.6" },
-                RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax },
+                RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax }
             }, parentName);
             container.Add(new CuiLabel
             {
@@ -968,7 +1218,7 @@ namespace Oxide.Plugins
             {
                 Button = { Color = "0 0 0 0.7", Command = command },
                 Text = { Text = rightText, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1", FontSize = 12 },
-                RectTransform = { AnchorMin = "0.7 0.2", AnchorMax = "0.985 0.8" },
+                RectTransform = { AnchorMin = "0.7 0.2", AnchorMax = "0.985 0.8" }
             }, panelName);
         }
 
@@ -981,21 +1231,30 @@ namespace Oxide.Plugins
         {
             switch (total)
             {
-                case 1: return new[] { 0.32f, 0.68f };
-                case 2: return i == 0 ? new[] { 0.15f, 0.48f } : new[] { 0.52f, 0.85f };
+                case 1:
+                    return new[] { 0.32f, 0.68f };
+                case 2:
+                    return i == 0 ? new[] { 0.15f, 0.48f } : new[] { 0.52f, 0.85f };
                 case 3:
                     switch (i)
                     {
-                        case 0: return new[] { 0.01f, 0.33f };
-                        case 1: return new[] { 0.34f, 0.66f };
-                        default: return new[] { 0.67f, 0.99f };
+                        case 0:
+                            return new[] { 0.01f, 0.33f };
+                        case 1:
+                            return new[] { 0.34f, 0.66f };
+                        default:
+                            return new[] { 0.67f, 0.99f };
                     }
 
-                default: return null;
+                default:
+                    return null;
             }
         }
 
-        private static void DestroyUI(BasePlayer player) => CuiHelper.DestroyUi(player, UINAME_MAIN);
+        private static void DestroyUI(BasePlayer player)
+        {
+            CuiHelper.DestroyUi(player, UINAME_MAIN);
+        }
 
         #endregion UI
 
@@ -1273,6 +1532,7 @@ namespace Oxide.Plugins
                         {
                             Print(player, Lang("CodeLock", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
                         }
+                        UpdateAuthList(player.userID, AutoAuthType.CodeLock);
                         return true;
                     }
                     switch (args[2].ToLower())
@@ -1292,6 +1552,7 @@ namespace Oxide.Plugins
                             {
                                 Print(player, Lang("CodeLockDoor", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.door ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
                             }
+                            UpdateAuthList(player.userID, AutoAuthType.CodeLock);
                             return true;
 
                         case "b":
@@ -1309,6 +1570,7 @@ namespace Oxide.Plugins
                             {
                                 Print(player, Lang("CodeLockBox", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.box ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
                             }
+                            UpdateAuthList(player.userID, AutoAuthType.CodeLock);
                             return true;
 
                         case "o":
@@ -1326,6 +1588,7 @@ namespace Oxide.Plugins
                             {
                                 Print(player, Lang("CodeLockOther", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.other ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
                             }
+                            UpdateAuthList(player.userID, AutoAuthType.CodeLock);
                             return true;
                     }
                     break;
@@ -1343,7 +1606,10 @@ namespace Oxide.Plugins
                     }
                     return true;
             }
-            if (sendMsg) Print(player, Lang("SyntaxError", player.UserIDString, configData.Chat.ChatCommand));
+            if (sendMsg)
+            {
+                Print(player, Lang("SyntaxError", player.UserIDString, configData.Chat.ChatCommand));
+            }
             return false;
         }
 
@@ -1422,7 +1688,7 @@ namespace Oxide.Plugins
             {
                 [ShareType.Teams] = new ShareSettings(),
                 [ShareType.Friends] = new ShareSettings(),
-                [ShareType.Clans] = new ShareSettings(),
+                [ShareType.Clans] = new ShareSettings()
             };
 
             [JsonProperty(PropertyName = "Version")]
@@ -1465,9 +1731,12 @@ namespace Oxide.Plugins
             {
                 switch (shareType)
                 {
-                    case ShareType.Teams: return TeamsShare;
-                    case ShareType.Friends: return FriendsShare;
-                    case ShareType.Clans: return ClansShare;
+                    case ShareType.Teams:
+                        return TeamsShare;
+                    case ShareType.Friends:
+                        return FriendsShare;
+                    case ShareType.Clans:
+                        return ClansShare;
                 }
                 return null;
             }
@@ -1476,9 +1745,12 @@ namespace Oxide.Plugins
             {
                 switch (shareType)
                 {
-                    case ShareType.Teams: return DefaultShare[ShareType.Teams];
-                    case ShareType.Friends: return DefaultShare[ShareType.Friends];
-                    case ShareType.Clans: return DefaultShare[ShareType.Clans];
+                    case ShareType.Teams:
+                        return DefaultShare[ShareType.Teams];
+                    case ShareType.Friends:
+                        return DefaultShare[ShareType.Friends];
+                    case ShareType.Clans:
+                        return DefaultShare[ShareType.Clans];
                 }
                 return null;
             }
@@ -1532,7 +1804,10 @@ namespace Oxide.Plugins
             configData.Version = Version;
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData);
+        }
 
         private void UpdateConfigValues()
         {
@@ -1593,9 +1868,12 @@ namespace Oxide.Plugins
                 {
                     switch (shareType)
                     {
-                        case ShareType.Teams: return teamsShare;
-                        case ShareType.Friends: return friendsShare;
-                        case ShareType.Clans: return clansShare;
+                        case ShareType.Teams:
+                            return teamsShare;
+                        case ShareType.Friends:
+                            return friendsShare;
+                        case ShareType.Clans:
+                            return clansShare;
                     }
                     return null;
                 }
@@ -1607,15 +1885,24 @@ namespace Oxide.Plugins
 
                 public ShareDataContractResolver(bool teams, bool friends, bool clans)
                 {
-                    if (!teams) _excludedProperties.Add("t");
-                    if (!friends) _excludedProperties.Add("f");
-                    if (!clans) _excludedProperties.Add("c");
+                    if (!teams)
+                    {
+                        _excludedProperties.Add("t");
+                    }
+                    if (!friends)
+                    {
+                        _excludedProperties.Add("f");
+                    }
+                    if (!clans)
+                    {
+                        _excludedProperties.Add("c");
+                    }
                 }
 
                 protected override IList<JsonProperty> CreateProperties(Type type, MemberSerialization memberSerialization)
                 {
                     return _excludedProperties.Count <= 0 ? base.CreateProperties(type, memberSerialization) :
-                        base.CreateProperties(type, memberSerialization).Where(p => !_excludedProperties.Contains(p.PropertyName)).ToList();
+                            base.CreateProperties(type, memberSerialization).Where(p => !_excludedProperties.Contains(p.PropertyName)).ToList();
                 }
             }
 
@@ -1630,9 +1917,9 @@ namespace Oxide.Plugins
 
                 public string Write()
                 {
-                    var num = (Convert.ToInt32(enabled) << 0) | (Convert.ToInt32(cupboard) << 1) | (Convert.ToInt32(turret) << 2) |
-                              (Convert.ToInt32(keyLock.enabled) << 3) | (Convert.ToInt32(keyLock.door) << 4) | (Convert.ToInt32(keyLock.box) << 5) | (Convert.ToInt32(keyLock.other) << 6) |
-                              (Convert.ToInt32(codeLock.enabled) << 7) | (Convert.ToInt32(codeLock.door) << 8) | (Convert.ToInt32(codeLock.box) << 9) | (Convert.ToInt32(codeLock.other) << 10);
+                    var num = Convert.ToInt32(enabled) << 0 | Convert.ToInt32(cupboard) << 1 | Convert.ToInt32(turret) << 2 |
+                            Convert.ToInt32(keyLock.enabled) << 3 | Convert.ToInt32(keyLock.door) << 4 | Convert.ToInt32(keyLock.box) << 5 | Convert.ToInt32(keyLock.other) << 6 |
+                            Convert.ToInt32(codeLock.enabled) << 7 | Convert.ToInt32(codeLock.door) << 8 | Convert.ToInt32(codeLock.box) << 9 | Convert.ToInt32(codeLock.other) << 10;
                     return Convert.ToString(num, 2);
                 }
 
@@ -1640,17 +1927,17 @@ namespace Oxide.Plugins
                 {
                     var shareEntry = new ShareEntry();
                     var num = Convert.ToInt32(json, 2);
-                    shareEntry.enabled = ((num >> 0) & 1) != 0;
-                    shareEntry.cupboard = ((num >> 1) & 1) != 0;
-                    shareEntry.turret = ((num >> 2) & 1) != 0;
-                    shareEntry.keyLock.enabled = ((num >> 3) & 1) != 0;
-                    shareEntry.keyLock.door = ((num >> 4) & 1) != 0;
-                    shareEntry.keyLock.box = ((num >> 5) & 1) != 0;
-                    shareEntry.keyLock.other = ((num >> 6) & 1) != 0;
-                    shareEntry.codeLock.enabled = ((num >> 7) & 1) != 0;
-                    shareEntry.codeLock.door = ((num >> 8) & 1) != 0;
-                    shareEntry.codeLock.box = ((num >> 9) & 1) != 0;
-                    shareEntry.codeLock.other = ((num >> 10) & 1) != 0;
+                    shareEntry.enabled = (num >> 0 & 1) != 0;
+                    shareEntry.cupboard = (num >> 1 & 1) != 0;
+                    shareEntry.turret = (num >> 2 & 1) != 0;
+                    shareEntry.keyLock.enabled = (num >> 3 & 1) != 0;
+                    shareEntry.keyLock.door = (num >> 4 & 1) != 0;
+                    shareEntry.keyLock.box = (num >> 5 & 1) != 0;
+                    shareEntry.keyLock.other = (num >> 6 & 1) != 0;
+                    shareEntry.codeLock.enabled = (num >> 7 & 1) != 0;
+                    shareEntry.codeLock.door = (num >> 8 & 1) != 0;
+                    shareEntry.codeLock.box = (num >> 9 & 1) != 0;
+                    shareEntry.codeLock.other = (num >> 10 & 1) != 0;
                     return shareEntry;
                 }
             }
@@ -1696,7 +1983,7 @@ namespace Oxide.Plugins
                 var dataFile = Interface.Oxide.DataFileSystem.GetFile(Name);
                 storedData = dataFile.ReadObject<StoredData>();
                 dataFile.Settings.ContractResolver =
-                    new StoredData.ShareDataContractResolver(configData.TeamsShare.Enabled, configData.FriendsShare.Enabled, configData.ClansShare.Enabled);
+                        new StoredData.ShareDataContractResolver(configData.TeamsShare.Enabled, configData.FriendsShare.Enabled, configData.ClansShare.Enabled);
             }
             catch
             {
@@ -1714,7 +2001,10 @@ namespace Oxide.Plugins
             SaveData();
         }
 
-        private void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        private void SaveData()
+        {
+            Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        }
 
         private void OnNewSave(string filename)
         {
@@ -1759,7 +2049,7 @@ namespace Oxide.Plugins
 
                 public JObject GetNewData()
                 {
-                    JObject jObject = new JObject();
+                    var jObject = new JObject();
                     jObject["t"] = teamShare.Write();
                     jObject["f"] = friendsShare.Write();
                     jObject["c"] = clanShare.Write();
@@ -1777,9 +2067,9 @@ namespace Oxide.Plugins
 
                 public string Write()
                 {
-                    var num = (Convert.ToInt32(enabled) << 0) | (Convert.ToInt32(cupboard) << 1) | (Convert.ToInt32(turret) << 2) |
-                              (Convert.ToInt32(keyLock) << 3) | (Convert.ToInt32(keyLock) << 4) | (Convert.ToInt32(keyLock) << 5) | (Convert.ToInt32(keyLock) << 6) |
-                              (Convert.ToInt32(codeLock) << 7) | (Convert.ToInt32(codeLock) << 8) | (Convert.ToInt32(codeLock) << 9) | (Convert.ToInt32(codeLock) << 10);
+                    var num = Convert.ToInt32(enabled) << 0 | Convert.ToInt32(cupboard) << 1 | Convert.ToInt32(turret) << 2 |
+                            Convert.ToInt32(keyLock) << 3 | Convert.ToInt32(keyLock) << 4 | Convert.ToInt32(keyLock) << 5 | Convert.ToInt32(keyLock) << 6 |
+                            Convert.ToInt32(codeLock) << 7 | Convert.ToInt32(codeLock) << 8 | Convert.ToInt32(codeLock) << 9 | Convert.ToInt32(codeLock) << 10;
                     return Convert.ToString(num, 2);
                 }
             }
@@ -1893,7 +2183,7 @@ namespace Oxide.Plugins
                 ["UI_SubCodeLock"] = "Sharing Code Lock",
                 ["UI_SubCodeLockDoor"] = "Sharing Code Lock of Door",
                 ["UI_SubCodeLockBox"] = "Sharing Code Lock of Box",
-                ["UI_SubCodeLockOther"] = "Sharing Code Lock of Other Entity",
+                ["UI_SubCodeLockOther"] = "Sharing Code Lock of Other Entity"
             }, this);
 
             lang.RegisterMessages(new Dictionary<string, string>
@@ -1978,7 +2268,7 @@ namespace Oxide.Plugins
                 ["UI_SubCodeLock"] = "共享密码锁",
                 ["UI_SubCodeLockDoor"] = "共享门的密码锁",
                 ["UI_SubCodeLockBox"] = "共享箱子的密码锁",
-                ["UI_SubCodeLockOther"] = "共享其它实体的密码锁",
+                ["UI_SubCodeLockOther"] = "共享其它实体的密码锁"
             }, this, "zh-CN");
         }
 
