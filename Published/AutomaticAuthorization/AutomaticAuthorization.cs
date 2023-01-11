@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
@@ -15,17 +14,17 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Automatic Authorization", "k1lly0u/Arainrr", "1.3.0", ResourceId = 2063)]
+    [Info("Automatic Authorization", "k1lly0u/Arainrr", "1.3.1", ResourceId = 2063)]
+    [Description("Shared cupboards, turrets, locks with teams, clans, friends")]
     public class AutomaticAuthorization : RustPlugin
     {
         #region Fields
 
-        [PluginReference] private readonly Plugin Clans, Friends;
+        [PluginReference] private readonly Plugin Clans, Friends, Bank;
         private const string PERMISSION_USE = "automaticauthorization.use";
 
-        private static object True;
-
-        private readonly Dictionary<ulong, EntityCache> playerEntities = new Dictionary<ulong, EntityCache>();
+        private readonly object _true = true;
+        private readonly Dictionary<ulong, EntityCache> _playerEntities = new Dictionary<ulong, EntityCache>();
 
         private enum ShareType
         {
@@ -55,25 +54,27 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
-            True = true;
             UpdateData();
-            Unsubscribe(nameof(OnEntitySpawned));
+
             permission.RegisterPermission(PERMISSION_USE, this);
-            cmd.AddChatCommand(configData.chatS.chatCommand, this, nameof(CmdAutoAuth));
-            cmd.AddChatCommand(configData.chatS.uiCommand, this, nameof(CmdAutoAuthUI));
-            if (!configData.teamsShareS.enabled)
+
+            cmd.AddChatCommand(configData.Chat.ChatCommand, this, nameof(CmdAutoAuth));
+            cmd.AddChatCommand(configData.Chat.UICommand, this, nameof(CmdAutoAuthUI));
+
+            Unsubscribe(nameof(OnEntitySpawned));
+            if (!configData.TeamsShare.Enabled)
             {
                 Unsubscribe(nameof(OnTeamLeave));
                 Unsubscribe(nameof(OnTeamKick));
                 Unsubscribe(nameof(OnTeamDisbanded));
                 Unsubscribe(nameof(OnTeamAcceptInvite));
             }
-            if (!configData.friendsShareS.enabled)
+            if (!configData.FriendsShare.Enabled)
             {
                 Unsubscribe(nameof(OnFriendAdded));
                 Unsubscribe(nameof(OnFriendRemoved));
             }
-            if (!configData.clansShareS.enabled)
+            if (!configData.ClansShare.Enabled)
             {
                 Unsubscribe(nameof(OnClanUpdate));
                 Unsubscribe(nameof(OnClanDestroy));
@@ -109,7 +110,6 @@ namespace Oxide.Plugins
                 DestroyUI(player);
             }
             SaveData();
-            True = null;
         }
 
         private void OnEntitySpawned(AutoTurret autoTurret) => CheckEntitySpawned(autoTurret, true);
@@ -122,24 +122,39 @@ namespace Oxide.Plugins
 
         private object CanUseLockedEntity(BasePlayer player, BaseLock baseLock)
         {
-            if (player == null || baseLock == null || !baseLock.IsLocked()) return null;
+            if (player == null || baseLock == null || !baseLock.IsLocked())
+            {
+                return null;
+            }
             var parentEntity = baseLock.GetParentEntity();
-            var ownerID = baseLock.OwnerID.IsSteamId() ? baseLock.OwnerID : parentEntity != null ? parentEntity.OwnerID : 0;
-            if (!ownerID.IsSteamId() || ownerID == player.userID) return null;
-            if (!permission.UserHasPermission(ownerID.ToString(), PERMISSION_USE)) return null;
+            var ownerId = baseLock.OwnerID.IsSteamId() ? baseLock.OwnerID : parentEntity != null ? parentEntity.OwnerID : 0;
+            if (!ownerId.IsSteamId() || ownerId == player.userID)
+            {
+                return null;
+            }
+            if (!permission.UserHasPermission(ownerId.ToString(), PERMISSION_USE))
+            {
+                return null;
+            }
 
-            var shareData = GetShareData(ownerID, true);
-            if (CanSharingLock(baseLock, parentEntity, shareData, ShareType.Teams, ownerID, player.userID))
+            // Ignore the bank boxes
+            if (IsBankBox(baseLock))
             {
-                return True;
+                return null;
             }
-            if (CanSharingLock(baseLock, parentEntity, shareData, ShareType.Friends, ownerID, player.userID))
+
+            var shareData = GetShareData(ownerId, true);
+            if (CanSharingLock(baseLock, parentEntity, shareData, ShareType.Teams, ownerId, player.userID))
             {
-                return True;
+                return _true;
             }
-            if (CanSharingLock(baseLock, parentEntity, shareData, ShareType.Clans, ownerID, player.userID))
+            if (CanSharingLock(baseLock, parentEntity, shareData, ShareType.Friends, ownerId, player.userID))
             {
-                return True;
+                return _true;
+            }
+            if (CanSharingLock(baseLock, parentEntity, shareData, ShareType.Clans, ownerId, player.userID))
+            {
+                return _true;
             }
             return null;
         }
@@ -150,9 +165,12 @@ namespace Oxide.Plugins
 
         private static bool CanUnlockEntity(BaseEntity parentEntity, StoredData.LockShareEntry lockShareEntry)
         {
-            if (!lockShareEntry.enabled) return false;
+            if (!lockShareEntry.enabled)
+            {
+                return false;
+            }
             return parentEntity is Door ? lockShareEntry.door :
-                parentEntity is BoxStorage ? lockShareEntry.box : lockShareEntry.other;
+                    parentEntity is BoxStorage ? lockShareEntry.box : lockShareEntry.other;
         }
 
         private static void SendUnlockedEffect(CodeLock codeLock)
@@ -165,17 +183,17 @@ namespace Oxide.Plugins
 
         private static void CheckShareData(StoredData.ShareEntry shareEntry, ConfigData.ShareSettings shareSettings)
         {
-            if (!shareSettings.enabled) shareEntry.enabled = false;
-            if (!shareSettings.shareCupboard) shareEntry.cupboard = false;
-            if (!shareSettings.shareTurret) shareEntry.turret = false;
-            if (!shareSettings.keyLockS.enabled) shareEntry.keyLock.enabled = false;
-            if (!shareSettings.keyLockS.shareDoor) shareEntry.keyLock.door = false;
-            if (!shareSettings.keyLockS.shareBox) shareEntry.keyLock.box = false;
-            if (!shareSettings.keyLockS.shareOtherEntity) shareEntry.keyLock.other = false;
-            if (!shareSettings.codeLockS.enabled) shareEntry.codeLock.enabled = false;
-            if (!shareSettings.codeLockS.shareDoor) shareEntry.codeLock.door = false;
-            if (!shareSettings.codeLockS.shareBox) shareEntry.codeLock.box = false;
-            if (!shareSettings.codeLockS.shareOtherEntity) shareEntry.codeLock.other = false;
+            if (!shareSettings.Enabled) shareEntry.enabled = false;
+            if (!shareSettings.ShareCupboard) shareEntry.cupboard = false;
+            if (!shareSettings.ShareTurret) shareEntry.turret = false;
+            if (!shareSettings.KeyLock.Enabled) shareEntry.keyLock.enabled = false;
+            if (!shareSettings.KeyLock.ShareDoor) shareEntry.keyLock.door = false;
+            if (!shareSettings.KeyLock.ShareBox) shareEntry.keyLock.box = false;
+            if (!shareSettings.KeyLock.ShareOtherEntity) shareEntry.keyLock.other = false;
+            if (!shareSettings.CodeLock.Enabled) shareEntry.codeLock.enabled = false;
+            if (!shareSettings.CodeLock.ShareDoor) shareEntry.codeLock.door = false;
+            if (!shareSettings.CodeLock.ShareBox) shareEntry.codeLock.box = false;
+            if (!shareSettings.CodeLock.ShareOtherEntity) shareEntry.codeLock.other = false;
         }
 
         #endregion Helpers
@@ -186,12 +204,15 @@ namespace Oxide.Plugins
 
         private void CheckEntitySpawned(AutoTurret autoTurret, bool justCreated = false)
         {
-            if (autoTurret == null || !autoTurret.OwnerID.IsSteamId()) return;
+            if (autoTurret == null || !autoTurret.OwnerID.IsSteamId())
+            {
+                return;
+            }
             EntityCache entityCache;
-            if (!playerEntities.TryGetValue(autoTurret.OwnerID, out entityCache))
+            if (!_playerEntities.TryGetValue(autoTurret.OwnerID, out entityCache))
             {
                 entityCache = new EntityCache();
-                playerEntities.Add(autoTurret.OwnerID, entityCache);
+                _playerEntities.Add(autoTurret.OwnerID, entityCache);
             }
             entityCache.autoTurrets.Add(autoTurret);
 
@@ -203,12 +224,15 @@ namespace Oxide.Plugins
 
         private void CheckEntitySpawned(BuildingPrivlidge buildingPrivlidge, bool justCreated = false)
         {
-            if (buildingPrivlidge == null || !buildingPrivlidge.OwnerID.IsSteamId()) return;
+            if (buildingPrivlidge == null || !buildingPrivlidge.OwnerID.IsSteamId())
+            {
+                return;
+            }
             EntityCache entityCache;
-            if (!playerEntities.TryGetValue(buildingPrivlidge.OwnerID, out entityCache))
+            if (!_playerEntities.TryGetValue(buildingPrivlidge.OwnerID, out entityCache))
             {
                 entityCache = new EntityCache();
-                playerEntities.Add(buildingPrivlidge.OwnerID, entityCache);
+                _playerEntities.Add(buildingPrivlidge.OwnerID, entityCache);
             }
             entityCache.buildingPrivlidges.Add(buildingPrivlidge);
 
@@ -220,9 +244,12 @@ namespace Oxide.Plugins
 
         private void CheckEntityKill(AutoTurret autoTurret)
         {
-            if (autoTurret == null || !autoTurret.OwnerID.IsSteamId()) return;
+            if (autoTurret == null || !autoTurret.OwnerID.IsSteamId())
+            {
+                return;
+            }
             EntityCache entityCache;
-            if (playerEntities.TryGetValue(autoTurret.OwnerID, out entityCache))
+            if (_playerEntities.TryGetValue(autoTurret.OwnerID, out entityCache))
             {
                 entityCache.autoTurrets.Remove(autoTurret);
             }
@@ -230,9 +257,12 @@ namespace Oxide.Plugins
 
         private void CheckEntityKill(BuildingPrivlidge buildingPrivlidge)
         {
-            if (buildingPrivlidge == null || !buildingPrivlidge.OwnerID.IsSteamId()) return;
+            if (buildingPrivlidge == null || !buildingPrivlidge.OwnerID.IsSteamId())
+            {
+                return;
+            }
             EntityCache entityCache;
-            if (playerEntities.TryGetValue(buildingPrivlidge.OwnerID, out entityCache))
+            if (_playerEntities.TryGetValue(buildingPrivlidge.OwnerID, out entityCache))
             {
                 entityCache.buildingPrivlidges.Remove(buildingPrivlidge);
             }
@@ -240,48 +270,68 @@ namespace Oxide.Plugins
 
         #endregion Entity Spawn / Kill
 
-        private void UpdateAuthList(ulong playerID, AutoAuthType autoAuthType)
+        private void UpdateAuthList(ulong playerId, AutoAuthType autoAuthType)
         {
-            if (!permission.UserHasPermission(playerID.ToString(), PERMISSION_USE)) return;
+            if (!permission.UserHasPermission(playerId.ToString(), PERMISSION_USE))
+            {
+                return;
+            }
             EntityCache entityCache;
-            if (!playerEntities.TryGetValue(playerID, out entityCache)) return;
+            if (!_playerEntities.TryGetValue(playerId, out entityCache))
+            {
+                return;
+            }
             switch (autoAuthType)
             {
                 case AutoAuthType.All:
-                    AuthToTurret(entityCache.autoTurrets, playerID);
-                    AuthToCupboard(entityCache.buildingPrivlidges, playerID);
+                    AuthToTurret(entityCache.autoTurrets, playerId);
+                    AuthToCupboard(entityCache.buildingPrivlidges, playerId);
                     return;
 
                 case AutoAuthType.Turret:
-                    AuthToTurret(entityCache.autoTurrets, playerID);
+                    AuthToTurret(entityCache.autoTurrets, playerId);
                     return;
 
                 case AutoAuthType.Cupboard:
-                    AuthToCupboard(entityCache.buildingPrivlidges, playerID);
+                    AuthToCupboard(entityCache.buildingPrivlidges, playerId);
                     return;
             }
         }
 
-        private void AuthToTurret(HashSet<AutoTurret> autoTurrets, ulong playerID, bool justCreated = false)
+        private void AuthToTurret(HashSet<AutoTurret> autoTurrets, ulong playerId, bool justCreated = false)
         {
-            if (autoTurrets.Count <= 0) return;
-            var authList = GetPlayerNameIDs(playerID, AutoAuthType.Turret);
+            if (autoTurrets.Count <= 0)
+            {
+                return;
+            }
+            var authList = GetPlayerNameIDs(playerId, AutoAuthType.Turret);
             foreach (var autoTurret in autoTurrets)
             {
-                if (autoTurret == null || autoTurret.IsDestroyed) continue;
+                if (autoTurret == null || autoTurret.IsDestroyed)
+                {
+                    continue;
+                }
                 var isOnline = autoTurret.IsOnline();
-                if (isOnline) autoTurret.SetIsOnline(false);
+                if (isOnline)
+                {
+                    autoTurret.SetIsOnline(false);
+                }
+
                 autoTurret.authorizedPlayers.Clear();
                 foreach (var friend in authList)
                 {
                     autoTurret.authorizedPlayers.Add(friend);
                 }
-                if (isOnline) autoTurret.SetIsOnline(true);
+
+                if (isOnline)
+                {
+                    autoTurret.SetIsOnline(true);
+                }
                 autoTurret.SendNetworkUpdate();
             }
-            if (justCreated && configData.chatS.sendMessage && authList.Count > 1)
+            if (justCreated && configData.Chat.SendMessage && authList.Count > 1)
             {
-                var player = BasePlayer.FindByID(playerID);
+                var player = BasePlayer.FindByID(playerId);
                 if (player != null)
                 {
                     Print(player, Lang("TurretSuccess", player.UserIDString, authList.Count - 1, autoTurrets.Count));
@@ -289,13 +339,19 @@ namespace Oxide.Plugins
             }
         }
 
-        private void AuthToCupboard(HashSet<BuildingPrivlidge> buildingPrivlidges, ulong playerID, bool justCreated = false)
+        private void AuthToCupboard(HashSet<BuildingPrivlidge> buildingPrivlidges, ulong playerId, bool justCreated = false)
         {
-            if (buildingPrivlidges.Count <= 0) return;
-            var authList = GetPlayerNameIDs(playerID, AutoAuthType.Cupboard);
+            if (buildingPrivlidges.Count <= 0)
+            {
+                return;
+            }
+            var authList = GetPlayerNameIDs(playerId, AutoAuthType.Cupboard);
             foreach (var buildingPrivlidge in buildingPrivlidges)
             {
-                if (buildingPrivlidge == null || buildingPrivlidge.IsDestroyed) continue;
+                if (buildingPrivlidge == null || buildingPrivlidge.IsDestroyed)
+                {
+                    continue;
+                }
                 buildingPrivlidge.authorizedPlayers.Clear();
                 foreach (var friend in authList)
                 {
@@ -303,9 +359,9 @@ namespace Oxide.Plugins
                 }
                 buildingPrivlidge.SendNetworkUpdate();
             }
-            if (justCreated && configData.chatS.sendMessage && authList.Count > 1)
+            if (justCreated && configData.Chat.SendMessage && authList.Count > 1)
             {
-                var player = BasePlayer.FindByID(playerID);
+                var player = BasePlayer.FindByID(playerId);
                 if (player != null)
                 {
                     Print(player, Lang("CupboardSuccess", player.UserIDString, authList.Count - 1, buildingPrivlidges.Count));
@@ -313,19 +369,19 @@ namespace Oxide.Plugins
             }
         }
 
-        private List<PlayerNameID> GetPlayerNameIDs(ulong playerID, AutoAuthType autoAuthType)
+        private List<PlayerNameID> GetPlayerNameIDs(ulong playerId, AutoAuthType autoAuthType)
         {
-            var authList = GetAuthList(playerID, autoAuthType);
+            var authList = GetAuthList(playerId, autoAuthType);
             return authList.Select(userid => new PlayerNameID { userid = userid, username = RustCore.FindPlayerById(userid)?.displayName ?? string.Empty }).ToList();
         }
 
-        private HashSet<ulong> GetAuthList(ulong playerID, AutoAuthType autoAuthType)
+        private HashSet<ulong> GetAuthList(ulong playerId, AutoAuthType autoAuthType)
         {
-            var sharePlayers = new HashSet<ulong> { playerID };
-            var shareData = GetShareData(playerID, true);
+            var sharePlayers = new HashSet<ulong> { playerId };
+            var shareData = GetShareData(playerId, true);
             if (shareData.teamsShare.enabled && (autoAuthType == AutoAuthType.Turret ? shareData.teamsShare.turret : shareData.teamsShare.cupboard))
             {
-                var teamMembers = GetTeamMembers(playerID);
+                var teamMembers = GetTeamMembers(playerId);
                 if (teamMembers != null)
                 {
                     foreach (var member in teamMembers)
@@ -336,7 +392,7 @@ namespace Oxide.Plugins
             }
             if (shareData.friendsShare.enabled && (autoAuthType == AutoAuthType.Turret ? shareData.friendsShare.turret : shareData.friendsShare.cupboard))
             {
-                var friends = GetFriends(playerID);
+                var friends = GetFriends(playerId);
                 if (friends != null)
                 {
                     foreach (var friend in friends)
@@ -347,7 +403,7 @@ namespace Oxide.Plugins
             }
             if (shareData.clansShare.enabled && (autoAuthType == AutoAuthType.Turret ? shareData.clansShare.turret : shareData.clansShare.cupboard))
             {
-                var clanMembers = GetClanMembers(playerID);
+                var clanMembers = GetClanMembers(playerId);
                 if (clanMembers != null)
                 {
                     foreach (var member in clanMembers)
@@ -359,14 +415,14 @@ namespace Oxide.Plugins
             return sharePlayers;
         }
 
-        private bool CanSharingLock(BaseLock baseLock, BaseEntity parentEntity, StoredData.ShareData shareData, ShareType shareType, ulong ownerID, ulong playerID)
+        private bool CanSharingLock(BaseLock baseLock, BaseEntity parentEntity, StoredData.ShareData shareData, ShareType shareType, ulong ownerId, ulong playerId)
         {
             var shareEntry = shareData.GetShareEntry(shareType);
-            if (shareEntry.enabled && AreFriends(shareType, ownerID, playerID))
+            if (shareEntry.enabled && AreFriends(shareType, ownerId, playerId))
             {
-                if (baseLock is KeyLock && CanUnlockEntity(parentEntity, shareEntry.keyLock))
+                if (baseLock is KeyLock)
                 {
-                    return true;
+                    return CanUnlockEntity(parentEntity, shareEntry.keyLock);
                 }
                 var codeLock = baseLock as CodeLock;
                 if (codeLock != null && CanUnlockEntity(parentEntity, shareEntry.codeLock))
@@ -389,7 +445,7 @@ namespace Oxide.Plugins
         private bool IsShareTypeEnabled(ShareType shareType)
         {
             var shareSettings = configData.GetShareSettings(shareType);
-            if (!shareSettings.enabled) return false;
+            if (!shareSettings.Enabled) return false;
             switch (shareType)
             {
                 case ShareType.Teams: return RelationshipManager.TeamsEnabled();
@@ -399,27 +455,27 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private bool AreFriends(ShareType shareType, ulong ownerID, ulong playerID)
+        private bool AreFriends(ShareType shareType, ulong ownerId, ulong playerId)
         {
             switch (shareType)
             {
-                case ShareType.Teams: return SameTeam(ownerID, playerID);
-                case ShareType.Friends: return HasFriend(ownerID, playerID);
-                case ShareType.Clans: return SameClan(ownerID, playerID);
+                case ShareType.Teams: return SameTeam(ownerId, playerId);
+                case ShareType.Friends: return HasFriend(ownerId, playerId);
+                case ShareType.Clans: return SameClan(ownerId, playerId);
             }
             return false;
         }
 
         #region Data
 
-        private StoredData.ShareData defaultData;
+        private StoredData.ShareData _defaultData;
 
-        private StoredData.ShareData DefaultData => defaultData ?? (defaultData = CreateDefaultData());
+        private StoredData.ShareData DefaultData => _defaultData ?? (_defaultData = CreateDefaultData());
 
-        private StoredData.ShareData GetShareData(ulong playerID, bool readOnly = false)
+        private StoredData.ShareData GetShareData(ulong playerId, bool readOnly = false)
         {
             StoredData.ShareData shareData;
-            if (!storedData.playerShareData.TryGetValue(playerID, out shareData))
+            if (!storedData.playerShareData.TryGetValue(playerId, out shareData))
             {
                 if (readOnly)
                 {
@@ -427,7 +483,7 @@ namespace Oxide.Plugins
                 }
 
                 shareData = CreateDefaultData();
-                storedData.playerShareData.Add(playerID, shareData);
+                storedData.playerShareData.Add(playerId, shareData);
             }
             return shareData;
         }
@@ -458,22 +514,22 @@ namespace Oxide.Plugins
             var defaultSettings = configData.GetDefaultShareSettings(shareType);
             var shareEntry = new StoredData.ShareEntry
             {
-                enabled = defaultSettings.enabled,
-                turret = defaultSettings.shareTurret,
-                cupboard = defaultSettings.shareCupboard,
+                enabled = defaultSettings.Enabled,
+                turret = defaultSettings.ShareTurret,
+                cupboard = defaultSettings.ShareCupboard,
                 keyLock = new StoredData.LockShareEntry
                 {
-                    enabled = defaultSettings.keyLockS.enabled,
-                    door = defaultSettings.keyLockS.shareDoor,
-                    box = defaultSettings.keyLockS.shareBox,
-                    other = defaultSettings.keyLockS.shareOtherEntity,
+                    enabled = defaultSettings.KeyLock.Enabled,
+                    door = defaultSettings.KeyLock.ShareDoor,
+                    box = defaultSettings.KeyLock.ShareBox,
+                    other = defaultSettings.KeyLock.ShareOtherEntity,
                 },
                 codeLock = new StoredData.LockShareEntry
                 {
-                    enabled = defaultSettings.codeLockS.enabled,
-                    door = defaultSettings.codeLockS.shareDoor,
-                    box = defaultSettings.codeLockS.shareBox,
-                    other = defaultSettings.codeLockS.shareOtherEntity,
+                    enabled = defaultSettings.CodeLock.Enabled,
+                    door = defaultSettings.CodeLock.ShareDoor,
+                    box = defaultSettings.CodeLock.ShareBox,
+                    other = defaultSettings.CodeLock.ShareOtherEntity,
                 }
             };
             CheckShareData(shareEntry, configData.GetShareSettings(shareType));
@@ -488,6 +544,15 @@ namespace Oxide.Plugins
         }
 
         #endregion Data
+
+        #region Conflict Resolution
+
+        private bool IsBankBox(BaseNetworkable entity)
+        {
+            return Bank != null && Bank.Call<bool>("IsBankBox", entity);
+        }
+
+        #endregion Conflict Resolution
 
         #endregion Methods
 
@@ -545,27 +610,42 @@ namespace Oxide.Plugins
 
         private void UpdateTeamAuthList(List<ulong> teamMembers)
         {
-            if (teamMembers.Count <= 0) return;
+            if (teamMembers.Count <= 0)
+            {
+                return;
+            }
             foreach (var member in teamMembers)
             {
                 UpdateAuthList(member, AutoAuthType.All);
             }
         }
 
-        private static IEnumerable<ulong> GetTeamMembers(ulong playerID)
+        private static IEnumerable<ulong> GetTeamMembers(ulong playerId)
         {
-            if (!RelationshipManager.TeamsEnabled()) return null;
-            var playerTeam = RelationshipManager.ServerInstance.FindPlayersTeam(playerID);
+            if (!RelationshipManager.TeamsEnabled())
+            {
+                return null;
+            }
+            var playerTeam = RelationshipManager.ServerInstance.FindPlayersTeam(playerId);
             return playerTeam?.members;
         }
 
-        private static bool SameTeam(ulong playerID, ulong friendID)
+        private static bool SameTeam(ulong playerId, ulong friendId)
         {
-            if (!RelationshipManager.TeamsEnabled()) return false;
-            var playerTeam = RelationshipManager.ServerInstance.FindPlayersTeam(playerID);
-            if (playerTeam == null) return false;
-            var friendTeam = RelationshipManager.ServerInstance.FindPlayersTeam(friendID);
-            if (friendTeam == null) return false;
+            if (!RelationshipManager.TeamsEnabled())
+            {
+                return false;
+            }
+            var playerTeam = RelationshipManager.ServerInstance.FindPlayersTeam(playerId);
+            if (playerTeam == null)
+            {
+                return false;
+            }
+            var friendTeam = RelationshipManager.ServerInstance.FindPlayersTeam(friendId);
+            if (friendTeam == null)
+            {
+                return false;
+            }
             return playerTeam == friendTeam;
         }
 
@@ -575,29 +655,29 @@ namespace Oxide.Plugins
 
         #region Hooks
 
-        private void OnFriendAdded(string playerID, string friendID) => UpdateFriendAuthList(playerID, friendID);
+        private void OnFriendAdded(string playerId, string friendId) => UpdateFriendAuthList(playerId, friendId);
 
-        private void OnFriendRemoved(string playerID, string friendID) => UpdateFriendAuthList(playerID, friendID);
+        private void OnFriendRemoved(string playerId, string friendId) => UpdateFriendAuthList(playerId, friendId);
 
         #endregion Hooks
 
-        private void UpdateFriendAuthList(string playerID, string friendID)
+        private void UpdateFriendAuthList(string playerId, string friendId)
         {
-            UpdateAuthList(Convert.ToUInt64(playerID), AutoAuthType.All);
-            UpdateAuthList(Convert.ToUInt64(friendID), AutoAuthType.All);
+            UpdateAuthList(Convert.ToUInt64(playerId), AutoAuthType.All);
+            UpdateAuthList(Convert.ToUInt64(friendId), AutoAuthType.All);
         }
 
-        private IEnumerable<ulong> GetFriends(ulong playerID)
+        private IEnumerable<ulong> GetFriends(ulong playerId)
         {
             if (Friends == null) return null;
-            var friends = Friends.Call("GetFriends", playerID) as ulong[];
+            var friends = Friends.Call("GetFriends", playerId) as ulong[];
             return friends;
         }
 
-        private bool HasFriend(ulong playerID, ulong friendID)
+        private bool HasFriend(ulong playerId, ulong friendId)
         {
             if (Friends == null) return false;
-            var hasFriend = Friends.Call("HasFriend", playerID, friendID);
+            var hasFriend = Friends.Call("HasFriend", playerId, friendId);
             return hasFriend is bool && (bool)hasFriend;
         }
 
@@ -613,7 +693,7 @@ namespace Oxide.Plugins
 
         #region Clans Reborn Hooks
 
-        private void OnClanMemberGone(string playerID, List<string> memberUserIDs) => UpdateAuthList(Convert.ToUInt64(playerID), AutoAuthType.All);
+        private void OnClanMemberGone(string playerId, List<string> memberUserIDs) => UpdateAuthList(Convert.ToUInt64(playerId), AutoAuthType.All);
 
         #endregion Clans Reborn Hooks
 
@@ -631,36 +711,57 @@ namespace Oxide.Plugins
             }
         }
 
-        private IEnumerable<ulong> GetClanMembers(ulong playerID)
+        private IEnumerable<ulong> GetClanMembers(ulong playerId)
         {
-            if (Clans == null) return null;
+            if (Clans == null)
+            {
+                return null;
+            }
             //Clans Reborn
-            var members = Clans.Call("GetClanMembers", playerID) as List<string>;
-            if (members != null) return members.Select(x => Convert.ToUInt64(x));
+            var members = Clans.Call("GetClanMembers", playerId) as List<string>;
+            if (members != null)
+            {
+                return members.Select(x => Convert.ToUInt64(x));
+            }
             //Clans
-            var clanName = Clans.Call("GetClanOf", playerID) as string;
+            var clanName = Clans.Call("GetClanOf", playerId) as string;
             return clanName != null ? GetClanMembers(clanName) : null;
         }
 
         private IEnumerable<ulong> GetClanMembers(string clanName)
         {
-            if (Clans == null) return null;
+            if (Clans == null)
+            {
+                return null;
+            }
             var clan = Clans.Call("GetClan", clanName) as JObject;
             var members = clan?.GetValue("members") as JArray;
             return members?.Select(Convert.ToUInt64);
         }
 
-        private bool SameClan(ulong playerID, ulong friendID)
+        private bool SameClan(ulong playerId, ulong friendId)
         {
-            if (Clans == null) return false;
+            if (Clans == null)
+            {
+                return false;
+            }
             //Clans and Clans Reborn
-            var isMember = Clans.Call("IsClanMember", playerID.ToString(), friendID.ToString());
-            if (isMember != null) return (bool)isMember;
+            var isMember = Clans.Call("IsClanMember", playerId.ToString(), friendId.ToString());
+            if (isMember != null)
+            {
+                return (bool)isMember;
+            }
             //Rust:IO Clans
-            var playerClan = Clans.Call("GetClanOf", playerID);
-            if (playerClan == null) return false;
-            var friendClan = Clans.Call("GetClanOf", friendID);
-            if (friendClan == null) return false;
+            var playerClan = Clans.Call("GetClanOf", playerId);
+            if (playerClan == null)
+            {
+                return false;
+            }
+            var friendClan = Clans.Call("GetClanOf", friendId);
+            if (friendClan == null)
+            {
+                return false;
+            }
             return (string)playerClan == (string)friendClan;
         }
 
@@ -716,10 +817,16 @@ namespace Oxide.Plugins
 
         private void UpdateMenuUI(BasePlayer player, StoredData.ShareData shareData, ShareType shareType = ShareType.None)
         {
-            if (player == null) return;
+            if (player == null)
+            {
+                return;
+            }
             var availableTypes = GetAvailableTypes();
             var total = availableTypes.Count();
-            if (total <= 0) return;
+            if (total <= 0)
+            {
+                return;
+            }
 
             int i = 0;
             var container = new CuiElementContainer();
@@ -732,8 +839,7 @@ namespace Oxide.Plugins
                 {
                     var anchors = GetMenuSubAnchors(i, total);
                     CuiHelper.DestroyUi(player, UINAME_MENU + ShareType.Teams);
-                    CreateMenuSubUI(ref container, shareData, player.UserIDString, ShareType.Teams,
-                        $"{anchors[0]} 0.03", $"{anchors[1]} 0.97");
+                    CreateMenuSubUI(ref container, shareData, player.UserIDString, ShareType.Teams, $"{anchors[0]} 0.03", $"{anchors[1]} 0.97");
                 }
                 i++;
             }
@@ -748,8 +854,7 @@ namespace Oxide.Plugins
                 {
                     var anchors = GetMenuSubAnchors(i, total);
                     CuiHelper.DestroyUi(player, UINAME_MENU + ShareType.Friends);
-                    CreateMenuSubUI(ref container, shareData, player.UserIDString, ShareType.Friends,
-                        $"{anchors[0]} 0.03", $"{anchors[1]} 0.97");
+                    CreateMenuSubUI(ref container, shareData, player.UserIDString, ShareType.Friends, $"{anchors[0]} 0.03", $"{anchors[1]} 0.97");
                 }
                 i++;
             }
@@ -764,8 +869,7 @@ namespace Oxide.Plugins
                 {
                     var anchors = GetMenuSubAnchors(i, total);
                     CuiHelper.DestroyUi(player, UINAME_MENU + ShareType.Clans);
-                    CreateMenuSubUI(ref container, shareData, player.UserIDString, ShareType.Clans,
-                        $"{anchors[0]} 0.03", $"{anchors[1]} 0.97");
+                    CreateMenuSubUI(ref container, shareData, player.UserIDString, ShareType.Clans, $"{anchors[0]} 0.03", $"{anchors[1]} 0.97");
                 }
             }
 
@@ -774,7 +878,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        private void CreateMenuSubUI(ref CuiElementContainer container, StoredData.ShareData shareData, string playerID, ShareType shareType, string anchorMin, string anchorMax)
+        private void CreateMenuSubUI(ref CuiElementContainer container, StoredData.ShareData shareData, string playerId, ShareType shareType, string anchorMin, string anchorMax)
         {
             var panelName = container.Add(new CuiPanel
             {
@@ -788,7 +892,7 @@ namespace Oxide.Plugins
             }, panelName);
             container.Add(new CuiLabel
             {
-                Text = { Color = "1 0.5 0 1", FontSize = 18, Align = TextAnchor.MiddleCenter, Text = Lang("UI_SubTitle", playerID, Lang("UI_" + shareType, playerID)) },
+                Text = { Color = "1 0.5 0 1", FontSize = 18, Align = TextAnchor.MiddleCenter, Text = Lang("UI_SubTitle", playerId, Lang("UI_" + shareType, playerId)) },
                 RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" }
             }, titlePanel);
 
@@ -804,47 +908,47 @@ namespace Oxide.Plugins
 
             var shareEntry = shareData.GetShareEntry(shareType);
             var commandPrefix = $"AutoAuthUI {shareType} ";
-            var enabledMsg = Lang("Enabled", playerID);
-            var disabledMsg = Lang("Disabled", playerID);
+            var enabledMsg = Lang("Enabled", playerId);
+            var disabledMsg = Lang("Disabled", playerId);
 
             var anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix, Lang("UI_SubShare", playerID, Lang("UI_" + shareType, playerID)),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix, Lang("UI_SubShare", playerId, Lang("UI_" + shareType, playerId)),
                 shareEntry.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}",
                 $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "Cupboard", Lang("UI_SubCupboard", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "Cupboard", Lang("UI_SubCupboard", playerId),
                 shareEntry.cupboard ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "Turret", Lang("UI_SubTurret", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "Turret", Lang("UI_SubTurret", playerId),
                 shareEntry.turret ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock", Lang("UI_SubKeyLock", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock", Lang("UI_SubKeyLock", playerId),
                 shareEntry.keyLock.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Door", Lang("UI_SubKeyLockDoor", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Door", Lang("UI_SubKeyLockDoor", playerId),
                 shareEntry.keyLock.door ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Box", Lang("UI_SubKeyLockBox", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Box", Lang("UI_SubKeyLockBox", playerId),
                 shareEntry.keyLock.box ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Other", Lang("UI_SubKeyLockOther", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "KeyLock Other", Lang("UI_SubKeyLockOther", playerId),
                 shareEntry.keyLock.other ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock", Lang("UI_SubCodeLock", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock", Lang("UI_SubCodeLock", playerId),
                 shareEntry.codeLock.enabled ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Door", Lang("UI_SubCodeLockDoor", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Door", Lang("UI_SubCodeLockDoor", playerId),
                 shareEntry.codeLock.door ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Box", Lang("UI_SubCodeLockBox", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Box", Lang("UI_SubCodeLockBox", playerId),
                 shareEntry.codeLock.box ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Other", Lang("UI_SubCodeLockOther", playerID),
+            CreateEntrySubUI(ref container, contentPanel, commandPrefix + "CodeLock Other", Lang("UI_SubCodeLockOther", playerId),
                 shareEntry.codeLock.other ? enabledMsg : disabledMsg, $"0 {anchors[0]}", $"0.995 {anchors[1]}");
         }
 
@@ -913,14 +1017,12 @@ namespace Oxide.Plugins
                     Print(player, Lang("UnableAutoAuth", player.UserIDString));
                     return;
                 }
-                var stringBuilder = Pool.Get<StringBuilder>();
+                var stringBuilder = new StringBuilder();
                 stringBuilder.AppendLine();
 
                 HandleStatusCommand(stringBuilder, player, shareData, availableTypes);
 
                 Print(player, stringBuilder.ToString());
-                stringBuilder.Clear();
-                Pool.Free(ref stringBuilder);
                 return;
             }
             switch (args[0].ToLower())
@@ -958,19 +1060,17 @@ namespace Oxide.Plugins
                         Print(player, Lang("UnableAutoAuth", player.UserIDString));
                         return;
                     }
-                    var stringBuilder = Pool.Get<StringBuilder>();
+                    var stringBuilder = new StringBuilder();
                     stringBuilder.AppendLine();
 
                     HandleHelpCommand(stringBuilder, player, availableTypes);
 
-                    stringBuilder.AppendLine(Lang("UISyntax", player.UserIDString, configData.chatS.uiCommand, configData.chatS.chatCommand));
+                    stringBuilder.AppendLine(Lang("UISyntax", player.UserIDString, configData.Chat.UICommand, configData.Chat.ChatCommand));
                     Print(player, stringBuilder.ToString());
-                    stringBuilder.Clear();
-                    Pool.Free(ref stringBuilder);
                     return;
 
                 default:
-                    Print(player, Lang("SyntaxError", player.UserIDString, configData.chatS.chatCommand));
+                    Print(player, Lang("SyntaxError", player.UserIDString, configData.Chat.ChatCommand));
                     return;
             }
         }
@@ -1013,18 +1113,21 @@ namespace Oxide.Plugins
         {
             var syntaxName = Lang(shareType + "CmdSyntax", player.UserIDString);
             var membersName = Lang(shareType + "Members", player.UserIDString);
-            stringBuilder.AppendLine(Lang("Syntax", player.UserIDString, configData.chatS.chatCommand, syntaxName, membersName));
-            stringBuilder.AppendLine(Lang("Syntax1", player.UserIDString, configData.chatS.chatCommand, syntaxName, membersName));
-            stringBuilder.AppendLine(Lang("Syntax2", player.UserIDString, configData.chatS.chatCommand, syntaxName, membersName));
-            stringBuilder.AppendLine(Lang("Syntax3", player.UserIDString, configData.chatS.chatCommand, syntaxName, membersName));
-            stringBuilder.AppendLine(Lang("Syntax4", player.UserIDString, configData.chatS.chatCommand, syntaxName, membersName));
+            stringBuilder.AppendLine(Lang("Syntax", player.UserIDString, configData.Chat.ChatCommand, syntaxName, membersName));
+            stringBuilder.AppendLine(Lang("Syntax1", player.UserIDString, configData.Chat.ChatCommand, syntaxName, membersName));
+            stringBuilder.AppendLine(Lang("Syntax2", player.UserIDString, configData.Chat.ChatCommand, syntaxName, membersName));
+            stringBuilder.AppendLine(Lang("Syntax3", player.UserIDString, configData.Chat.ChatCommand, syntaxName, membersName));
+            stringBuilder.AppendLine(Lang("Syntax4", player.UserIDString, configData.Chat.ChatCommand, syntaxName, membersName));
         }
 
         private bool HandleShareCommand(BasePlayer player, StoredData.ShareData shareData, ShareType shareType, string[] args, bool sendMsg = true)
         {
             if (!IsShareTypeEnabled(shareType))
             {
-                if (sendMsg) Print(player, Lang("AllDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                if (sendMsg)
+                {
+                    Print(player, Lang("AllDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                }
                 return false;
             }
 
@@ -1032,7 +1135,10 @@ namespace Oxide.Plugins
             if (args.Length <= 1)
             {
                 shareEntry.enabled = !shareEntry.enabled;
-                if (sendMsg) Print(player, Lang("All", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                if (sendMsg)
+                {
+                    Print(player, Lang("All", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                }
                 UpdateAuthList(player.userID, AutoAuthType.All);
                 return true;
             }
@@ -1042,124 +1148,184 @@ namespace Oxide.Plugins
             {
                 case "c":
                 case "cupboard":
-                    if (!shareSettings.shareCupboard)
+                    if (!shareSettings.ShareCupboard)
                     {
-                        if (sendMsg) Print(player, Lang("CupboardDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                        if (sendMsg)
+                        {
+                            Print(player, Lang("CupboardDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                        }
                         return false;
                     }
                     shareEntry.cupboard = !shareEntry.cupboard;
-                    if (sendMsg) Print(player, Lang("Cupboard", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.cupboard ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                    if (sendMsg)
+                    {
+                        Print(player, Lang("Cupboard", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.cupboard ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                    }
                     UpdateAuthList(player.userID, AutoAuthType.Cupboard);
                     return true;
 
                 case "t":
                 case "turret":
-                    if (!shareSettings.shareTurret)
+                    if (!shareSettings.ShareTurret)
                     {
-                        if (sendMsg) Print(player, Lang("TurretDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                        if (sendMsg)
+                        {
+                            Print(player, Lang("TurretDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                        }
                         return false;
                     }
                     shareEntry.turret = !shareEntry.turret;
-                    if (sendMsg) Print(player, Lang("Turret", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.turret ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                    if (sendMsg)
+                    {
+                        Print(player, Lang("Turret", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.turret ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                    }
                     UpdateAuthList(player.userID, AutoAuthType.Turret);
                     return true;
 
                 case "kl":
                 case "keylock":
-                    if (!shareSettings.keyLockS.enabled)
+                    if (!shareSettings.KeyLock.Enabled)
                     {
-                        if (sendMsg) Print(player, Lang("KeyLockDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                        if (sendMsg)
+                        {
+                            Print(player, Lang("KeyLockDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                        }
                         return false;
                     }
                     if (args.Length <= 2)
                     {
                         shareEntry.keyLock.enabled = !shareEntry.keyLock.enabled;
-                        if (sendMsg) Print(player, Lang("KeyLock", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.keyLock.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                        if (sendMsg)
+                        {
+                            Print(player, Lang("KeyLock", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.keyLock.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                        }
                         return true;
                     }
                     switch (args[2].ToLower())
                     {
                         case "d":
                         case "door":
-                            if (!shareSettings.keyLockS.shareDoor)
+                            if (!shareSettings.KeyLock.ShareDoor)
                             {
-                                if (sendMsg) Print(player, Lang("KeyLockDoorDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                if (sendMsg)
+                                {
+                                    Print(player, Lang("KeyLockDoorDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                }
                                 return false;
                             }
                             shareEntry.keyLock.door = !shareEntry.keyLock.door;
-                            if (sendMsg) Print(player, Lang("KeyLockDoor", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.keyLock.door ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            if (sendMsg)
+                            {
+                                Print(player, Lang("KeyLockDoor", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.keyLock.door ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            }
                             return true;
 
                         case "b":
                         case "box":
-                            if (!shareSettings.keyLockS.shareBox)
+                            if (!shareSettings.KeyLock.ShareBox)
                             {
-                                if (sendMsg) Print(player, Lang("KeyLockBoxDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                if (sendMsg)
+                                {
+                                    Print(player, Lang("KeyLockBoxDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                }
                                 return false;
                             }
                             shareEntry.keyLock.box = !shareEntry.keyLock.box;
-                            if (sendMsg) Print(player, Lang("KeyLockBox", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.keyLock.box ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            if (sendMsg)
+                            {
+                                Print(player, Lang("KeyLockBox", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.keyLock.box ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            }
                             return true;
 
                         case "o":
                         case "other":
-                            if (!shareSettings.keyLockS.shareOtherEntity)
+                            if (!shareSettings.KeyLock.ShareOtherEntity)
                             {
-                                if (sendMsg) Print(player, Lang("KeyLockOtherDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                if (sendMsg)
+                                {
+                                    Print(player, Lang("KeyLockOtherDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                }
                                 return false;
                             }
                             shareEntry.keyLock.other = !shareEntry.keyLock.other;
-                            if (sendMsg) Print(player, Lang("KeyLockOther", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.keyLock.other ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            if (sendMsg)
+                            {
+                                Print(player, Lang("KeyLockOther", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.keyLock.other ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            }
                             return true;
                     }
                     break;
 
                 case "cl":
                 case "codelock":
-                    if (!shareSettings.codeLockS.enabled)
+                    if (!shareSettings.CodeLock.Enabled)
                     {
-                        if (sendMsg) Print(player, Lang("CodeLockDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                        if (sendMsg)
+                        {
+                            Print(player, Lang("CodeLockDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                        }
                         return false;
                     }
                     if (args.Length <= 2)
                     {
                         shareEntry.codeLock.enabled = !shareEntry.codeLock.enabled;
-                        if (sendMsg) Print(player, Lang("CodeLock", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                        if (sendMsg)
+                        {
+                            Print(player, Lang("CodeLock", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                        }
                         return true;
                     }
                     switch (args[2].ToLower())
                     {
                         case "d":
                         case "door":
-                            if (!shareSettings.codeLockS.shareDoor)
+                            if (!shareSettings.CodeLock.ShareDoor)
                             {
-                                if (sendMsg) Print(player, Lang("CodeLockDoorDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                if (sendMsg)
+                                {
+                                    Print(player, Lang("CodeLockDoorDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                }
                                 return false;
                             }
                             shareEntry.codeLock.door = !shareEntry.codeLock.door;
-                            if (sendMsg) Print(player, Lang("CodeLockDoor", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.door ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            if (sendMsg)
+                            {
+                                Print(player, Lang("CodeLockDoor", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.door ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            }
                             return true;
 
                         case "b":
                         case "box":
-                            if (!shareSettings.codeLockS.shareBox)
+                            if (!shareSettings.CodeLock.ShareBox)
                             {
-                                if (sendMsg) Print(player, Lang("CodeLockBoxDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                if (sendMsg)
+                                {
+                                    Print(player, Lang("CodeLockBoxDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                }
                                 return false;
                             }
                             shareEntry.codeLock.box = !shareEntry.codeLock.box;
-                            if (sendMsg) Print(player, Lang("CodeLockBox", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.box ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            if (sendMsg)
+                            {
+                                Print(player, Lang("CodeLockBox", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.box ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            }
                             return true;
 
                         case "o":
                         case "other":
-                            if (!shareSettings.codeLockS.shareOtherEntity)
+                            if (!shareSettings.CodeLock.ShareOtherEntity)
                             {
-                                if (sendMsg) Print(player, Lang("CodeLockOtherDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                if (sendMsg)
+                                {
+                                    Print(player, Lang("CodeLockOtherDisabled", player.UserIDString, Lang(shareType.ToString(), player.UserIDString)));
+                                }
                                 return false;
                             }
                             shareEntry.codeLock.other = !shareEntry.codeLock.other;
-                            if (sendMsg) Print(player, Lang("CodeLockOther", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.other ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            if (sendMsg)
+                            {
+                                Print(player, Lang("CodeLockOther", player.UserIDString, Lang(shareType.ToString(), player.UserIDString), shareEntry.codeLock.other ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString)));
+                            }
                             return true;
                     }
                     break;
@@ -1168,18 +1334,16 @@ namespace Oxide.Plugins
                 case "help":
                     if (sendMsg)
                     {
-                        var stringBuilder = Pool.Get<StringBuilder>();
+                        var stringBuilder = new StringBuilder();
                         stringBuilder.AppendLine();
 
                         HandleHelpCommand(stringBuilder, player, shareType);
 
                         Print(player, stringBuilder.ToString());
-                        stringBuilder.Clear();
-                        Pool.Free(ref stringBuilder);
                     }
                     return true;
             }
-            if (sendMsg) Print(player, Lang("SyntaxError", player.UserIDString, configData.chatS.chatCommand));
+            if (sendMsg) Print(player, Lang("SyntaxError", player.UserIDString, configData.Chat.ChatCommand));
             return false;
         }
 
@@ -1197,8 +1361,14 @@ namespace Oxide.Plugins
         private void CCmdAutoAuthUI(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
-            if (!permission.UserHasPermission(player.UserIDString, PERMISSION_USE)) return;
+            if (player == null)
+            {
+                return;
+            }
+            if (!permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
+            {
+                return;
+            }
             var shareData = GetShareData(player.userID);
             switch (arg.Args[0].ToLower())
             {
@@ -1233,22 +1403,22 @@ namespace Oxide.Plugins
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Clear Share Data On Map Wipe")]
-            public bool clearDataOnWipe = false;
+            public bool ClearDataOnWipe { get; set; } = false;
 
             [JsonProperty(PropertyName = "Chat Settings")]
-            public ChatSettings chatS = new ChatSettings();
+            public ChatSettings Chat { get; set; } = new ChatSettings();
 
             [JsonProperty(PropertyName = "Teams Share Settings")]
-            public ShareSettings teamsShareS = new ShareSettings();
+            public ShareSettings TeamsShare { get; set; } = new ShareSettings();
 
             [JsonProperty(PropertyName = "Friends Share Settings")]
-            public ShareSettings friendsShareS = new ShareSettings();
+            public ShareSettings FriendsShare { get; set; } = new ShareSettings();
 
             [JsonProperty(PropertyName = "Clans Share Settings")]
-            public ShareSettings clansShareS = new ShareSettings();
+            public ShareSettings ClansShare { get; set; } = new ShareSettings();
 
             [JsonProperty(PropertyName = "Default Share Settings")]
-            public Dictionary<ShareType, ShareSettings> defaultShareS = new Dictionary<ShareType, ShareSettings>
+            public Dictionary<ShareType, ShareSettings> DefaultShare { get; set; } = new Dictionary<ShareType, ShareSettings>
             {
                 [ShareType.Teams] = new ShareSettings(),
                 [ShareType.Friends] = new ShareSettings(),
@@ -1256,48 +1426,48 @@ namespace Oxide.Plugins
             };
 
             [JsonProperty(PropertyName = "Version")]
-            public VersionNumber version;
+            public VersionNumber Version { get; set; }
 
             public class ShareSettings
             {
                 [JsonProperty(PropertyName = "Enabled")]
-                public bool enabled = true;
+                public bool Enabled { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Share Cupboard")]
-                public bool shareCupboard = true;
+                public bool ShareCupboard { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Share Turret")]
-                public bool shareTurret = true;
+                public bool ShareTurret { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Key Lock Settings")]
-                public LockSettings keyLockS = new LockSettings();
+                public LockSettings KeyLock { get; set; } = new LockSettings();
 
                 [JsonProperty(PropertyName = "Code Lock Settings")]
-                public LockSettings codeLockS = new LockSettings();
+                public LockSettings CodeLock { get; set; } = new LockSettings();
             }
 
             public class LockSettings
             {
                 [JsonProperty(PropertyName = "Enabled")]
-                public bool enabled = true;
+                public bool Enabled { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Share Door")]
-                public bool shareDoor = true;
+                public bool ShareDoor { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Share Box")]
-                public bool shareBox = true;
+                public bool ShareBox { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Share Other Locked Entities")]
-                public bool shareOtherEntity = true;
+                public bool ShareOtherEntity { get; set; } = true;
             }
 
             public ShareSettings GetShareSettings(ShareType shareType)
             {
                 switch (shareType)
                 {
-                    case ShareType.Teams: return teamsShareS;
-                    case ShareType.Friends: return friendsShareS;
-                    case ShareType.Clans: return clansShareS;
+                    case ShareType.Teams: return TeamsShare;
+                    case ShareType.Friends: return FriendsShare;
+                    case ShareType.Clans: return ClansShare;
                 }
                 return null;
             }
@@ -1306,9 +1476,9 @@ namespace Oxide.Plugins
             {
                 switch (shareType)
                 {
-                    case ShareType.Teams: return defaultShareS[ShareType.Teams];
-                    case ShareType.Friends: return defaultShareS[ShareType.Friends];
-                    case ShareType.Clans: return defaultShareS[ShareType.Clans];
+                    case ShareType.Teams: return DefaultShare[ShareType.Teams];
+                    case ShareType.Friends: return DefaultShare[ShareType.Friends];
+                    case ShareType.Clans: return DefaultShare[ShareType.Clans];
                 }
                 return null;
             }
@@ -1317,19 +1487,19 @@ namespace Oxide.Plugins
         public class ChatSettings
         {
             [JsonProperty(PropertyName = "Send Authorization Success Message")]
-            public bool sendMessage = true;
+            public bool SendMessage { get; set; } = true;
 
             [JsonProperty(PropertyName = "Chat Command")]
-            public string chatCommand = "autoauth";
+            public string ChatCommand { get; set; } = "autoauth";
 
             [JsonProperty(PropertyName = "Chat UI Command")]
-            public string uiCommand = "autoauthui";
+            public string UICommand { get; set; } = "autoauthui";
 
             [JsonProperty(PropertyName = "Chat Prefix")]
-            public string prefix = "<color=#00FFFF>[AutoAuth]</color>: ";
+            public string Prefix { get; set; } = "<color=#00FFFF>[AutoAuth]</color>: ";
 
             [JsonProperty(PropertyName = "Chat SteamID Icon")]
-            public ulong steamIDIcon = 0;
+            public ulong SteamIdIcon { get; set; } = 0;
         }
 
         protected override void LoadConfig()
@@ -1359,29 +1529,29 @@ namespace Oxide.Plugins
         {
             PrintWarning("Creating a new configuration file");
             configData = new ConfigData();
-            configData.version = Version;
+            configData.Version = Version;
         }
 
         protected override void SaveConfig() => Config.WriteObject(configData);
 
         private void UpdateConfigValues()
         {
-            if (configData.version < Version)
+            if (configData.Version < Version)
             {
-                if (configData.version <= default(VersionNumber))
+                if (configData.Version <= default(VersionNumber))
                 {
                     string prefix, prefixColor;
                     if (GetConfigValue(out prefix, "Chat Settings", "Chat Prefix") && GetConfigValue(out prefixColor, "Chat Settings", "Chat Prefix Color"))
                     {
-                        configData.chatS.prefix = $"<color={prefixColor}>{prefix}</color>: ";
+                        configData.Chat.Prefix = $"<color={prefixColor}>{prefix}</color>: ";
                     }
                 }
 
-                if (configData.version <= new VersionNumber(1, 3, 5))
+                if (configData.Version <= new VersionNumber(1, 3, 5))
                 {
                     UpdateOldData();
                 }
-                configData.version = Version;
+                configData.Version = Version;
             }
         }
 
@@ -1406,7 +1576,7 @@ namespace Oxide.Plugins
         private class StoredData
         {
             [JsonProperty(PropertyName = "shareData")]
-            public readonly Dictionary<ulong, ShareData> playerShareData = new Dictionary<ulong, ShareData>();
+            public Dictionary<ulong, ShareData> playerShareData = new Dictionary<ulong, ShareData>();
 
             public class ShareData
             {
@@ -1433,19 +1603,19 @@ namespace Oxide.Plugins
 
             public class ShareDataContractResolver : DefaultContractResolver
             {
-                private readonly List<string> excludedProperties = new List<string>();
+                private readonly List<string> _excludedProperties = new List<string>();
 
                 public ShareDataContractResolver(bool teams, bool friends, bool clans)
                 {
-                    if (!teams) excludedProperties.Add("t");
-                    if (!friends) excludedProperties.Add("f");
-                    if (!clans) excludedProperties.Add("c");
+                    if (!teams) _excludedProperties.Add("t");
+                    if (!friends) _excludedProperties.Add("f");
+                    if (!clans) _excludedProperties.Add("c");
                 }
 
                 protected override IList<JsonProperty> CreateProperties(Type type, MemberSerialization memberSerialization)
                 {
-                    return excludedProperties.Count <= 0 ? base.CreateProperties(type, memberSerialization) :
-                        base.CreateProperties(type, memberSerialization).Where(p => !excludedProperties.Contains(p.PropertyName)).ToList();
+                    return _excludedProperties.Count <= 0 ? base.CreateProperties(type, memberSerialization) :
+                        base.CreateProperties(type, memberSerialization).Where(p => !_excludedProperties.Contains(p.PropertyName)).ToList();
                 }
             }
 
@@ -1526,7 +1696,7 @@ namespace Oxide.Plugins
                 var dataFile = Interface.Oxide.DataFileSystem.GetFile(Name);
                 storedData = dataFile.ReadObject<StoredData>();
                 dataFile.Settings.ContractResolver =
-                    new StoredData.ShareDataContractResolver(configData.teamsShareS.enabled, configData.friendsShareS.enabled, configData.clansShareS.enabled);
+                    new StoredData.ShareDataContractResolver(configData.TeamsShare.Enabled, configData.FriendsShare.Enabled, configData.ClansShare.Enabled);
             }
             catch
             {
@@ -1548,7 +1718,7 @@ namespace Oxide.Plugins
 
         private void OnNewSave(string filename)
         {
-            if (configData.clearDataOnWipe)
+            if (configData.ClearDataOnWipe)
             {
                 ClearData();
             }
@@ -1623,7 +1793,7 @@ namespace Oxide.Plugins
 
         private void Print(BasePlayer player, string message)
         {
-            Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
+            Player.Message(player, message, configData.Chat.Prefix, configData.Chat.SteamIdIcon);
         }
 
         private string Lang(string key, string id = null, params object[] args)
