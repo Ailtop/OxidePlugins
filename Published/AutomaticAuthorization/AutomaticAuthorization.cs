@@ -37,12 +37,13 @@ namespace Oxide.Plugins
             Clans
         }
 
+        [Flags]
         private enum AutoAuthType
         {
-            All,
-            Turret,
-            Cupboard,
-            CodeLock
+            Turret = 1 << 0,
+            Cupboard = 1 << 1,
+            CodeLock = 1 << 2,
+            All = -1,
         }
 
         private class EntityCache
@@ -157,24 +158,20 @@ namespace Oxide.Plugins
 
         private void CanChangeCode(BasePlayer player, CodeLock codeLock, string code, bool isGuest)
         {
-            if (!isGuest)
+            NextFrame(() =>
             {
-                var oldCode = codeLock.code;
-                NextFrame(() =>
+                if (!isGuest ? codeLock.code != code : codeLock.guestCode != code)
                 {
-                    if (oldCode == code)
-                    {
-                        return;
-                    }
-                    var parentEntity = codeLock.GetParentEntity();
-                    var ownerId = codeLock.OwnerID.IsSteamId() ? codeLock.OwnerID : parentEntity != null ? parentEntity.OwnerID : 0;
-                    if (!ownerId.IsSteamId())
-                    {
-                        return;
-                    }
-                    UpdateAuthList(ownerId, AutoAuthType.CodeLock);
-                });
-            }
+                    return;
+                }
+                var parentEntity = codeLock.GetParentEntity();
+                var ownerId = codeLock.OwnerID.IsSteamId() ? codeLock.OwnerID : parentEntity != null ? parentEntity.OwnerID : 0;
+                if (!ownerId.IsSteamId())
+                {
+                    return;
+                }
+                UpdateAuthList(ownerId, AutoAuthType.CodeLock);
+            });
         }
 
         private object CanUseLockedEntity(BasePlayer player, BaseLock baseLock)
@@ -420,25 +417,17 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            switch (autoAuthType)
+            if (autoAuthType.HasFlag(AutoAuthType.Turret))
             {
-                case AutoAuthType.All:
-                    AuthToTurret(entityCache.autoTurrets, playerId);
-                    AuthToCupboard(entityCache.buildingPrivlidges, playerId);
-                    AuthToCodeLock(entityCache.codeLocks, playerId);
-                    return;
-
-                case AutoAuthType.Turret:
-                    AuthToTurret(entityCache.autoTurrets, playerId);
-                    return;
-
-                case AutoAuthType.Cupboard:
-                    AuthToCupboard(entityCache.buildingPrivlidges, playerId);
-                    return;
-
-                case AutoAuthType.CodeLock:
-                    AuthToCodeLock(entityCache.codeLocks, playerId);
-                    return;
+                AuthToTurret(entityCache.autoTurrets, playerId);
+            }
+            if (autoAuthType.HasFlag(AutoAuthType.Cupboard))
+            {
+                AuthToCupboard(entityCache.buildingPrivlidges, playerId);
+            }
+            if (autoAuthType.HasFlag(AutoAuthType.CodeLock))
+            {
+                AuthToCodeLock(entityCache.codeLocks, playerId);
             }
         }
 
@@ -525,11 +514,14 @@ namespace Oxide.Plugins
                 {
                     continue;
                 }
-                codeLock.whitelistPlayers.Clear();
+                codeLock.whitelistPlayers.Clear(); // only owner id
+                codeLock.whitelistPlayers.Add(playerId);
+                
+                codeLock.guestPlayers.Clear(); // excluding owner id
                 var authList = GetAuthorIDsForCodeLock(playerId, codeLock);
                 foreach (var friend in authList)
                 {
-                    codeLock.whitelistPlayers.Add(friend);
+                    codeLock.guestPlayers.Add(friend);
                 }
                 codeLock.SendNetworkUpdate();
             }
@@ -548,7 +540,7 @@ namespace Oxide.Plugins
 
         private HashSet<ulong> GetAuthorIDsForCodeLock(ulong playerId, CodeLock codeLock)
         {
-            var sharePlayers = new HashSet<ulong> { playerId };
+            var sharePlayers = new HashSet<ulong>();
             var parentEntity = codeLock.GetParentEntity();
             if (parentEntity == null)
             {
