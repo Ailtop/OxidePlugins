@@ -15,7 +15,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Automatic Authorization", "k1lly0u/Arainrr", "1.3.1", ResourceId = 2063)]
+    [Info("Automatic Authorization", "k1lly0u/Arainrr", "1.3.2", ResourceId = 2063)]
     [Description("Shared cupboards, turrets, locks with teams, clans, friends")]
     public class AutomaticAuthorization : RustPlugin
     {
@@ -134,6 +134,7 @@ namespace Oxide.Plugins
         {
             CheckEntitySpawned(buildingPrivlidge, true);
         }
+
         private void OnEntitySpawned(CodeLock codeLock)
         {
             CheckEntitySpawned(codeLock, true);
@@ -148,9 +149,32 @@ namespace Oxide.Plugins
         {
             CheckEntityKill(buildingPrivlidge);
         }
+
         private void OnEntityKill(CodeLock codeLock)
         {
             CheckEntityKill(codeLock);
+        }
+
+        private void CanChangeCode(BasePlayer player, CodeLock codeLock, string code, bool isGuest)
+        {
+            if (!isGuest)
+            {
+                var oldCode = codeLock.code;
+                NextFrame(() =>
+                {
+                    if (oldCode == code)
+                    {
+                        return;
+                    }
+                    var parentEntity = codeLock.GetParentEntity();
+                    var ownerId = codeLock.OwnerID.IsSteamId() ? codeLock.OwnerID : parentEntity != null ? parentEntity.OwnerID : 0;
+                    if (!ownerId.IsSteamId())
+                    {
+                        return;
+                    }
+                    UpdateAuthList(ownerId, AutoAuthType.CodeLock);
+                });
+            }
         }
 
         private object CanUseLockedEntity(BasePlayer player, BaseLock baseLock)
