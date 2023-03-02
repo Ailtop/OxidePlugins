@@ -18,7 +18,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.35", ResourceId = 651)]
+    [Info("Remover Tool", "Reneb/Fuji/Arainrr", "4.3.36", ResourceId = 651)]
     [Description("Building and entity removal tool")]
     public class RemoverTool : RustPlugin
     {
@@ -373,7 +373,7 @@ namespace Oxide.Plugins
 
         private static void DropItemContainer(ItemContainer itemContainer, Vector3 position, Quaternion rotation)
         {
-            itemContainer?.Drop(PREFAB_ITEM_DROP, position, rotation);
+            itemContainer?.Drop(PREFAB_ITEM_DROP, position, rotation, 0);
         }
 
         private static bool IsExternalWall(StabilityEntity stabilityEntity)
@@ -1255,7 +1255,7 @@ namespace Oxide.Plugins
 
             private void UnEquip()
             {
-                //player.lastReceivedTick.activeItem = 0;
+                // Player.lastReceivedTick.activeItem = 0;
                 var activeItem = Player.GetActiveItem();
                 if (activeItem?.GetHeldEntity() is HeldEntity)
                 {

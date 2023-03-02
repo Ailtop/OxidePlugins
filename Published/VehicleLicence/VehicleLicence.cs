@@ -19,7 +19,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.37")]
+    [Info("Vehicle Licence", "Sorrow/TheDoc/Arainrr", "1.7.41")]
     [Description("Allows players to buy vehicles and then spawn or store it")]
     public class VehicleLicence : RustPlugin
     {
@@ -132,9 +132,9 @@ namespace Oxide.Plugins
         {
             LoadData();
             Instance = this;
+            permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_ALL, this);
             permission.RegisterPermission(PERMISSION_ADMIN, this);
-            permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_BYPASS_COST, this);
 
             foreach (NormalVehicleType value in Enum.GetValues(typeof(NormalVehicleType)))
@@ -366,6 +366,15 @@ namespace Oxide.Plugins
 
         #region Loot
 
+        private object CanLootEntity(BasePlayer friend, RidableHorse horse)
+        {
+            if (friend == null || horse == null)
+            {
+                return null;
+            }
+            return CanLootEntityInternal(friend, horse);
+        }
+
         private object CanLootEntity(BasePlayer friend, StorageContainer container)
         {
             if (friend == null || container == null)
@@ -377,6 +386,11 @@ namespace Oxide.Plugins
             {
                 return null;
             }
+            return CanLootEntityInternal(friend, parentEntity);
+        }
+
+        private object CanLootEntityInternal(BasePlayer friend, BaseEntity parentEntity)
+        {
             Vehicle vehicle;
             if (!TryGetVehicle(parentEntity, out vehicle))
             {
@@ -1099,10 +1113,13 @@ namespace Oxide.Plugins
             var list = Pool.GetList<Vector3>();
             foreach (var transform in baseVehicle.dismountPositions)
             {
-                var visualCheckOrigin = transform.position + Vector3.up * 0.6f;
-                if (baseVehicle.ValidDismountPosition(transform.position, visualCheckOrigin))
+                if (baseVehicle.ValidDismountPosition(player, transform.position))
                 {
                     list.Add(transform.position);
+                    if (baseVehicle.dismountStyle == BaseVehicle.DismountStyle.Ordered)
+                    {
+                        break;
+                    }
                 }
             }
             if (list.Count == 0)
@@ -3270,7 +3287,7 @@ namespace Oxide.Plugins
                 {
                     if (inventory != null)
                     {
-                        return inventory.Drop(PREFAB_ITEM_DROP, vehicle.Entity.GetDropPosition(), vehicle.Entity.transform.rotation);
+                        return inventory.Drop(PREFAB_ITEM_DROP, vehicle.Entity.GetDropPosition(), vehicle.Entity.transform.rotation, 0);
                     }
                 }
                 return null;
@@ -4169,7 +4186,7 @@ namespace Oxide.Plugins
                         var moduleStorage = moduleEntity as VehicleModuleStorage;
                         if (moduleStorage != null)
                         {
-                            return moduleStorage.GetContainer()?.inventory?.Drop(PREFAB_ITEM_DROP, vehicle.Entity.GetDropPosition(), vehicle.Entity.transform.rotation);
+                            return moduleStorage.GetContainer()?.inventory?.Drop(PREFAB_ITEM_DROP, vehicle.Entity.GetDropPosition(), vehicle.Entity.transform.rotation, 0);
                         }
                     }
                 }
