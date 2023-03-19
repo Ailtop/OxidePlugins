@@ -13,16 +13,18 @@ using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.12", ResourceId = 2728)]
+    [Info("Dynamic PVP", "CatMeat/Arainrr", "4.2.13", ResourceId = 2728)]
     [Description("Creates temporary PvP zones on certain actions/events")]
     public class DynamicPVP : RustPlugin
     {
         #region Fields
 
-        [PluginReference] private readonly Plugin ZoneManager, TruePVE, NextGenPVE, BotReSpawn;
+        [PluginReference]
+        private readonly Plugin ZoneManager, BotReSpawn;
 
         private const string PermissionAdmin = "dynamicpvp.admin";
         private const string PrefabSphere = "assets/prefabs/visualization/sphere.prefab";
@@ -31,7 +33,7 @@ namespace Oxide.Plugins
 
         private readonly Dictionary<string, Timer> _eventTimers = new Dictionary<string, Timer>();
         private readonly Dictionary<ulong, LeftZone> _pvpDelays = new Dictionary<ulong, LeftZone>();
-        private readonly Dictionary<string, string> _activeDynamicZones = new Dictionary<string, string>();//ID -> EventName
+        private readonly Dictionary<string, string> _activeDynamicZones = new Dictionary<string, string>(); //ID -> EventName
 
         private bool _dataChanged;
         private Vector3 _oilRigPosition;
@@ -66,7 +68,7 @@ namespace Oxide.Plugins
             None = 0,
             ZonePlayersCanDamageDelayedPlayers = 1,
             DelayedPlayersCanDamageZonePlayers = 1 << 1,
-            DelayedPlayersCanDamageDelayedPlayers = 1 << 2,
+            DelayedPlayersCanDamageDelayedPlayers = 1 << 2
         }
 
         private enum GeneralEventType
@@ -77,7 +79,7 @@ namespace Oxide.Plugins
             SupplySignal,
             CargoShip,
             HackableCrate,
-            ExcavatorIgnition,
+            ExcavatorIgnition
         }
 
         #endregion Fields
@@ -134,8 +136,8 @@ namespace Oxide.Plugins
                 Subscribe(nameof(OnCrateHackEnd));
             }
             if (configData.GeneralEvents.TimedSupply.Enabled && configData.GeneralEvents.TimedSupply.TimerStartWhenLooted ||
-                configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.TimerStartWhenLooted ||
-                configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.TimerStartWhenLooted)
+                    configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.TimerStartWhenLooted ||
+                    configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.TimerStartWhenLooted)
             {
                 Subscribe(nameof(OnLootEntity));
             }
@@ -144,19 +146,19 @@ namespace Oxide.Plugins
                 Subscribe(nameof(OnCrateHack));
             }
             if (configData.GeneralEvents.TimedSupply.Enabled && !configData.GeneralEvents.TimedSupply.StartWhenSpawned ||
-                configData.GeneralEvents.SupplySignal.Enabled && !configData.GeneralEvents.SupplySignal.StartWhenSpawned)
+                    configData.GeneralEvents.SupplySignal.Enabled && !configData.GeneralEvents.SupplySignal.StartWhenSpawned)
             {
                 Subscribe(nameof(OnSupplyDropLanded));
             }
             if (configData.GeneralEvents.TimedSupply.Enabled && configData.GeneralEvents.TimedSupply.StartWhenSpawned ||
-                configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.StartWhenSpawned ||
-                configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.StartWhenSpawned)
+                    configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.StartWhenSpawned ||
+                    configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.StartWhenSpawned)
             {
                 Subscribe(nameof(OnEntitySpawned));
             }
             if (configData.GeneralEvents.TimedSupply.Enabled && configData.GeneralEvents.TimedSupply.StopWhenKilled ||
-                configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.StopWhenKilled ||
-                configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.StopWhenKilled)
+                    configData.GeneralEvents.SupplySignal.Enabled && configData.GeneralEvents.SupplySignal.StopWhenKilled ||
+                    configData.GeneralEvents.HackableCrate.Enabled && configData.GeneralEvents.HackableCrate.StopWhenKilled)
             {
                 Subscribe(nameof(OnEntityKill));
             }
@@ -167,7 +169,10 @@ namespace Oxide.Plugins
                 foreach (var serverEntity in BaseNetworkable.serverEntities)
                 {
                     var cargoShip = serverEntity as CargoShip;
-                    if (cargoShip == null) continue;
+                    if (cargoShip == null)
+                    {
+                        continue;
+                    }
                     OnEntitySpawned(cargoShip);
                 }
             }
@@ -217,15 +222,18 @@ namespace Oxide.Plugins
             Instance = null;
         }
 
-        private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), () =>
-          {
-              SaveDebug();
-              if (_dataChanged)
-              {
-                  SaveData();
-                  _dataChanged = false;
-              }
-          });
+        private void OnServerSave()
+        {
+            timer.Once(Random.Range(0f, 60f), () =>
+            {
+                SaveDebug();
+                if (_dataChanged)
+                {
+                    SaveData();
+                    _dataChanged = false;
+                }
+            });
+        }
 
         private void OnPlayerRespawned(BasePlayer player)
         {
@@ -253,7 +261,7 @@ namespace Oxide.Plugins
         private LeftZone GetOrAddPVPDelay(BasePlayer player, string zoneId, string eventName)
         {
             PrintDebug($"Adding {player.displayName} to pvp delay.");
-            bool added = false;
+            var added = false;
             LeftZone leftZone;
             if (_pvpDelays.TryGetValue(player.userID, out leftZone))
             {
@@ -334,7 +342,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            bool hasCommands = false;
+            var hasCommands = false;
             foreach (var eventName in _activeDynamicZones.Values)
             {
                 var baseEvent = GetBaseEvent(eventName);
@@ -386,13 +394,20 @@ namespace Oxide.Plugins
                 {
                     switch (generalEventType)
                     {
-                        case GeneralEventType.Bradley: return configData.GeneralEvents.BradleyApc;
-                        case GeneralEventType.HackableCrate: return configData.GeneralEvents.HackableCrate;
-                        case GeneralEventType.Helicopter: return configData.GeneralEvents.PatrolHelicopter;
-                        case GeneralEventType.SupplyDrop: return configData.GeneralEvents.TimedSupply;
-                        case GeneralEventType.SupplySignal: return configData.GeneralEvents.SupplySignal;
-                        case GeneralEventType.ExcavatorIgnition: return configData.GeneralEvents.ExcavatorIgnition;
-                        case GeneralEventType.CargoShip: return configData.GeneralEvents.CargoShip;
+                        case GeneralEventType.Bradley:
+                            return configData.GeneralEvents.BradleyApc;
+                        case GeneralEventType.HackableCrate:
+                            return configData.GeneralEvents.HackableCrate;
+                        case GeneralEventType.Helicopter:
+                            return configData.GeneralEvents.PatrolHelicopter;
+                        case GeneralEventType.SupplyDrop:
+                            return configData.GeneralEvents.TimedSupply;
+                        case GeneralEventType.SupplySignal:
+                            return configData.GeneralEvents.SupplySignal;
+                        case GeneralEventType.ExcavatorIgnition:
+                            return configData.GeneralEvents.ExcavatorIgnition;
+                        case GeneralEventType.CargoShip:
+                            return configData.GeneralEvents.CargoShip;
                         default:
                             PrintDebug($"ERROR: Unknown GeneralEventType: {generalEventType} | {eventName}.", error: true);
                             break;
@@ -456,7 +471,7 @@ namespace Oxide.Plugins
             }
 
             if (!configData.GeneralEvents.HackableCrate.Enabled ||
-                !configData.GeneralEvents.HackableCrate.StartWhenSpawned)
+                    !configData.GeneralEvents.HackableCrate.StartWhenSpawned)
             {
                 return;
             }
@@ -491,7 +506,7 @@ namespace Oxide.Plugins
                 return;
             }
             if (!configData.GeneralEvents.HackableCrate.Enabled ||
-                !configData.GeneralEvents.HackableCrate.TimerStartWhenLooted)
+                    !configData.GeneralEvents.HackableCrate.TimerStartWhenLooted)
             {
                 return;
             }
@@ -506,7 +521,7 @@ namespace Oxide.Plugins
             }
 
             if (!configData.GeneralEvents.HackableCrate.Enabled ||
-                !configData.GeneralEvents.HackableCrate.StopWhenKilled)
+                    !configData.GeneralEvents.HackableCrate.StopWhenKilled)
             {
                 return;
             }
@@ -537,18 +552,21 @@ namespace Oxide.Plugins
             HandleGeneralEvent(GeneralEventType.HackableCrate, hackableLockedCrate, true);
         }
 
-        private bool IsOnTheCargoShip(HackableLockedCrate hackableLockedCrate) => hackableLockedCrate.GetComponentInParent<CargoShip>() != null;
+        private bool IsOnTheCargoShip(HackableLockedCrate hackableLockedCrate)
+        {
+            return hackableLockedCrate.GetComponentInParent<CargoShip>() != null;
+        }
 
         private bool IsOnTheOilRig(HackableLockedCrate hackableLockedCrate)
         {
             if (_oilRigPosition != Vector3.zero &&
-                Vector3Ex.Distance2D(hackableLockedCrate.transform.position, _oilRigPosition) < 50f)
+                    Vector3Ex.Distance2D(hackableLockedCrate.transform.position, _oilRigPosition) < 50f)
             {
                 return true;
             }
 
             if (_largeOilRigPosition != Vector3.zero &&
-                Vector3Ex.Distance2D(hackableLockedCrate.transform.position, _largeOilRigPosition) < 50f)
+                    Vector3Ex.Distance2D(hackableLockedCrate.transform.position, _largeOilRigPosition) < 50f)
             {
                 return true;
             }
@@ -675,7 +693,8 @@ namespace Oxide.Plugins
                         HandleDeleteDynamicZone(zoneId, configData.GeneralEvents.TimedSupply.Duration, eventName);
                         break;
 
-                    default: return;
+                    default:
+                        return;
                 }
             }
         }
@@ -706,7 +725,8 @@ namespace Oxide.Plugins
                         }
                         break;
 
-                    default: return;
+                    default:
+                        return;
                 }
                 //When the timer starts, don't stop the event immediately
                 if (!_eventTimers.ContainsKey(zoneId))
@@ -781,7 +801,7 @@ namespace Oxide.Plugins
                             activeSupplySignals.Remove(entry.Key);
                             PrintDebug($"Removing Supply signal from active list. Active supply signals remaining: {activeSupplySignals.Count}");
                         };
-                        PrintDebug($"Found matching a supply signal.");
+                        PrintDebug("Found matching a supply signal.");
                         return true;
                     }
                 }
@@ -845,17 +865,31 @@ namespace Oxide.Plugins
             var createdEvents = new List<string>();
             foreach (var landmarkInfo in TerrainMeta.Path.Landmarks)
             {
-                if (!landmarkInfo.shouldDisplayOnMap) continue;
+                if (!landmarkInfo.shouldDisplayOnMap)
+                {
+                    continue;
+                }
                 var monumentName = landmarkInfo.displayPhrase.english.Replace("\n", "");
-                if (string.IsNullOrEmpty(monumentName)) continue;
+                if (string.IsNullOrEmpty(monumentName))
+                {
+                    continue;
+                }
                 switch (landmarkInfo.name)
                 {
-                    case "OilrigAI": _oilRigPosition = landmarkInfo.transform.position; break;
-                    case "OilrigAI2": _largeOilRigPosition = landmarkInfo.transform.position; break;
-                    case "assets/bundled/prefabs/autospawn/monument/harbor/harbor_1.prefab": monumentName += " A"; break;
-                    case "assets/bundled/prefabs/autospawn/monument/harbor/harbor_2.prefab": monumentName += " B"; break;
-                        //case "assets/bundled/prefabs/autospawn/monument/harbor/fishing_village_b.prefab": monumentName += " A"; break;
-                        //case "assets/bundled/prefabs/autospawn/monument/harbor/fishing_village_c.prefab": monumentName += " B"; break;
+                    case "OilrigAI":
+                        _oilRigPosition = landmarkInfo.transform.position;
+                        break;
+                    case "OilrigAI2":
+                        _largeOilRigPosition = landmarkInfo.transform.position;
+                        break;
+                    case "assets/bundled/prefabs/autospawn/monument/harbor/harbor_1.prefab":
+                        monumentName += " A";
+                        break;
+                    case "assets/bundled/prefabs/autospawn/monument/harbor/harbor_2.prefab":
+                        monumentName += " B";
+                        break;
+                    //case "assets/bundled/prefabs/autospawn/monument/harbor/fishing_village_b.prefab": monumentName += " A"; break;
+                    //case "assets/bundled/prefabs/autospawn/monument/harbor/fishing_village_c.prefab": monumentName += " B"; break;
                 }
                 MonumentEvent monumentEvent;
                 if (!configData.MonumentEvents.TryGetValue(monumentName, out monumentEvent))
@@ -907,9 +941,15 @@ namespace Oxide.Plugins
 
         #region Chat/Console Command Handler
 
-        private object OnPlayerCommand(BasePlayer player, string command, string[] args) => CheckCommand(player, command, true);
+        private object OnPlayerCommand(BasePlayer player, string command, string[] args)
+        {
+            return CheckCommand(player, command, true);
+        }
 
-        private object OnServerCommand(ConsoleSystem.Arg arg) => CheckCommand(arg?.Player(), arg?.cmd?.FullName, false);
+        private object OnServerCommand(ConsoleSystem.Arg arg)
+        {
+            return CheckCommand(arg?.Player(), arg?.cmd?.FullName, false);
+        }
 
         private object CheckCommand(BasePlayer player, string command, bool isChat)
         {
@@ -936,7 +976,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            string[] result = GetPlayerZoneIds(player);
+            var result = GetPlayerZoneIds(player);
             if (result == null || result.Length == 0 || result.Length == 1 && string.IsNullOrEmpty(result[0]))
             {
                 return null;
@@ -966,9 +1006,9 @@ namespace Oxide.Plugins
             if (baseEvent != null && baseEvent.CommandList.Count > 0)
             {
                 var commandExist = baseEvent.CommandList.Any(entry =>
-                    isChat
-                        ? entry.StartsWith("/") && entry.Substring(1).Equals(command)
-                        : !entry.StartsWith("/") && command.Contains(entry));
+                                                                     isChat
+                                                                             ? entry.StartsWith("/") && entry.Substring(1).Equals(command)
+                                                                             : !entry.StartsWith("/") && command.Contains(entry));
                 if (baseEvent.UseBlacklistCommands)
                 {
                     if (commandExist)
@@ -1017,23 +1057,23 @@ namespace Oxide.Plugins
             if (CreateDynamicZone(eventName, parentEntity.transform.position, zoneId, delay: false))
             {
                 timer.Once(0.25f, () =>
-                 {
-                     var zone = GetZoneById(zoneId);
-                     PrintDebug($"Gets the zone({zoneId} | {zone}) created by the {eventName} event.", true);
-                     if (parentEntity != null && zone != null)
-                     {
-                         var zoneTransform = zone.transform;
-                         zoneTransform.SetParent(parentEntity.transform);
-                         zoneTransform.rotation = parentEntity.transform.rotation;
-                         zoneTransform.position = parentZone != null ? parentEntity.transform.TransformPoint(parentZone.Center) : parentEntity.transform.position;
-                         PrintDebug($"The zone({zoneId} | {eventName}) was parented to entity({parentEntity}).", true);
-                     }
-                     else
-                     {
-                         PrintDebug($"ERROR: The zone({zoneId} | {zone} | {parentEntity}) created by the {eventName} event is empty.", error: true);
-                         DeleteDynamicZone(zoneId);
-                     }
-                 });
+                {
+                    var zone = GetZoneById(zoneId);
+                    PrintDebug($"Gets the zone({zoneId} | {zone}) created by the {eventName} event.", true);
+                    if (parentEntity != null && zone != null)
+                    {
+                        var zoneTransform = zone.transform;
+                        zoneTransform.SetParent(parentEntity.transform);
+                        zoneTransform.rotation = parentEntity.transform.rotation;
+                        zoneTransform.position = parentZone != null ? parentEntity.transform.TransformPoint(parentZone.Center) : parentEntity.transform.position;
+                        PrintDebug($"The zone({zoneId} | {eventName}) was parented to entity({parentEntity}).", true);
+                    }
+                    else
+                    {
+                        PrintDebug($"ERROR: The zone({zoneId} | {zone} | {parentEntity}) created by the {eventName} event is empty.", error: true);
+                        DeleteDynamicZone(zoneId);
+                    }
+                });
             }
         }
 
@@ -1113,7 +1153,7 @@ namespace Oxide.Plugins
                 }
 
                 var stringBuilder = Pool.Get<StringBuilder>();
-                stringBuilder.Clear(); 
+                stringBuilder.Clear();
                 var domeEvent = baseEvent as IDomeEvent;
                 var sphereZone = dynamicZone as ISphereZone;
                 if (DomeCreateAllowed(domeEvent, sphereZone))
@@ -1143,7 +1183,7 @@ namespace Oxide.Plugins
                     }
                 }
 
-                var mappingAdded = CreateMapping(zoneId, baseEvent.Mapping);
+                var mappingAdded = TryCreateMapping(zoneId, baseEvent.Mapping);
                 if (!mappingAdded)
                 {
                     PrintDebug($"ERROR: Mapping Not added for zone({zoneId}).", error: true);
@@ -1256,7 +1296,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            var mappingRemoved = RemoveMapping(zoneId);
+            var mappingRemoved = TryRemoveMapping(zoneId);
             if (!mappingRemoved)
             {
                 PrintDebug($"ERROR: Mapping NOT removed for zone({zoneId} | {eventName}).", error: true);
@@ -1302,13 +1342,16 @@ namespace Oxide.Plugins
             int attempts = 0, successes = 0;
             foreach (var zoneId in zoneIds)
             {
-                string zoneName = GetZoneName(zoneId);
+                var zoneName = GetZoneName(zoneId);
                 if (zoneName == ZoneName)
                 {
                     attempts++;
                     var zoneRemoved = RemoveZone(zoneId);
-                    if (zoneRemoved) successes++;
-                    RemoveMapping(zoneId);
+                    if (zoneRemoved)
+                    {
+                        successes++;
+                    }
+                    TryRemoveMapping(zoneId);
                 }
             }
             PrintDebug($"Deleted {successes} of {attempts} existing DynamicPVP zones", true);
@@ -1320,7 +1363,10 @@ namespace Oxide.Plugins
 
         private readonly Dictionary<string, List<SphereEntity>> _zoneSpheres = new Dictionary<string, List<SphereEntity>>();
 
-        private static bool DomeCreateAllowed(IDomeEvent domeEvent, ISphereZone sphereZone) => domeEvent != null && domeEvent.DomesEnabled && sphereZone?.Radius > 0f;
+        private static bool DomeCreateAllowed(IDomeEvent domeEvent, ISphereZone sphereZone)
+        {
+            return domeEvent != null && domeEvent.DomesEnabled && sphereZone?.Radius > 0f;
+        }
 
         private bool CreateDome(string zoneId, Vector3 position, float radius, int darkness)
         {
@@ -1329,7 +1375,7 @@ namespace Oxide.Plugins
                 return false;
             }
             var sphereEntities = Pool.GetList<SphereEntity>();
-            for (int i = 0; i < darkness; i++)
+            for (var i = 0; i < darkness; i++)
             {
                 var sphereEntity = GameManager.server.CreateEntity(PrefabSphere, position) as SphereEntity;
                 if (sphereEntity == null)
@@ -1382,7 +1428,7 @@ namespace Oxide.Plugins
             {
                 return null;
             }
-            var attacker = info.InitiatorPlayer ?? (info.Initiator != null && info.Initiator.OwnerID.IsSteamId() ? BasePlayer.FindByID(info.Initiator.OwnerID) : null);//The attacker cannot be fully captured
+            var attacker = info.InitiatorPlayer ?? (info.Initiator != null && info.Initiator.OwnerID.IsSteamId() ? BasePlayer.FindByID(info.Initiator.OwnerID) : null); //The attacker cannot be fully captured
             if (attacker == null || !attacker.userID.IsSteamId())
             {
                 return null;
@@ -1390,12 +1436,12 @@ namespace Oxide.Plugins
             LeftZone victimLeftZone;
             if (_pvpDelays.TryGetValue(victim.userID, out victimLeftZone))
             {
-                if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.ZonePlayersCanDamageDelayedPlayers) && !string.IsNullOrEmpty(victimLeftZone.zoneId) && IsPlayerInZone(victimLeftZone, attacker))//ZonePlayer attack DelayedPlayer
+                if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.ZonePlayersCanDamageDelayedPlayers) && !string.IsNullOrEmpty(victimLeftZone.zoneId) && IsPlayerInZone(victimLeftZone, attacker)) //ZonePlayer attack DelayedPlayer
                 {
                     return _true;
                 }
                 LeftZone attackerLeftZone;
-                if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.DelayedPlayersCanDamageDelayedPlayers) && _pvpDelays.TryGetValue(attacker.userID, out attackerLeftZone) && victimLeftZone.zoneId == attackerLeftZone.zoneId)//DelayedPlayer attack DelayedPlayer
+                if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.DelayedPlayersCanDamageDelayedPlayers) && _pvpDelays.TryGetValue(attacker.userID, out attackerLeftZone) && victimLeftZone.zoneId == attackerLeftZone.zoneId) //DelayedPlayer attack DelayedPlayer
                 {
                     return _true;
                 }
@@ -1407,7 +1453,7 @@ namespace Oxide.Plugins
                 LeftZone attackerLeftZone;
                 if (_pvpDelays.TryGetValue(attacker.userID, out attackerLeftZone))
                 {
-                    if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.DelayedPlayersCanDamageZonePlayers) && !string.IsNullOrEmpty(attackerLeftZone.zoneId) && IsPlayerInZone(attackerLeftZone, victim))//DelayedPlayer attack ZonePlayer
+                    if (configData.Global.PvpDelayFlags.HasFlag(PVPDelayFlags.DelayedPlayersCanDamageZonePlayers) && !string.IsNullOrEmpty(attackerLeftZone.zoneId) && IsPlayerInZone(attackerLeftZone, victim)) //DelayedPlayer attack ZonePlayer
                     {
                         return _true;
                     }
@@ -1418,29 +1464,22 @@ namespace Oxide.Plugins
             return null;
         }
 
-        private bool CreateMapping(string zoneId, string mapping)
+        private bool TryCreateMapping(string zoneId, string mapping)
         {
-            if (TruePVE != null)
+            var result = Interface.CallHook("AddOrUpdateMapping", zoneId, mapping);
+            if (result != null && result is bool)
             {
-                return (bool)TruePVE.Call("AddOrUpdateMapping", zoneId, mapping);
-            }
-            if (NextGenPVE != null)
-            {
-                return (bool)NextGenPVE.Call("AddOrUpdateMapping", zoneId, mapping);
+                return (bool)result;
             }
             return false;
         }
 
-        private bool RemoveMapping(string zoneId)
+        private bool TryRemoveMapping(string zoneId)
         {
-            if (TruePVE != null)
+            var result = Interface.CallHook("RemoveMapping", zoneId);
+            if (result != null && result is bool)
             {
-                return (bool)TruePVE.Call("RemoveMapping", zoneId);
-            }
-
-            if (NextGenPVE != null)
-            {
-                return (bool)NextGenPVE.Call("RemoveMapping", zoneId);
+                return (bool)result;
             }
             return false;
         }
@@ -1480,9 +1519,13 @@ namespace Oxide.Plugins
                 }
                 switch (result[0])
                 {
-                    case "true": return true;
-                    case "false": return false;
-                    case "error": PrintDebug($"ERROR: AddGroupSpawn failed: {result[1]}", error: true); return false;
+                    case "true":
+                        return true;
+                    case "false":
+                        return false;
+                    case "error":
+                        PrintDebug($"ERROR: AddGroupSpawn failed: {result[1]}", error: true);
+                        return false;
                 }
             }
             return false;
@@ -1580,7 +1623,10 @@ namespace Oxide.Plugins
             Interface.CallHook("OnPlayerAddedToPVPDelay", player.userID, zoneId, baseEvent.PvpDelayTime);
         }
 
-        private bool CreateZone(string zoneId, string[] zoneArgs, Vector3 location) => (bool)ZoneManager.Call("CreateOrUpdateZone", zoneId, zoneArgs, location);
+        private bool CreateZone(string zoneId, string[] zoneArgs, Vector3 location)
+        {
+            return (bool)ZoneManager.Call("CreateOrUpdateZone", zoneId, zoneArgs, location);
+        }
 
         private bool RemoveZone(string zoneId, string eventName = "")
         {
@@ -1595,17 +1641,35 @@ namespace Oxide.Plugins
             }
         }
 
-        private string[] GetZoneIds() => (string[])ZoneManager.Call("GetZoneIDs");
+        private string[] GetZoneIds()
+        {
+            return (string[])ZoneManager.Call("GetZoneIDs");
+        }
 
-        private string GetZoneName(string zoneId) => (string)ZoneManager.Call("GetZoneName", zoneId);
+        private string GetZoneName(string zoneId)
+        {
+            return (string)ZoneManager.Call("GetZoneName", zoneId);
+        }
 
-        private ZoneManager.Zone GetZoneById(string zoneId) => (ZoneManager.Zone)ZoneManager.Call("GetZoneByID", zoneId);
+        private ZoneManager.Zone GetZoneById(string zoneId)
+        {
+            return (ZoneManager.Zone)ZoneManager.Call("GetZoneByID", zoneId);
+        }
 
-        private string[] GetPlayerZoneIds(BasePlayer player) => (string[])ZoneManager.Call("GetPlayerZoneIDs", player);
+        private string[] GetPlayerZoneIds(BasePlayer player)
+        {
+            return (string[])ZoneManager.Call("GetPlayerZoneIDs", player);
+        }
 
-        private bool IsPlayerInZone(LeftZone leftZone, BasePlayer player) => (bool)ZoneManager.Call("IsPlayerInZone", leftZone.zoneId, player);
+        private bool IsPlayerInZone(LeftZone leftZone, BasePlayer player)
+        {
+            return (bool)ZoneManager.Call("IsPlayerInZone", leftZone.zoneId, player);
+        }
 
-        private List<BasePlayer> GetPlayersInZone(string zoneId) => (List<BasePlayer>)ZoneManager.Call("GetPlayersInZone", zoneId);
+        private List<BasePlayer> GetPlayersInZone(string zoneId)
+        {
+            return (List<BasePlayer>)ZoneManager.Call("GetPlayersInZone", zoneId);
+        }
 
         #endregion ZoneManager Integration
 
@@ -1617,9 +1681,18 @@ namespace Oxide.Plugins
         {
             if (configData.Global.DebugEnabled)
             {
-                if (error) PrintError(message);
-                else if (warning) PrintWarning(message);
-                else Puts(message);
+                if (error)
+                {
+                    PrintError(message);
+                }
+                else if (warning)
+                {
+                    PrintWarning(message);
+                }
+                else
+                {
+                    Puts(message);
+                }
             }
 
             if (configData.Global.LogToFile)
@@ -1646,13 +1719,25 @@ namespace Oxide.Plugins
 
         #region API
 
-        private string[] AllDynamicPVPZones() => _activeDynamicZones.Keys.ToArray();
+        private string[] AllDynamicPVPZones()
+        {
+            return _activeDynamicZones.Keys.ToArray();
+        }
 
-        private bool IsDynamicPVPZone(string zoneId) => _activeDynamicZones.ContainsKey(zoneId);
+        private bool IsDynamicPVPZone(string zoneId)
+        {
+            return _activeDynamicZones.ContainsKey(zoneId);
+        }
 
-        private bool EventDataExists(string eventName) => storedData.EventDataExists(eventName);
+        private bool EventDataExists(string eventName)
+        {
+            return storedData.EventDataExists(eventName);
+        }
 
-        private bool IsPlayerInPVPDelay(ulong playerId) => _pvpDelays.ContainsKey(playerId);
+        private bool IsPlayerInPVPDelay(ulong playerId)
+        {
+            return _pvpDelays.ContainsKey(playerId);
+        }
 
         private string GetPlayerPVPDelayedZoneID(ulong playerId)
         {
@@ -1680,7 +1765,10 @@ namespace Oxide.Plugins
             {
                 return false;
             }
-            if (EventDataExists(eventName)) RemoveEventData(eventName);
+            if (EventDataExists(eventName))
+            {
+                RemoveEventData(eventName);
+            }
             if (isTimed)
             {
                 TimedEvent timedEvent;
@@ -1742,7 +1830,10 @@ namespace Oxide.Plugins
                 return false;
             }
             storedData.RemoveEventData(eventName);
-            if (forceClose) ForceCloseZones(eventName);
+            if (forceClose)
+            {
+                ForceCloseZones(eventName);
+            }
             _dataChanged = true;
             return true;
         }
@@ -1776,7 +1867,7 @@ namespace Oxide.Plugins
 
         private bool ForceCloseZones(string eventName)
         {
-            bool closed = false;
+            var closed = false;
             foreach (var entry in _activeDynamicZones.ToArray())
             {
                 if (entry.Value == eventName)
@@ -1814,8 +1905,9 @@ namespace Oxide.Plugins
                     Print(iPlayer, Lang("NoCustomEvent", iPlayer.Id));
                     return;
                 }
-                int i = 0;
-                StringBuilder stringBuilder = new StringBuilder();
+                var i = 0;
+                var stringBuilder = Pool.Get<StringBuilder>();
+                stringBuilder.Clear();
                 stringBuilder.AppendLine(Lang("CustomEvents", iPlayer.Id, customEventCount));
                 foreach (var entry in storedData.autoEvents)
                 {
@@ -1827,7 +1919,10 @@ namespace Oxide.Plugins
                     i++;
                     stringBuilder.AppendLine(Lang("TimedEvent", iPlayer.Id, i, entry.Key, entry.Value.Duration));
                 }
-                Print(iPlayer, stringBuilder.ToString());
+                var result = stringBuilder.ToString();
+                stringBuilder.Clear();
+                Pool.Free(ref stringBuilder);
+                Print(iPlayer, result);
                 return;
             }
             if (args.Length < 2)
@@ -1835,37 +1930,37 @@ namespace Oxide.Plugins
                 Print(iPlayer, Lang("NoEventName", iPlayer.Id));
                 return;
             }
-            string eventName = args[1];
-            Vector3 position = (iPlayer.Object as BasePlayer)?.transform.position ?? Vector3.zero;
+            var eventName = args[1];
+            var position = (iPlayer.Object as BasePlayer)?.transform.position ?? Vector3.zero;
             switch (args[0].ToLower())
             {
                 case "add":
-                    bool isTimed = args.Length >= 3;
+                    var isTimed = args.Length >= 3;
                     Print(iPlayer,
-                        !CreateEventData(eventName, position, isTimed)
-                            ? Lang("EventNameExist", iPlayer.Id, eventName)
-                            : Lang("EventDataAdded", iPlayer.Id, eventName));
+                          !CreateEventData(eventName, position, isTimed)
+                                  ? Lang("EventNameExist", iPlayer.Id, eventName)
+                                  : Lang("EventDataAdded", iPlayer.Id, eventName));
                     return;
 
                 case "remove":
                     Print(iPlayer,
-                        !RemoveEventData(eventName)
-                            ? Lang("EventNameNotExist", iPlayer.Id, eventName)
-                            : Lang("EventDataRemoved", iPlayer.Id, eventName));
+                          !RemoveEventData(eventName)
+                                  ? Lang("EventNameNotExist", iPlayer.Id, eventName)
+                                  : Lang("EventDataRemoved", iPlayer.Id, eventName));
                     return;
 
                 case "start":
                     Print(iPlayer,
-                        !StartEvent(eventName, position)
-                            ? Lang("EventNameNotExist", iPlayer.Id, eventName)
-                            : Lang("EventStarted", iPlayer.Id, eventName));
+                          !StartEvent(eventName, position)
+                                  ? Lang("EventNameNotExist", iPlayer.Id, eventName)
+                                  : Lang("EventStarted", iPlayer.Id, eventName));
                     return;
 
                 case "stop":
                     Print(iPlayer,
-                        !StopEvent(eventName)
-                            ? Lang("EventNameExist", iPlayer.Id, eventName)
-                            : Lang("EventStopped", iPlayer.Id, eventName));
+                          !StopEvent(eventName)
+                                  ? Lang("EventNameExist", iPlayer.Id, eventName)
+                                  : Lang("EventStopped", iPlayer.Id, eventName));
                     return;
 
                 case "edit":
@@ -1918,7 +2013,8 @@ namespace Oxide.Plugins
 
                 case "h":
                 case "help":
-                    StringBuilder stringBuilder = new StringBuilder();
+                    var stringBuilder = Pool.Get<StringBuilder>();
+                    stringBuilder.Clear();
                     stringBuilder.AppendLine();
                     stringBuilder.AppendLine(Lang("Syntax", iPlayer.Id, configData.Chat.Command));
                     stringBuilder.AppendLine(Lang("Syntax1", iPlayer.Id, configData.Chat.Command));
@@ -1927,7 +2023,10 @@ namespace Oxide.Plugins
                     stringBuilder.AppendLine(Lang("Syntax4", iPlayer.Id, configData.Chat.Command));
                     stringBuilder.AppendLine(Lang("Syntax5", iPlayer.Id, configData.Chat.Command));
                     stringBuilder.AppendLine(Lang("Syntax6", iPlayer.Id, configData.Chat.Command));
-                    Print(iPlayer, stringBuilder.ToString());
+                    var result = stringBuilder.ToString();
+                    stringBuilder.Clear();
+                    Pool.Free(ref stringBuilder);
+                    Print(iPlayer, result);
                     return;
 
                 default:
@@ -2120,7 +2219,10 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Excluding Hackable Crate on Cargo Ship", Order = 29)]
             public bool ExcludeCargoShip { get; set; } = true;
 
-            public bool IsTimedDisabled() => StopWhenKilled || TimerStartWhenLooted || TimerStartWhenUnlocked;
+            public bool IsTimedDisabled()
+            {
+                return StopWhenKilled || TimerStartWhenLooted || TimerStartWhenUnlocked;
+            }
         }
 
         public class SupplyDropEvent : TimedEvent, ITimedDisable
@@ -2134,7 +2236,10 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Event Timer Starts When Looted", Order = 26)]
             public bool TimerStartWhenLooted { get; set; }
 
-            public bool IsTimedDisabled() => StopWhenKilled || TimerStartWhenLooted;
+            public bool IsTimedDisabled()
+            {
+                return StopWhenKilled || TimerStartWhenLooted;
+            }
         }
 
         public class CargoShipEvent : BaseEvent
@@ -2143,7 +2248,7 @@ namespace Oxide.Plugins
             public CubeParentDynamicZone DynamicZone { get; set; } = new CubeParentDynamicZone
             {
                 Size = new Vector3(25.9f, 43.3f, 152.8f),
-                Center = new Vector3(0f, 21.6f, 6.6f),
+                Center = new Vector3(0f, 21.6f, 6.6f)
             };
 
             public override BaseDynamicZone GetDynamicZone()
@@ -2223,7 +2328,10 @@ namespace Oxide.Plugins
 
             private string[] _zoneSettings;
 
-            public virtual string[] ZoneSettings(Transform transform = null) => _zoneSettings ?? (_zoneSettings = GetZoneSettings());
+            public virtual string[] ZoneSettings(Transform transform = null)
+            {
+                return _zoneSettings ?? (_zoneSettings = GetZoneSettings());
+            }
 
             protected void GetBaseZoneSettings(List<string> zoneSettings)
             {
@@ -2276,7 +2384,10 @@ namespace Oxide.Plugins
                 }
                 foreach (var flag in ExtraZoneFlags)
                 {
-                    if (string.IsNullOrEmpty(flag)) continue;
+                    if (string.IsNullOrEmpty(flag))
+                    {
+                        continue;
+                    }
                     zoneSettings.Add(flag);
                     zoneSettings.Add("true");
                 }
@@ -2377,7 +2488,7 @@ namespace Oxide.Plugins
 
             protected override string[] GetZoneSettings(Transform transform = null)
             {
-                var zoneSettings = new List<string> { "size", $"{Size.x} {Size.y} {Size.z}", };
+                var zoneSettings = new List<string> { "size", $"{Size.x} {Size.y} {Size.z}" };
                 GetBaseZoneSettings(zoneSettings);
                 var array = zoneSettings.ToArray();
                 return array;
@@ -2444,7 +2555,10 @@ namespace Oxide.Plugins
             configData.Version = Version;
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData);
+        }
 
         private void UpdateConfigValues()
         {
@@ -2526,11 +2640,18 @@ namespace Oxide.Plugins
             public readonly Dictionary<string, TimedEvent> timedEvents = new Dictionary<string, TimedEvent>();
             public readonly Dictionary<string, AutoEvent> autoEvents = new Dictionary<string, AutoEvent>();
 
-            public bool EventDataExists(string eventName) => timedEvents.ContainsKey(eventName) || autoEvents.ContainsKey(eventName);
+            public bool EventDataExists(string eventName)
+            {
+                return timedEvents.ContainsKey(eventName) || autoEvents.ContainsKey(eventName);
+            }
 
-            public bool RemoveEventData(string eventName) => timedEvents.Remove(eventName) || autoEvents.Remove(eventName);
+            public bool RemoveEventData(string eventName)
+            {
+                return timedEvents.Remove(eventName) || autoEvents.Remove(eventName);
+            }
 
-            [JsonIgnore] public int CustomEventsCount => timedEvents.Count + autoEvents.Count;
+            [JsonIgnore]
+            public int CustomEventsCount => timedEvents.Count + autoEvents.Count;
         }
 
         private void LoadData()
@@ -2555,7 +2676,10 @@ namespace Oxide.Plugins
             SaveData();
         }
 
-        private void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        private void SaveData()
+        {
+            Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        }
 
         #endregion DataFile
 
@@ -2567,12 +2691,21 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            if (iPlayer.Id == "server_console") iPlayer.Reply(message, configData.Chat.Prefix);
+            if (iPlayer.Id == "server_console")
+            {
+                iPlayer.Reply(message, configData.Chat.Prefix);
+            }
             else
             {
                 var player = iPlayer.Object as BasePlayer;
-                if (player != null) Player.Message(player, message, $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>", configData.Chat.SteamIdIcon);
-                else iPlayer.Reply(message, $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>");
+                if (player != null)
+                {
+                    Player.Message(player, message, $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>", configData.Chat.SteamIdIcon);
+                }
+                else
+                {
+                    iPlayer.Reply(message, $"<color={configData.Chat.PrefixColor}>{configData.Chat.Prefix}</color>");
+                }
             }
         }
 
@@ -2626,7 +2759,7 @@ namespace Oxide.Plugins
                 ["Syntax3"] = "<color=#ce422b>/{0} stop <eventName></color> - Stop event",
                 ["Syntax4"] = "<color=#ce422b>/{0} edit <eventName> <true/false></color> - Changes auto start state of auto event",
                 ["Syntax5"] = "<color=#ce422b>/{0} edit <eventName> <move></color> - Move auto event to your current location",
-                ["Syntax6"] = "<color=#ce422b>/{0} edit <eventName> <time(seconds)></color> - Changes the duration of a timed event",
+                ["Syntax6"] = "<color=#ce422b>/{0} edit <eventName> <time(seconds)></color> - Changes the duration of a timed event"
             }, this);
 
             lang.RegisterMessages(new Dictionary<string, string>
@@ -2655,7 +2788,7 @@ namespace Oxide.Plugins
                 ["Syntax3"] = "<color=#ce422b>/{0} stop <eventName></color> - 停止事件",
                 ["Syntax4"] = "<color=#ce422b>/{0} edit <eventName> <true/false></color> - 改变自动事件的自动启动状态",
                 ["Syntax5"] = "<color=#ce422b>/{0} edit <eventName> <move></color> - 移动自动事件的位置到您的当前位置",
-                ["Syntax6"] = "<color=#ce422b>/{0} edit <eventName> <time(seconds)></color> - 修改定时事件的持续时间",
+                ["Syntax6"] = "<color=#ce422b>/{0} edit <eventName> <time(seconds)></color> - 修改定时事件的持续时间"
             }, this, "zh-CN");
         }
 
