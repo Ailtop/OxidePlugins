@@ -15,8 +15,7 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        private readonly MethodInfo pathFinderSetMethod = typeof(CH47AIBrain).GetMethod("set_PathFinder", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-        private Dictionary<string, List<Vector3>> monumentList;
+         private Dictionary<string, List<Vector3>> monumentList;
 
         private readonly Dictionary<string, float> defaultMonumentSizes = new Dictionary<string, float>
         {
@@ -70,9 +69,9 @@ namespace Oxide.Plugins
                 //Subscribe(nameof(CanHelicopterDropCrate));
             }
             Subscribe(nameof(OnEntitySpawned));
-            foreach (var baseNetworkable in BaseNetworkable.serverEntities)
+            foreach (var serverEntity in BaseNetworkable.serverEntities)
             {
-                OnEntitySpawned(baseNetworkable as CH47HelicopterAIController);
+                OnEntitySpawned(serverEntity as CH47HelicopterAIController);
             }
 
             foreach (var ch47HelicopterAiController in BaseNetworkable.serverEntities.OfType<CH47HelicopterAIController>())
@@ -92,12 +91,7 @@ namespace Oxide.Plugins
                 chinook.Spawn();
             }
 
-            var ch47AiBrain = chinook.GetComponent<CH47AIBrain>();
-            if (ch47AiBrain != null)
-            {
-                //ch47AiBrain.PathFinder = new CustomCH47PathFinder();
-                pathFinderSetMethod.Invoke(ch47AiBrain.PathFinder, new object[] { new CustomCH47PathFinder() });
-            }
+            ReplaceBrain(chinook);
         }
 
         private void OnEntitySpawned(CH47HelicopterAIController chinook)
@@ -212,14 +206,22 @@ namespace Oxide.Plugins
 
         #region AI
 
-        private class CustomCH47PathFinder : BasePathFinder
+        private void ReplaceBrain(CH47HelicopterAIController chinook)
         {
-            //拜访过的巡逻点
-            private readonly List<Vector3> visitedPatrolPoints = new List<Vector3>();
+            var brain = chinook.GetComponent<CH47AIBrain>();
+            brain.PathFinder = new CustomPathFinder(); 
+        }
 
+        private class CustomBrain : BaseAIBrain<CH47HelicopterAIController>
+        {
+        }
+
+        private class CustomPathFinder : BasePathFinder
+        {
+            public List<Vector3> visitedPatrolPoints = new List<Vector3>();
             public override Vector3 GetRandomPatrolPoint()
             {
-                Vector3 position;
+                Vector3 zero;
                 MonumentInfo monumentInfo = null;
                 if (TerrainMeta.Path != null && TerrainMeta.Path.Monuments != null && TerrainMeta.Path.Monuments.Count > 0)
                 {
@@ -237,7 +239,16 @@ namespace Oxide.Plugins
                         {
                             continue;
                         }
-                        if (!IsVisitedMonument(monumentInfo2))
+                        bool flag = false;
+                        foreach (Vector3 visitedPatrolPoint in visitedPatrolPoints)
+                        {
+                            if (Vector3Ex.Distance2D(monumentInfo2.transform.position, visitedPatrolPoint) < 100f)
+                            {
+                                flag = true;
+                                break;
+                            }
+                        }
+                        if (!flag)
                         {
                             monumentInfo = monumentInfo2;
                             break;
@@ -251,56 +262,31 @@ namespace Oxide.Plugins
                 }
                 if (monumentInfo != null)
                 {
-                    position = monumentInfo.transform.position;
                     visitedPatrolPoints.Add(monumentInfo.transform.position);
+                    zero = monumentInfo.transform.position;
                 }
                 else
                 {
-                    position = GetRandomWorldPosition();
+                    float x = TerrainMeta.Size.x;
+                    float y = 30f;
+                    zero = Vector3Ex.Range(-1f, 1f);
+                    zero.y = 0f;
+                    zero.Normalize();
+                    zero *= x * Random.Range(0f, 0.75f);
+                    zero.y = y;
                 }
-
-                position.y = GetFlightHeight(position);
-                return position;
-            }
-
-            private bool IsVisitedMonument(MonumentInfo monumentInfo)
-            {
-                foreach (var visitedPatrolPoint in visitedPatrolPoints)
-                {
-                    if (Vector3Ex.Distance2D(monumentInfo.transform.position, visitedPatrolPoint) < 100f)
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            private const float FlightHeightAddition = 30f;
-
-            private static Vector3 GetRandomWorldPosition()
-            {
-                var position = Vector3Ex.Range(-1f, 1f);
-                position.y = 0f;
-                position.Normalize();
-                position *= TerrainMeta.Size.x * Random.Range(0f, 0.75f);
-                position.y = FlightHeightAddition;
-                return position;
-            }
-
-            private static float GetFlightHeight(Vector3 position)
-            {
-                float height = Mathf.Max(TerrainMeta.WaterMap.GetHeight(position), TerrainMeta.HeightMap.GetHeight(position));
-                float ground = height;
+                float num3 = Mathf.Max(TerrainMeta.WaterMap.GetHeight(zero), TerrainMeta.HeightMap.GetHeight(zero));
+                float num4 = num3;
                 RaycastHit hitInfo;
-                if (Physics.SphereCast(position + Vector3.up * 200f, 20f, Vector3.down, out hitInfo, 300f, Rust.Layers.AltitudeCheck))
+                if (Physics.SphereCast(zero + new Vector3(0f, 200f, 0f), 20f, Vector3.down, out  hitInfo, 300f, 1218511105))
                 {
-                    ground = Mathf.Max(hitInfo.point.y, height);
+                    num4 = Mathf.Max(hitInfo.point.y, num3);
                 }
-                position.y = ground + FlightHeightAddition;
-                return position.y;
+                zero.y = num4 + 30f;
+                return zero;
             }
 
-            private static MonumentInfo GetRandomValidMonumentInfo()
+            private MonumentInfo GetRandomValidMonumentInfo()
             {
                 int count = TerrainMeta.Path.Monuments.Count;
                 int num = Random.Range(0, count);
@@ -311,7 +297,6 @@ namespace Oxide.Plugins
                     {
                         num2 -= count;
                     }
-
                     MonumentInfo monumentInfo = TerrainMeta.Path.Monuments[num2];
                     if (monumentInfo.Type != 0 && monumentInfo.Type != MonumentType.WaterWell && monumentInfo.Tier != MonumentTier.Tier0)
                     {
@@ -321,6 +306,7 @@ namespace Oxide.Plugins
                 return null;
             }
         }
+         
 
         #endregion AI
 

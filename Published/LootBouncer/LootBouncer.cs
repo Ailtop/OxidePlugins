@@ -357,7 +357,7 @@ namespace Oxide.Plugins
             public class ChatSettings
             {
                 [JsonProperty(PropertyName = "Chat Prefix")]
-                public string prefix = "<color=#00FFFF>[BackPumpJack]</color>: ";
+                public string prefix = "<color=#00FFFF>[LootBouncer]</color>: ";
 
                 [JsonProperty(PropertyName = "Chat SteamID Icon")]
                 public ulong steamIDIcon;

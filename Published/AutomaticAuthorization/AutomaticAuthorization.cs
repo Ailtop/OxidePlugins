@@ -15,7 +15,8 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("Automatic Authorization", "k1lly0u/Arainrr", "1.3.2", ResourceId = 2063)]
+    // TODO support sam site
+    [Info("Automatic Authorization", "k1lly0u/Arainrr", "1.3.3", ResourceId = 2063)]
     [Description("Shared cupboards, turrets, locks with teams, clans, friends")]
     public class AutomaticAuthorization : RustPlugin
     {

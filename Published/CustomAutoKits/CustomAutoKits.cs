@@ -1,6 +1,4 @@
-﻿//Requires: Kits
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json;
@@ -8,6 +6,7 @@ using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust.Cui;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
@@ -17,9 +16,10 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        [PluginReference] private readonly Plugin EventManager, Kits;
+        [PluginReference]
+        private Plugin EventManager, Kits;
 
-        private readonly Dictionary<ulong, Hash<string, float>> kitCooldown = new Dictionary<ulong, Hash<string, float>>();
+        private readonly Dictionary<ulong, Hash<string, float>> _kitCooldown = new Dictionary<ulong, Hash<string, float>>();
 
         #endregion Fields
 
@@ -28,57 +28,91 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
-            cmd.AddChatCommand(configData.chatS.command, this, nameof(CmdChooseKit));
+            cmd.AddChatCommand(_configData.Chat.Command, this, nameof(CmdChooseKit));
         }
 
         private void OnServerInitialized()
         {
-            foreach (var autoKit in configData.autoKits)
+            foreach (var autoKit in _configData.AutoKits)
             {
                 if (!permission.PermissionExists(autoKit.permission, this))
+                {
                     permission.RegisterPermission(autoKit.permission, this);
-                foreach (var kitS in autoKit.kits)
-                    if (!IsKit(kitS.kitName))
-                        PrintError($"'{kitS.kitName}' kit does not exist");
+                }
+                foreach (var kit in autoKit.kits)
+                {
+                    if (!IsKit(kit.kitName))
+                    {
+                        PrintError($"'{kit.kitName}' kit does not exist");
+                    }
+                }
             }
 
             foreach (var player in BasePlayer.allPlayerList)
+            {
                 storedData.players.Add(player.userID);
+            }
         }
 
         private void OnServerSave()
         {
-            timer.Once(UnityEngine.Random.Range(0f, 60f), SaveData);
+            timer.Once(Random.Range(0f, 60f), SaveData);
         }
 
         private void Unload()
         {
             foreach (var player in BasePlayer.activePlayerList)
+            {
                 DestroyUI(player);
+            }
             SaveData();
         }
 
         private void OnPlayerConnected(BasePlayer player)
         {
-            if (player == null || !player.userID.IsSteamId()) return;
-            if (!storedData.players.Add(player.userID)) return;
+            if (player == null || !player.userID.IsSteamId())
+            {
+                return;
+            }
+            if (!storedData.players.Add(player.userID))
+            {
+                return;
+            }
             OnPlayerRespawned(player);
         }
 
         private void OnPlayerRespawned(BasePlayer player)
         {
             var isPlaying = EventManager?.CallHook("isPlaying", player);
-            if (isPlaying is bool && (bool)isPlaying) return;
+            if (isPlaying is bool && (bool)isPlaying)
+            {
+                return;
+            }
             var playerData = GetPlayerData(player.userID, true);
-            if (!playerData.enabled) return;
+            if (!playerData.enabled)
+            {
+                return;
+            }
             var kitName = GetSelectedKit(player, playerData);
-            if (string.IsNullOrEmpty(kitName)) return;
-            if (configData.emptyInventory) player.inventory.Strip();
+            if (string.IsNullOrEmpty(kitName))
+            {
+                return;
+            }
+            if (_configData.EmptyInventory)
+            {
+                player.inventory.Strip();
+            }
             GiveKit(player, kitName);
 
             Hash<string, float> cooldowns;
-            if (kitCooldown.TryGetValue(player.userID, out cooldowns)) cooldowns[kitName] = Time.realtimeSinceStartup;
-            else kitCooldown.Add(player.userID, new Hash<string, float> { { kitName, Time.realtimeSinceStartup } });
+            if (_kitCooldown.TryGetValue(player.userID, out cooldowns))
+            {
+                cooldowns[kitName] = Time.realtimeSinceStartup;
+            }
+            else
+            {
+                _kitCooldown.Add(player.userID, new Hash<string, float> { { kitName, Time.realtimeSinceStartup } });
+            }
         }
 
         #endregion Oxide Hooks
@@ -87,53 +121,60 @@ namespace Oxide.Plugins
 
         private string GetSelectedKit(BasePlayer player, StoredData.PlayerData playerData)
         {
-            string kitName;
-            ConfigData.KitS kitS;
+            Kit kit;
             var availableKits = GetAvailableKits(player);
-            if (!availableKits.Any()) return null;
+            if (!availableKits.Any())
+            {
+                return null;
+            }
             if (!string.IsNullOrEmpty(playerData.selectedKit))
             {
                 var found = availableKits.FirstOrDefault(x => x.kitName == playerData.selectedKit);
                 if (found != null)
                 {
-                    kitS = found;
+                    kit = found;
                 }
                 else
                 {
                     playerData.selectedKit = null;
-                    kitS = GetDefaultKit(availableKits);
+                    kit = GetDefaultKit(availableKits);
                 }
             }
             else
             {
-                kitS = GetDefaultKit(availableKits);
+                kit = GetDefaultKit(availableKits);
             }
 
-            if (kitS == null) return null;
-            kitName = kitS.kitName;
+            if (kit == null)
+            {
+                return null;
+            }
+            var kitName = kit.kitName;
             Hash<string, float> cooldowns;
-            if (kitS.cooldown > 0 && kitCooldown.TryGetValue(player.userID, out cooldowns))
+            if (kit.cooldown > 0 && _kitCooldown.TryGetValue(player.userID, out cooldowns))
             {
                 float lastUse;
-                if (cooldowns.TryGetValue(kitName, out lastUse) && Time.realtimeSinceStartup - lastUse < kitS.cooldown)
-                    return kitS.cooldownKit;
+                if (cooldowns.TryGetValue(kitName, out lastUse) && Time.realtimeSinceStartup - lastUse < kit.cooldown)
+                {
+                    return kit.cooldownKit;
+                }
             }
 
             return kitName;
         }
 
-        private static ConfigData.KitS GetDefaultKit(IEnumerable<ConfigData.KitS> availableKits)
+        private static Kit GetDefaultKit(IEnumerable<Kit> availableKits)
         {
             return availableKits.OrderByDescending(x => x.priority).First();
         }
 
-        private IEnumerable<ConfigData.KitS> GetAvailableKits(BasePlayer player)
+        private IEnumerable<Kit> GetAvailableKits(BasePlayer player)
         {
-            return from entry in configData.autoKits
-                   where permission.UserHasPermission(player.UserIDString, entry.permission)
-                   from kitS in entry.kits
-                   where IsKit(kitS.kitName)
-                   select kitS;
+            return from entry in _configData.AutoKits
+                    where permission.UserHasPermission(player.UserIDString, entry.permission)
+                    from kit in entry.kits
+                    where IsKit(kit.kitName)
+                    select kit;
         }
 
         private bool IsKit(string kitName)
@@ -195,7 +236,10 @@ namespace Oxide.Plugins
         private void CCmdCustomAutoKitsUI(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
+            if (player == null)
+            {
+                return;
+            }
             var playerData = GetPlayerData(player.userID);
             switch (arg.Args[0].ToLower())
             {
@@ -226,7 +270,7 @@ namespace Oxide.Plugins
             {
                 Image = { Color = "0 0 0 0" },
                 RectTransform =
-                    {AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-210 -180", OffsetMax = "210 220"},
+                        { AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-210 -180", OffsetMax = "210 220" },
                 CursorEnabled = true
             }, "Hud", UINAME_MAIN);
             container.Add(new CuiPanel
@@ -249,8 +293,8 @@ namespace Oxide.Plugins
                         Text = Lang("Title", player.UserIDString), FontSize = 20, Align = TextAnchor.MiddleCenter,
                         Color = "1 0 0 1"
                     },
-                    new CuiOutlineComponent {Distance = "0.5 0.5", Color = "1 1 1 1"},
-                    new CuiRectTransformComponent {AnchorMin = "0.2 0", AnchorMax = "0.8 1"}
+                    new CuiOutlineComponent { Distance = "0.5 0.5", Color = "1 1 1 1" },
+                    new CuiRectTransformComponent { AnchorMin = "0.2 0", AnchorMax = "0.8 1" }
                 }
             });
             container.Add(new CuiButton
@@ -268,7 +312,10 @@ namespace Oxide.Plugins
 
         private void UpdateMenuUI(BasePlayer player, StoredData.PlayerData playerData)
         {
-            if (player == null) return;
+            if (player == null)
+            {
+                return;
+            }
             var container = new CuiElementContainer();
             container.Add(new CuiPanel
             {
@@ -280,25 +327,23 @@ namespace Oxide.Plugins
             var i = 0;
             var spacing = 1f / 10;
             var anchors = GetEntryAnchors(i++, spacing);
-            CreateEntry(ref container, $"CustomAutoKitsUI Toggle", Lang("Status", player.UserIDString),
-                playerData.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString),
-                $"0 {anchors[0]}", $"1 {anchors[1]}");
-            foreach (var kitS in availableKits)
+            CreateEntry(ref container, "CustomAutoKitsUI Toggle", Lang("Status", player.UserIDString),
+                        playerData.enabled ? Lang("Enabled", player.UserIDString) : Lang("Disabled", player.UserIDString),
+                        $"0 {anchors[0]}", $"1 {anchors[1]}");
+            foreach (var kit in availableKits)
             {
-                var kitName = kitS.kitName;
+                var kitName = kit.kitName;
                 anchors = GetEntryAnchors(i++, spacing);
-                CreateEntry(ref container, $"CustomAutoKitsUI Choose {kitName}", kitName,
-                    selectedKitName == kitName
-                        ? Lang("Selected", player.UserIDString)
-                        : Lang("Unselected", player.UserIDString), $"0 {anchors[0]}", $"1 {anchors[1]}");
+                CreateEntry(ref container, $"CustomAutoKitsUI Choose {kitName}", kitName, selectedKitName == kitName
+                                    ? Lang("Selected", player.UserIDString)
+                                    : Lang("Unselected", player.UserIDString), $"0 {anchors[0]}", $"1 {anchors[1]}");
             }
 
             CuiHelper.DestroyUi(player, UINAME_MENU);
             CuiHelper.AddUi(player, container);
         }
 
-        private static void CreateEntry(ref CuiElementContainer container, string command, string leftText,
-            string rightText, string anchorMin, string anchorMax)
+        private static void CreateEntry(ref CuiElementContainer container, string command, string leftText, string rightText, string anchorMin, string anchorMax)
         {
             var panelName = container.Add(new CuiPanel
             {
@@ -332,22 +377,22 @@ namespace Oxide.Plugins
 
         #region ConfigurationFile
 
-        private ConfigData configData;
+        private ConfigData _configData;
 
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Empty default items before give kits")]
-            public bool emptyInventory = true;
+            public bool EmptyInventory { get; set; } = true;
 
             [JsonProperty(PropertyName = "Auto Kits", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public List<AutoKit> autoKits = new List<AutoKit>
+            public List<AutoKit> AutoKits { get; set; } = new List<AutoKit>
             {
                 new AutoKit
                 {
                     permission = "customautokits.vip1",
-                    kits = new List<KitS>
+                    kits = new List<Kit>
                     {
-                        new KitS
+                        new Kit
                         {
                             priority = 0,
                             cooldown = 0,
@@ -359,16 +404,16 @@ namespace Oxide.Plugins
                 new AutoKit
                 {
                     permission = "customautokits.vip2",
-                    kits = new List<KitS>
+                    kits = new List<Kit>
                     {
-                        new KitS
+                        new Kit
                         {
                             priority = 1,
                             cooldown = 0,
                             kitName = "KitName2",
                             cooldownKit = "Cooldown Kit"
                         },
-                        new KitS
+                        new Kit
                         {
                             priority = 2,
                             cooldown = 0,
@@ -379,37 +424,37 @@ namespace Oxide.Plugins
                 }
             };
 
-            public class AutoKit
-            {
-                public string permission = string.Empty;
-                public List<KitS> kits = new List<KitS>();
-            }
-
-            public class KitS
-            {
-                public int priority;
-                public float cooldown;
-                public string kitName = string.Empty;
-                public string cooldownKit = string.Empty;
-            }
-
             [JsonProperty(PropertyName = "Chat Settings")]
-            public ChatSettings chatS = new ChatSettings();
-
-            public class ChatSettings
-            {
-                [JsonProperty(PropertyName = "Chat Command")]
-                public string command = "autokit";
-
-                [JsonProperty(PropertyName = "Chat Prefix")]
-                public string prefix = "<color=#00FFFF>[CustomAutoKits]</color>: ";
-
-                [JsonProperty(PropertyName = "Chat SteamID Icon")]
-                public ulong steamIDIcon = 0;
-            }
+            public ChatSettings Chat { get; set; } = new ChatSettings();
 
             [JsonProperty(PropertyName = "Version")]
-            public VersionNumber version;
+            public VersionNumber Version { get; set; }
+        }
+
+        public class AutoKit
+        {
+            public string permission = string.Empty;
+            public List<Kit> kits = new List<Kit>();
+        }
+
+        public class Kit
+        {
+            public int priority;
+            public float cooldown;
+            public string kitName = string.Empty;
+            public string cooldownKit = string.Empty;
+        }
+
+        public class ChatSettings
+        {
+            [JsonProperty(PropertyName = "Chat Command")]
+            public string Command { get; set; } = "autokit";
+
+            [JsonProperty(PropertyName = "Chat Prefix")]
+            public string Prefix { get; set; } = "<color=#00FFFF>[CustomAutoKits]</color>: ";
+
+            [JsonProperty(PropertyName = "Chat SteamID Icon")]
+            public ulong SteamIDIcon{ get; set; }  = 0;
         }
 
         protected override void LoadConfig()
@@ -417,11 +462,15 @@ namespace Oxide.Plugins
             base.LoadConfig();
             try
             {
-                configData = Config.ReadObject<ConfigData>();
-                if (configData == null)
+                _configData = Config.ReadObject<ConfigData>();
+                if (_configData == null)
+                {
                     LoadDefaultConfig();
+                }
                 else
+                {
                     UpdateConfigValues();
+                }
             }
             catch (Exception ex)
             {
@@ -435,28 +484,28 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             PrintWarning("Creating a new configuration file");
-            configData = new ConfigData();
-            configData.version = Version;
+            _configData = new ConfigData();
+            _configData.Version = Version;
         }
 
         protected override void SaveConfig()
         {
-            Config.WriteObject(configData);
+            Config.WriteObject(_configData);
         }
 
         private void UpdateConfigValues()
         {
-            if (configData.version < Version)
+            if (_configData.Version < Version)
             {
-                if (configData.version <= default(VersionNumber))
+                if (_configData.Version <= default(VersionNumber))
                 {
                     string prefix, prefixColor;
                     if (GetConfigValue(out prefix, "Chat Settings", "Chat Prefix") && GetConfigValue(out prefixColor, "Chat Settings", "Chat Prefix Color"))
                     {
-                        configData.chatS.prefix = $"<color={prefixColor}>{prefix}</color>: ";
+                        _configData.Chat.Prefix = $"<color={prefixColor}>{prefix}</color>: ";
                     }
                 }
-                configData.version = Version;
+                _configData.Version = Version;
             }
         }
 
@@ -480,8 +529,8 @@ namespace Oxide.Plugins
 
         private class StoredData
         {
-            public readonly Dictionary<ulong, PlayerData> playerPrefs = new Dictionary<ulong, PlayerData>();
-            public readonly HashSet<ulong> players = new HashSet<ulong>();
+            public Dictionary<ulong, PlayerData> playerPrefs = new Dictionary<ulong, PlayerData>();
+            public HashSet<ulong> players = new HashSet<ulong>();
 
             public class PlayerData
             {
@@ -529,7 +578,7 @@ namespace Oxide.Plugins
 
         private void Print(BasePlayer player, string message)
         {
-            Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
+            Player.Message(player, message, _configData.Chat.Prefix, _configData.Chat.SteamIDIcon);
         }
 
         private string Lang(string key, string id = null, params object[] args)

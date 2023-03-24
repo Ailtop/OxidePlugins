@@ -2,12 +2,13 @@
 
 using System;
 using System.Collections.Generic;
-using ConVar;
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust.Cui;
+using Rust;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
@@ -17,12 +18,15 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        [PluginReference] private readonly Plugin Friends, Clans;
+        [PluginReference]
+        private readonly Plugin Friends, Clans;
 
-        private static AutoPickup instance;
-        private static PickupType enabledPickupTypes;
-        private static object False;
         private const string PERMISSION_USE = "autopickup.use";
+
+        private static AutoPickup _instance;
+        private static PickupType _enabledPickupTypes;
+
+        private readonly object _false = false;
 
         [Flags]
         //[JsonConverter(typeof(StringEnumConverter))]
@@ -38,7 +42,7 @@ namespace Oxide.Plugins
             ItemDrop = 1 << 6,
             WorldItem = 1 << 7,
             LootContainer = 1 << 8,
-            CollectableGifts = 1 << 9,
+            CollectableGifts = 1 << 9
         }
 
         #endregion Fields
@@ -48,32 +52,34 @@ namespace Oxide.Plugins
         private void Init()
         {
             LoadData();
-            False = false;
-            instance = this;
-            enabledPickupTypes = PickupType.None;
+            _instance = this;
+            _enabledPickupTypes = PickupType.None;
             Unsubscribe(nameof(CanLootEntity));
             Unsubscribe(nameof(OnPlayerAttack));
             Unsubscribe(nameof(OnEntitySpawned));
             permission.RegisterPermission(PERMISSION_USE, this);
-            cmd.AddChatCommand(configData.chatS.command, this, nameof(CmdAutoPickup));
+            cmd.AddChatCommand(_configData.Chat.Command, this, nameof(CmdAutoPickup));
         }
 
         private void OnServerInitialized()
         {
             UpdateConfig();
-            foreach (var entry in configData.autoPickupS)
+            foreach (var entry in _configData.AutoPickup)
             {
-                if (entry.Value.enabled)
+                if (entry.Value.Enabled)
                 {
-                    enabledPickupTypes |= entry.Key;
+                    _enabledPickupTypes |= entry.Key;
                 }
             }
-            if (enabledPickupTypes.HasFlag(PickupType.LootContainer))
+            if (_enabledPickupTypes.HasFlag(PickupType.LootContainer))
             {
                 bool enabledBarrel = false, enabledLoot = false;
-                foreach (var entry in configData.lootContainerS)
+                foreach (var entry in _configData.LootContainer)
                 {
-                    if (!entry.Value) continue;
+                    if (!entry.Value)
+                    {
+                        continue;
+                    }
                     if (IsBarrel(entry.Key))
                     {
                         enabledBarrel = true;
@@ -100,7 +106,10 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnServerSave() => timer.Once(UnityEngine.Random.Range(0f, 60f), SaveData);
+        private void OnServerSave()
+        {
+            timer.Once(Random.Range(0f, 60f), SaveData);
+        }
 
         private void Unload()
         {
@@ -118,17 +127,26 @@ namespace Oxide.Plugins
                 DestroyUI(player);
             }
             SaveData();
-            configData = null;
-            False = instance = null;
+            _configData = null;
+            _instance = null;
         }
 
         private void OnPlayerAttack(BasePlayer attacker, HitInfo info)
         {
-            if (attacker == null || !attacker.userID.IsSteamId()) return;
+            if (attacker == null || !attacker.userID.IsSteamId())
+            {
+                return;
+            }
             var barrel = info?.HitEntity as LootContainer;
-            if (barrel == null || barrel.net == null) return;
-            if (!IsBarrel(barrel.ShortPrefabName)) return;
-            var radius = configData.autoPickupS[PickupType.LootContainer].radius;
+            if (barrel == null || barrel.net == null)
+            {
+                return;
+            }
+            if (!IsBarrel(barrel.ShortPrefabName))
+            {
+                return;
+            }
+            var radius = _configData.AutoPickup[PickupType.LootContainer].Radius;
             if (radius > 0f && Vector3.Distance(attacker.transform.position, barrel.transform.position) > radius)
             {
                 return;
@@ -143,18 +161,24 @@ namespace Oxide.Plugins
 
         private object CanLootEntity(BasePlayer player, LootContainer lootContainer)
         {
-            if (player == null || lootContainer == null) return null;
+            if (player == null || lootContainer == null)
+            {
+                return null;
+            }
             if (permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
             {
                 if (TryPickupLootContainer(lootContainer, player))
                 {
-                    return False;
+                    return _false;
                 }
             }
             return null;
         }
 
-        private void OnEntitySpawned(BaseNetworkable baseNetworkable) => CheckEntity(baseNetworkable, true);
+        private void OnEntitySpawned(BaseNetworkable baseNetworkable)
+        {
+            CheckEntity(baseNetworkable, true);
+        }
 
         #endregion Oxide Hooks
 
@@ -163,11 +187,11 @@ namespace Oxide.Plugins
         private bool TryPickupLootContainer(LootContainer lootContainer, BasePlayer player, HitInfo info = null)
         {
             bool enabled;
-            if (configData.lootContainerS.TryGetValue(lootContainer.ShortPrefabName, out enabled) && !enabled)
+            if (_configData.LootContainer.TryGetValue(lootContainer.ShortPrefabName, out enabled) && !enabled)
             {
                 return false;
             }
-            if (configData.globalS.preventPickupLoot && lootContainer.OwnerID.IsSteamId() && !AreFriends(lootContainer.OwnerID, player.userID))
+            if (_configData.Global.PreventPickupLoot && lootContainer.OwnerID.IsSteamId() && !AreFriends(lootContainer.OwnerID, player.userID))
             {
                 return false;
             }
@@ -186,49 +210,54 @@ namespace Oxide.Plugins
         {
             foreach (PickupType pickupType in Enum.GetValues(typeof(PickupType)))
             {
-                if (pickupType == PickupType.None) continue;
-                if (!configData.autoPickupS.ContainsKey(pickupType))
+                if (pickupType == PickupType.None)
                 {
-                    configData.autoPickupS.Add(pickupType, new ConfigData.PickupTypeS { enabled = true, radius = 0.5f });
+                    continue;
+                }
+                if (!_configData.AutoPickup.ContainsKey(pickupType))
+                {
+                    _configData.AutoPickup.Add(pickupType, new ConfigData.PickupTypeSettings { Enabled = true, Radius = 0.5f });
                 }
             }
             foreach (var itemDefinition in ItemManager.GetItemDefinitions())
             {
-                if (!configData.worldItemS.itemCategoryS.ContainsKey(itemDefinition.category))
+                if (!_configData.WorldItem.ItemCategories.ContainsKey(itemDefinition.category))
                 {
-                    configData.worldItemS.itemCategoryS.Add(itemDefinition.category, true);
+                    _configData.WorldItem.ItemCategories.Add(itemDefinition.category, true);
                 }
             }
             foreach (var prefab in GameManifest.Current.entities)
             {
                 var entity = GameManager.server.FindPrefab(prefab.ToLower())?.GetComponent<BaseEntity>();
-                if (entity == null || string.IsNullOrEmpty(entity.ShortPrefabName)) continue;
+                if (entity == null || string.IsNullOrEmpty(entity.ShortPrefabName))
+                {
+                    continue;
+                }
                 var lootContainer = entity as LootContainer;
                 if (lootContainer != null)
                 {
-                    if (!configData.lootContainerS.ContainsKey(lootContainer.ShortPrefabName))
+                    if (!_configData.LootContainer.ContainsKey(lootContainer.ShortPrefabName))
                     {
-                        configData.lootContainerS.Add(lootContainer.ShortPrefabName, !lootContainer.ShortPrefabName.Contains("stocking"));
+                        _configData.LootContainer.Add(lootContainer.ShortPrefabName, !lootContainer.ShortPrefabName.Contains("stocking"));
                     }
                     continue;
                 }
                 var collectibleEntity = entity as CollectibleEntity;
                 if (collectibleEntity != null)
                 {
-                    if (!configData.collectibleEntityS.ContainsKey(collectibleEntity.ShortPrefabName))
+                    if (!_configData.CollectibleEntity.ContainsKey(collectibleEntity.ShortPrefabName))
                     {
-                        configData.collectibleEntityS.Add(collectibleEntity.ShortPrefabName, true);
+                        _configData.CollectibleEntity.Add(collectibleEntity.ShortPrefabName, true);
                     }
                     continue;
                 }
                 var plantEntity = entity as GrowableEntity;
                 if (plantEntity != null)
                 {
-                    if (!configData.plantEntityS.ContainsKey(plantEntity.ShortPrefabName))
+                    if (!_configData.PlantEntity.ContainsKey(plantEntity.ShortPrefabName))
                     {
-                        configData.plantEntityS.Add(plantEntity.ShortPrefabName, true);
+                        _configData.PlantEntity.Add(plantEntity.ShortPrefabName, true);
                     }
-                    continue;
                 }
             }
             SaveConfig();
@@ -238,40 +267,76 @@ namespace Oxide.Plugins
 
         private bool AreFriends(ulong playerID, ulong friendID)
         {
-            if (playerID == friendID) return true;
-            if (configData.globalS.useTeams && SameTeam(playerID, friendID)) return true;
-            if (configData.globalS.useFriends && HasFriend(playerID, friendID)) return true;
-            if (configData.globalS.useClans && SameClan(playerID, friendID)) return true;
+            if (playerID == friendID)
+            {
+                return true;
+            }
+            if (_configData.Global.UseTeams && SameTeam(playerID, friendID))
+            {
+                return true;
+            }
+            if (_configData.Global.UseFriends && HasFriend(playerID, friendID))
+            {
+                return true;
+            }
+            if (_configData.Global.UseClans && SameClan(playerID, friendID))
+            {
+                return true;
+            }
             return false;
         }
 
         private static bool SameTeam(ulong playerID, ulong friendID)
         {
-            if (!RelationshipManager.TeamsEnabled()) return false;
+            if (!RelationshipManager.TeamsEnabled())
+            {
+                return false;
+            }
             var playerTeam = RelationshipManager.ServerInstance.FindPlayersTeam(playerID);
-            if (playerTeam == null) return false;
+            if (playerTeam == null)
+            {
+                return false;
+            }
             var friendTeam = RelationshipManager.ServerInstance.FindPlayersTeam(friendID);
-            if (friendTeam == null) return false;
+            if (friendTeam == null)
+            {
+                return false;
+            }
             return playerTeam == friendTeam;
         }
 
         private bool HasFriend(ulong playerID, ulong friendID)
         {
-            if (Friends == null) return false;
+            if (Friends == null)
+            {
+                return false;
+            }
             return (bool)Friends.Call("HasFriend", playerID, friendID);
         }
 
         private bool SameClan(ulong playerID, ulong friendID)
         {
-            if (Clans == null) return false;
+            if (Clans == null)
+            {
+                return false;
+            }
             //Clans
             var isMember = Clans.Call("IsClanMember", playerID.ToString(), friendID.ToString());
-            if (isMember != null) return (bool)isMember;
+            if (isMember != null)
+            {
+                return (bool)isMember;
+            }
             //Rust:IO Clans
             var playerClan = Clans.Call("GetClanOf", playerID);
-            if (playerClan == null) return false;
+            if (playerClan == null)
+            {
+                return false;
+            }
             var friendClan = Clans.Call("GetClanOf", friendID);
-            if (friendClan == null) return false;
+            if (friendClan == null)
+            {
+                return false;
+            }
             return (string)playerClan == (string)friendClan;
         }
 
@@ -279,14 +344,14 @@ namespace Oxide.Plugins
 
         #region Data
 
-        private StoredData.AutoPickData defaultData;
+        private StoredData.AutoPickData _defaultData;
 
-        private StoredData.AutoPickData DefaultData => defaultData ?? (defaultData = CreateDefaultData());
+        private StoredData.AutoPickData DefaultData => _defaultData ?? (_defaultData = CreateDefaultData());
 
         private StoredData.AutoPickData GetAutoPickupData(ulong playerID, bool readOnly = false)
         {
             StoredData.AutoPickData autoPickData;
-            if (!storedData.playerAutoPickupData.TryGetValue(playerID, out autoPickData))
+            if (!_storedData.playerAutoPickupData.TryGetValue(playerID, out autoPickData))
             {
                 if (readOnly)
                 {
@@ -294,7 +359,7 @@ namespace Oxide.Plugins
                 }
 
                 autoPickData = CreateDefaultData();
-                storedData.playerAutoPickupData.Add(playerID, autoPickData);
+                _storedData.playerAutoPickupData.Add(playerID, autoPickData);
             }
 
             return autoPickData;
@@ -304,7 +369,7 @@ namespace Oxide.Plugins
         {
             return new StoredData.AutoPickData
             {
-                enabled = configData.globalS.defaultEnabled
+                enabled = _configData.Global.DefaultEnabled
             };
         }
 
@@ -316,10 +381,16 @@ namespace Oxide.Plugins
 
         private static void CheckEntity(BaseNetworkable baseNetworkable, bool justCreated = false)
         {
-            if (baseNetworkable == null) return;
+            if (baseNetworkable == null)
+            {
+                return;
+            }
             var pickupType = GetPickupTypeFromEntity(baseNetworkable);
-            if (pickupType == PickupType.None) return;
-            if (!enabledPickupTypes.HasFlag(pickupType))
+            if (pickupType == PickupType.None)
+            {
+                return;
+            }
+            if (!_enabledPickupTypes.HasFlag(pickupType))
             {
                 return;
             }
@@ -332,28 +403,28 @@ namespace Oxide.Plugins
             switch (pickupType)
             {
                 case PickupType.CollectibleEntity:
+                {
+                    bool enabled;
+                    if (_configData.CollectibleEntity.TryGetValue(baseNetworkable.ShortPrefabName, out enabled) && !enabled)
                     {
-                        bool enabled;
-                        if (configData.collectibleEntityS.TryGetValue(baseNetworkable.ShortPrefabName, out enabled) && !enabled)
-                        {
-                            return;
-                        }
-                        break;
+                        return;
                     }
+                    break;
+                }
 
                 case PickupType.PlantEntity:
+                {
+                    bool enabled;
+                    if (_configData.PlantEntity.TryGetValue(baseNetworkable.ShortPrefabName, out enabled) && !enabled)
                     {
-                        bool enabled;
-                        if (configData.plantEntityS.TryGetValue(baseNetworkable.ShortPrefabName, out enabled) && !enabled)
-                        {
-                            return;
-                        }
-                        if (configData.globalS.preventPlanterBox && baseNetworkable.GetParentEntity() is PlanterBox)
-                        {
-                            return;
-                        }
-                        break;
+                        return;
                     }
+                    if (_configData.Global.PreventPlanterBox && baseNetworkable.GetParentEntity() is PlanterBox)
+                    {
+                        return;
+                    }
+                    break;
+                }
 
                 case PickupType.MurdererCorpse:
                 case PickupType.ScientistCorpse:
@@ -363,33 +434,36 @@ namespace Oxide.Plugins
                     break;
 
                 case PickupType.WorldItem:
+                {
+                    var worldItem = baseNetworkable as WorldItem;
+                    if (worldItem != null)
                     {
-                        var worldItem = baseNetworkable as WorldItem;
-                        if (worldItem != null)
+                        var item = worldItem.GetItem();
+                        if (item != null)
                         {
-                            var item = worldItem.GetItem();
-                            if (item != null)
+                            if (_configData.WorldItem.ItemBlockList.Contains(item.info.shortname))
                             {
-                                if (configData.worldItemS.itemBlockList.Contains(item.info.shortname)) return;
-                                bool enabled;
-                                if (configData.worldItemS.itemCategoryS.TryGetValue(item.info.category, out enabled) && !enabled)
-                                {
-                                    return;
-                                }
+                                return;
+                            }
+                            bool enabled;
+                            if (_configData.WorldItem.ItemCategories.TryGetValue(item.info.category, out enabled) && !enabled)
+                            {
+                                return;
                             }
                         }
-                        if (justCreated)
-                        {
-                            var collisionDetection = baseNetworkable.GetComponent<WorldItemCollisionDetection>();
-                            if (collisionDetection != null)
-                            {
-                                UnityEngine.Object.Destroy(collisionDetection);
-                            }
-                            baseNetworkable.gameObject.AddComponent<WorldItemCollisionDetection>();
-                            return;
-                        }
-                        break;
                     }
+                    if (justCreated)
+                    {
+                        var collisionDetection = baseNetworkable.GetComponent<WorldItemCollisionDetection>();
+                        if (collisionDetection != null)
+                        {
+                            UnityEngine.Object.Destroy(collisionDetection);
+                        }
+                        baseNetworkable.gameObject.AddComponent<WorldItemCollisionDetection>();
+                        return;
+                    }
+                    break;
+                }
             }
             CreateAutoPickupHelper(baseNetworkable.transform, pickupType);
         }
@@ -398,11 +472,16 @@ namespace Oxide.Plugins
         {
             switch (baseNetworkable.ShortPrefabName)
             {
-                case "murderer_corpse": return PickupType.MurdererCorpse;
-                case "scientist_corpse": return PickupType.ScientistCorpse;
-                case "player_corpse": return PickupType.PlayerCorpse;
-                case "item_drop": return PickupType.ItemDrop;
-                case "item_drop_backpack": return PickupType.ItemDropBackpack;
+                case "murderer_corpse":
+                    return PickupType.MurdererCorpse;
+                case "scientist_corpse":
+                    return PickupType.ScientistCorpse;
+                case "player_corpse":
+                    return PickupType.PlayerCorpse;
+                case "item_drop":
+                    return PickupType.ItemDrop;
+                case "item_drop_backpack":
+                    return PickupType.ItemDropBackpack;
                 default:
                     if (baseNetworkable is GrowableEntity)
                     {
@@ -434,10 +513,10 @@ namespace Oxide.Plugins
 
         private static bool PickupLootContainer(BasePlayer player, LootContainer lootContainer, HitInfo info = null)
         {
-            var itemContainer = lootContainer?.inventory;
+            var itemContainer = lootContainer != null ? lootContainer.inventory : null;
             if (itemContainer != null)
             {
-                for (int i = itemContainer.itemList.Count - 1; i >= 0; i--)
+                for (var i = itemContainer.itemList.Count - 1; i >= 0; i--)
                 {
                     player.GiveItem(itemContainer.itemList[i], BaseEntity.GiveItemReason.PickedUp);
                 }
@@ -460,7 +539,7 @@ namespace Oxide.Plugins
         private static bool InventoryExistItem(BasePlayer player, Item item)
         {
             return player.inventory.containerMain.FindItemByItemID(item.info.itemid) != null
-                   || player.inventory.containerBelt.FindItemByItemID(item.info.itemid) != null;
+                    || player.inventory.containerBelt.FindItemByItemID(item.info.itemid) != null;
         }
 
         private static bool InventoryIsFull(BasePlayer player, Item item)
@@ -476,10 +555,10 @@ namespace Oxide.Plugins
 
         private static bool PickupDroppedItemContainer(BasePlayer player, DroppedItemContainer droppedItemContainer)
         {
-            var itemContainer = droppedItemContainer?.inventory;
+            var itemContainer = droppedItemContainer != null ? droppedItemContainer.inventory : null;
             if (itemContainer != null)
             {
-                for (int i = itemContainer.itemList.Count - 1; i >= 0; i--)
+                for (var i = itemContainer.itemList.Count - 1; i >= 0; i--)
                 {
                     player.GiveItem(itemContainer.itemList[i], BaseEntity.GiveItemReason.PickedUp);
                 }
@@ -494,15 +573,15 @@ namespace Oxide.Plugins
 
         private static bool PickupPlayerCorpse(BasePlayer player, PlayerCorpse playerCorpse)
         {
-            var itemContainers = playerCorpse?.containers;
+            var itemContainers = playerCorpse != null ? playerCorpse.containers : null;
             if (itemContainers != null)
             {
-                for (int i = itemContainers.Length - 1; i >= 0; i--)
+                for (var i = itemContainers.Length - 1; i >= 0; i--)
                 {
                     var itemContainer = itemContainers[i];
                     if (itemContainer != null)
                     {
-                        for (int j = itemContainer.itemList.Count - 1; j >= 0; j--)
+                        for (var j = itemContainer.itemList.Count - 1; j >= 0; j--)
                         {
                             player.GiveItem(itemContainer.itemList[j], BaseEntity.GiveItemReason.PickedUp);
                         }
@@ -518,7 +597,10 @@ namespace Oxide.Plugins
             return entity != null && player.CanInteract() && Interface.CallHook("OnAutoPickupEntity", player, entity) == null;
         }
 
-        private static bool IsBarrel(string shortPrefabName) => shortPrefabName.Contains("barrel") || shortPrefabName.Contains("roadsign");
+        private static bool IsBarrel(string shortPrefabName)
+        {
+            return shortPrefabName.Contains("barrel") || shortPrefabName.Contains("roadsign");
+        }
 
         #endregion Helpers
 
@@ -526,13 +608,16 @@ namespace Oxide.Plugins
 
         private class WorldItemCollisionDetection : MonoBehaviour
         {
-            private bool collided;
+            private bool _collided;
 
             private void OnCollisionEnter(Collision collision)
             {
-                if (collided || collision?.gameObject == null) return;
-                collided = true;
-                Invoke(nameof(AddAutoPickupComponent), configData.worldItemS.pickupDelay);
+                if (_collided || collision?.gameObject == null)
+                {
+                    return;
+                }
+                _collided = true;
+                Invoke(nameof(AddAutoPickupComponent), _configData.WorldItem.PickupDelay);
             }
 
             private void AddAutoPickupComponent()
@@ -544,12 +629,12 @@ namespace Oxide.Plugins
 
         private class AutoPickupHelper : FacepunchBehaviour
         {
-            private const int LAYER_PLAYER = (int)Rust.Layer.Player_Server;
+            private const int LAYER_PLAYER = (int)Layer.Player_Server;
             public static List<AutoPickupHelper> autoPickupHelpers;
 
-            private BaseEntity entity;
-            private PickupType pickupType;
-            private SphereCollider sphereCollider;
+            private BaseEntity _entity;
+            private PickupType _pickupType;
+            private SphereCollider _sphereCollider;
 
             private void Awake()
             {
@@ -558,27 +643,27 @@ namespace Oxide.Plugins
                     autoPickupHelpers = new List<AutoPickupHelper>();
                 }
                 autoPickupHelpers.Add(this);
-                entity = GetComponentInParent<BaseEntity>();
+                _entity = GetComponentInParent<BaseEntity>();
             }
 
-            public void Init(PickupType pickupType)
+            public void Init(PickupType type)
             {
-                if (gameObject == null || entity == null)
+                if (gameObject == null || _entity == null)
                 {
                     Destroy(this);
                     return;
                 }
-                this.pickupType = pickupType;
-                transform.position = entity.CenterPoint();
+                _pickupType = type;
+                transform.position = _entity.CenterPoint();
                 CreateCollider();
             }
 
             private void CreateCollider()
             {
-                sphereCollider = gameObject.AddComponent<SphereCollider>();
-                sphereCollider.gameObject.layer = (int)Rust.Layer.Reserved1;
-                sphereCollider.radius = configData.autoPickupS[pickupType].radius;
-                sphereCollider.isTrigger = true;
+                _sphereCollider = gameObject.AddComponent<SphereCollider>();
+                _sphereCollider.gameObject.layer = (int)Layer.Reserved1;
+                _sphereCollider.radius = _configData.AutoPickup[_pickupType].Radius;
+                _sphereCollider.isTrigger = true;
 #if DEBUG
                 InvokeRepeating(Tick, 0f, 1f);
 #endif
@@ -592,7 +677,7 @@ namespace Oxide.Plugins
                 {
                     if (player.IsAdmin && Vector3.Distance(transform.position, player.transform.position) < 50f)
                     {
-                        player.SendConsoleCommand("ddraw.sphere", 1, Color.cyan, sphereCollider.transform.position, sphereCollider.radius);
+                        player.SendConsoleCommand("ddraw.sphere", 1, Color.cyan, _sphereCollider.transform.position, _sphereCollider.radius);
                     }
                 }
             }
@@ -601,20 +686,32 @@ namespace Oxide.Plugins
 
             private void OnTriggerEnter(Collider collider)
             {
-                if (collider == null || collider.gameObject == null) return;
-                if (collider.gameObject.layer != LAYER_PLAYER) return;
-                var player = collider.ToBaseEntity() as BasePlayer;
-                if (player == null || !player.userID.IsSteamId()) return;
-                if (instance.permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
+                if (collider == null || collider.gameObject == null)
                 {
-                    var autoPickData = instance.GetAutoPickupData(player.userID, true);
-                    if (autoPickData.enabled && !autoPickData.blockPickupTypes.HasFlag(pickupType))
+                    return;
+                }
+                if (collider.gameObject.layer != LAYER_PLAYER)
+                {
+                    return;
+                }
+                var player = collider.ToBaseEntity() as BasePlayer;
+                if (player == null || !player.userID.IsSteamId())
+                {
+                    return;
+                }
+                if (_instance.permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
+                {
+                    var autoPickData = _instance.GetAutoPickupData(player.userID, true);
+                    if (autoPickData.enabled && !autoPickData.blockPickupTypes.HasFlag(_pickupType))
                     {
-                        switch (pickupType)
+                        switch (_pickupType)
                         {
                             case PickupType.PlantEntity:
-                                var plantEntity = entity as GrowableEntity;
-                                if (configData.globalS.preventPickupPlant && plantEntity.OwnerID.IsSteamId() && !instance.AreFriends(plantEntity.OwnerID, player.userID)) return;
+                                var plantEntity = _entity as GrowableEntity;
+                                if (_configData.Global.PreventPickupPlant && plantEntity.OwnerID.IsSteamId() && !_instance.AreFriends(plantEntity.OwnerID, player.userID))
+                                {
+                                    return;
+                                }
                                 if (CanAutoPickup(player, plantEntity))
                                 {
                                     if (autoPickData.autoClone)
@@ -630,7 +727,7 @@ namespace Oxide.Plugins
                                 return;
 
                             case PickupType.CollectibleEntity:
-                                var collectibleEntity = entity as CollectibleEntity;
+                                var collectibleEntity = _entity as CollectibleEntity;
                                 if (CanAutoPickup(player, collectibleEntity))
                                 {
                                     collectibleEntity.DoPickup(player);
@@ -640,8 +737,11 @@ namespace Oxide.Plugins
 
                             case PickupType.ItemDrop:
                             case PickupType.ItemDropBackpack:
-                                var droppedItemContainer = entity as DroppedItemContainer;
-                                if (configData.globalS.preventPickupBackpack && droppedItemContainer.playerSteamID.IsSteamId() && !instance.AreFriends(droppedItemContainer.playerSteamID, player.userID)) return;
+                                var droppedItemContainer = _entity as DroppedItemContainer;
+                                if (_configData.Global.PreventPickupBackpack && droppedItemContainer.playerSteamID.IsSteamId() && !_instance.AreFriends(droppedItemContainer.playerSteamID, player.userID))
+                                {
+                                    return;
+                                }
                                 if (CanAutoPickup(player, droppedItemContainer))
                                 {
                                     if (PickupDroppedItemContainer(player, droppedItemContainer))
@@ -654,9 +754,15 @@ namespace Oxide.Plugins
                             case PickupType.MurdererCorpse:
                             case PickupType.ScientistCorpse:
                             case PickupType.PlayerCorpse:
-                                var playerCorpse = entity as PlayerCorpse;
-                                if (!playerCorpse.CanLoot()) return;
-                                if (configData.globalS.preventPickupCorpse && playerCorpse.playerSteamID.IsSteamId() && !instance.AreFriends(playerCorpse.playerSteamID, player.userID)) return;
+                                var playerCorpse = _entity as PlayerCorpse;
+                                if (!playerCorpse.CanLoot())
+                                {
+                                    return;
+                                }
+                                if (_configData.Global.PreventPickupCorpse && playerCorpse.playerSteamID.IsSteamId() && !_instance.AreFriends(playerCorpse.playerSteamID, player.userID))
+                                {
+                                    return;
+                                }
                                 if (CanAutoPickup(player, playerCorpse))
                                 {
                                     if (PickupPlayerCorpse(player, playerCorpse))
@@ -667,14 +773,20 @@ namespace Oxide.Plugins
                                 return;
 
                             case PickupType.WorldItem:
-                                var worldItem = entity as WorldItem;
+                                var worldItem = _entity as WorldItem;
                                 if (CanAutoPickup(player, worldItem))
                                 {
                                     var item = worldItem.GetItem();
                                     if (item != null)
                                     {
-                                        if (configData.worldItemS.onlyPickupExistItem && !InventoryExistItem(player, item)) return;
-                                        if (configData.worldItemS.checkInventoryFull && InventoryIsFull(player, item)) return;
+                                        if (_configData.WorldItem.OnlyPickupExistItem && !InventoryExistItem(player, item))
+                                        {
+                                            return;
+                                        }
+                                        if (_configData.WorldItem.CheckInventoryFull && InventoryIsFull(player, item))
+                                        {
+                                            return;
+                                        }
                                         var rpcMessage = default(BaseEntity.RPCMessage);
                                         rpcMessage.player = player;
                                         worldItem.Pickup(rpcMessage);
@@ -684,10 +796,13 @@ namespace Oxide.Plugins
                                 return;
 
                             case PickupType.CollectableGifts:
-                                var gifts = entity as CollectableEasterEgg;
+                                var gifts = _entity as CollectableEasterEgg;
                                 if (CanAutoPickup(player, gifts))
                                 {
-                                    if (configData.collectableGiftsS.requiresBasket && !(player.GetHeldEntity() is EasterBasket)) return;
+                                    if (_configData.CollectableGifts.RequiresBasket && !(player.GetHeldEntity() is EasterBasket))
+                                    {
+                                        return;
+                                    }
                                     if (EggHuntEvent.serverEvent != null)
                                     {
                                         if (!EggHuntEvent.serverEvent.IsEventActive())
@@ -697,7 +812,7 @@ namespace Oxide.Plugins
                                         EggHuntEvent.serverEvent.EggCollected(player);
                                         player.GiveItem(ItemManager.Create(gifts.itemToGive));
                                     }
-                                    Effect.server.Run(gifts.pickupEffect.resourcePath, base.transform.position + Vector3.up * 0.3f, Vector3.up);
+                                    Effect.server.Run(gifts.pickupEffect.resourcePath, transform.position + Vector3.up * 0.3f, Vector3.up);
                                     gifts.Kill();
                                     Destroy(this);
                                 }
@@ -736,21 +851,21 @@ namespace Oxide.Plugins
             container.Add(new CuiPanel
             {
                 Image = { Color = "0 0 0 0.6" },
-                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" },
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" }
             }, UINAME_MAIN);
             var titlePanel = container.Add(new CuiPanel
             {
                 Image = { Color = "0.31 0.88 0.71 1" },
-                RectTransform = { AnchorMin = "0 0.912", AnchorMax = "0.998 1" },
+                RectTransform = { AnchorMin = "0 0.912", AnchorMax = "0.998 1" }
             }, UINAME_MAIN);
             container.Add(new CuiElement
             {
                 Parent = titlePanel,
                 Components =
                 {
-                    new CuiTextComponent { Text = instance.Lang("Title", player.UserIDString), FontSize = 20, Align = TextAnchor.MiddleCenter, Color ="1 0 0 1" },
+                    new CuiTextComponent { Text = _instance.Lang("Title", player.UserIDString), FontSize = 20, Align = TextAnchor.MiddleCenter, Color = "1 0 0 1" },
                     new CuiOutlineComponent { Distance = "0.5 0.5", Color = "1 1 1 1" },
-                    new CuiRectTransformComponent { AnchorMin = "0.2 0",  AnchorMax = "0.8 1" }
+                    new CuiRectTransformComponent { AnchorMin = "0.2 0", AnchorMax = "0.8 1" }
                 }
             });
             container.Add(new CuiButton
@@ -761,47 +876,53 @@ namespace Oxide.Plugins
             }, titlePanel);
             CuiHelper.DestroyUi(player, UINAME_MAIN);
             CuiHelper.AddUi(player, container);
-            var autoPickData = instance.GetAutoPickupData(player.userID);
+            var autoPickData = _instance.GetAutoPickupData(player.userID);
             UpdateMenuUI(player, autoPickData);
         }
 
         private static void UpdateMenuUI(BasePlayer player, StoredData.AutoPickData autoPickData)
         {
-            if (player == null) return;
+            if (player == null)
+            {
+                return;
+            }
             var container = new CuiElementContainer();
             container.Add(new CuiPanel
             {
                 Image = { Color = "0.1 0.1 0.1 0.4" },
-                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.898" },
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.898" }
             }, UINAME_MAIN, UINAME_MENU);
-            int i = 0;
+            var i = 0;
             const float spacingY = 0.01f;
             const float entrySize = (1f - 11f * spacingY) / 12f;
 
-            var enabledMsg = instance.Lang("Enabled", player.UserIDString);
-            var disabledMsg = instance.Lang("Disabled", player.UserIDString);
+            var enabledMsg = _instance.Lang("Enabled", player.UserIDString);
+            var disabledMsg = _instance.Lang("Disabled", player.UserIDString);
 
             var anchors = GetEntryAnchors(i++, entrySize, spacingY);
-            CreateEntryUI(ref container, $"AutoPickupUI Toggle",
-                instance.Lang("Status", player.UserIDString),
-                autoPickData.enabled ? enabledMsg : disabledMsg,
-                $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+            CreateEntryUI(ref container, "AutoPickupUI Toggle",
+                          _instance.Lang("Status", player.UserIDString),
+                          autoPickData.enabled ? enabledMsg : disabledMsg,
+                          $"0 {anchors[0]}", $"0.995 {anchors[1]}");
             foreach (PickupType pickupType in Enum.GetValues(typeof(PickupType)))
             {
-                if (pickupType == PickupType.None || !enabledPickupTypes.HasFlag(pickupType)) continue;
+                if (pickupType == PickupType.None || !_enabledPickupTypes.HasFlag(pickupType))
+                {
+                    continue;
+                }
                 anchors = GetEntryAnchors(i++, entrySize, spacingY);
                 CreateEntryUI(ref container, $"AutoPickupUI {pickupType}",
-                    instance.Lang(pickupType.ToString(), player.UserIDString),
-                    !autoPickData.blockPickupTypes.HasFlag(pickupType) ? enabledMsg : disabledMsg,
-                    $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                              _instance.Lang(pickupType.ToString(), player.UserIDString),
+                              !autoPickData.blockPickupTypes.HasFlag(pickupType) ? enabledMsg : disabledMsg,
+                              $"0 {anchors[0]}", $"0.995 {anchors[1]}");
 
                 if (pickupType == PickupType.PlantEntity && !autoPickData.blockPickupTypes.HasFlag(pickupType))
                 {
                     anchors = GetEntryAnchors(i++, entrySize, spacingY);
-                    CreateEntryUI(ref container, $"AutoPickupUI Clone",
-                        instance.Lang("AutoClonePlants", player.UserIDString),
-                        autoPickData.autoClone ? enabledMsg : disabledMsg,
-                        $"0 {anchors[0]}", $"0.995 {anchors[1]}");
+                    CreateEntryUI(ref container, "AutoPickupUI Clone",
+                                  _instance.Lang("AutoClonePlants", player.UserIDString),
+                                  autoPickData.autoClone ? enabledMsg : disabledMsg,
+                                  $"0 {anchors[0]}", $"0.995 {anchors[1]}");
                 }
             }
 
@@ -814,7 +935,7 @@ namespace Oxide.Plugins
             var panelName = container.Add(new CuiPanel
             {
                 Image = { Color = "0.1 0.1 0.1 0.6" },
-                RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax },
+                RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax }
             }, UINAME_MENU);
             container.Add(new CuiLabel
             {
@@ -825,7 +946,7 @@ namespace Oxide.Plugins
             {
                 Button = { Color = "0 0 0 0.7", Command = command },
                 Text = { Text = rightText, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1", FontSize = 14 },
-                RectTransform = { AnchorMin = "0.7 0.2", AnchorMax = "0.985 0.8" },
+                RectTransform = { AnchorMin = "0.7 0.2", AnchorMax = "0.985 0.8" }
             }, panelName);
         }
 
@@ -835,7 +956,10 @@ namespace Oxide.Plugins
             return new[] { 1f - (i + 1) * entrySize - i * spacingY, 1f - i * (entrySize + spacingY) };
         }
 
-        private static void DestroyUI(BasePlayer player) => CuiHelper.DestroyUi(player, UINAME_MAIN);
+        private static void DestroyUI(BasePlayer player)
+        {
+            CuiHelper.DestroyUi(player, UINAME_MAIN);
+        }
 
         #endregion UI
 
@@ -845,8 +969,14 @@ namespace Oxide.Plugins
         private void CCmdAutoPickupUI(ConsoleSystem.Arg arg)
         {
             var player = arg.Player();
-            if (player == null) return;
-            if (!permission.UserHasPermission(player.UserIDString, PERMISSION_USE)) return;
+            if (player == null)
+            {
+                return;
+            }
+            if (!permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
+            {
+                return;
+            }
             var autoPickData = GetAutoPickupData(player.userID);
             switch (arg.Args[0].ToLower())
             {
@@ -891,114 +1021,114 @@ namespace Oxide.Plugins
 
         #region ConfigurationFile
 
-        private static ConfigData configData;
+        private static ConfigData _configData;
 
         private class ConfigData
         {
             [JsonProperty(PropertyName = "Settings")]
-            public Settings globalS = new Settings();
+            public GlobalSettings Global { get; set; } = new GlobalSettings();
 
             [JsonProperty(PropertyName = "Chat Settings")]
-            public ChatS chatS = new ChatS();
+            public ChatSettings Chat { get; set; } = new ChatSettings();
 
             [JsonProperty(PropertyName = "Auto Pickup Settings")]
-            public Dictionary<PickupType, PickupTypeS> autoPickupS = new Dictionary<PickupType, PickupTypeS>();
+            public Dictionary<PickupType, PickupTypeSettings> AutoPickup { get; set; } = new Dictionary<PickupType, PickupTypeSettings>();
 
             [JsonProperty(PropertyName = "World Item Pickup Settings")]
-            public WorldItemPickupS worldItemS = new WorldItemPickupS();
+            public WorldItemPickupSettings WorldItem { get; set; } = new WorldItemPickupSettings();
 
             [JsonProperty(PropertyName = "Collectable Gifts Pickup Settings")]
-            public CollectableGiftsPickupS collectableGiftsS = new CollectableGiftsPickupS();
+            public CollectableGiftsPickupSettings CollectableGifts { get; set; } = new CollectableGiftsPickupSettings();
 
             [JsonProperty(PropertyName = "Loot Container Pickup Settings")]
-            public Dictionary<string, bool> lootContainerS = new Dictionary<string, bool>();
+            public Dictionary<string, bool> LootContainer { get; set; } = new Dictionary<string, bool>();
 
             [JsonProperty(PropertyName = "Collectible Entity Pickup Settings")]
-            public Dictionary<string, bool> collectibleEntityS = new Dictionary<string, bool>();
+            public Dictionary<string, bool> CollectibleEntity { get; set; } = new Dictionary<string, bool>();
 
             [JsonProperty(PropertyName = "Plant Entity Pickup Settings")]
-            public Dictionary<string, bool> plantEntityS = new Dictionary<string, bool>();
+            public Dictionary<string, bool> PlantEntity { get; set; } = new Dictionary<string, bool>();
 
-            public class Settings
+            public class GlobalSettings
             {
                 [JsonProperty(PropertyName = "Clear Data On Map Wipe")]
-                public bool clearDataOnWipe = false;
+                public bool ClearDataOnWipe { get; set; } = false;
 
                 [JsonProperty(PropertyName = "Use Teams")]
-                public bool useTeams = false;
+                public bool UseTeams { get; set; } = false;
 
                 [JsonProperty(PropertyName = "Use Clans")]
-                public bool useClans = true;
+                public bool UseClans { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Use Friends")]
-                public bool useFriends = true;
+                public bool UseFriends { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Auto pickup is enabled by default")]
-                public bool defaultEnabled = true;
+                public bool DefaultEnabled { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Prevent pickup other player's backpack")]
-                public bool preventPickupBackpack;
+                public bool PreventPickupBackpack { get; set; }
 
                 [JsonProperty(PropertyName = "Prevent pickup other player's corpse")]
-                public bool preventPickupCorpse;
+                public bool PreventPickupCorpse { get; set; }
 
                 [JsonProperty(PropertyName = "Prevent pickup other player's plant entity")]
-                public bool preventPickupPlant;
+                public bool PreventPickupPlant { get; set; }
 
                 [JsonProperty(PropertyName = "Prevent pickup other player's loot container")]
-                public bool preventPickupLoot = true;
+                public bool PreventPickupLoot { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Prevent pickup of plant entities in the planter box")]
-                public bool preventPlanterBox = false;
+                public bool PreventPlanterBox { get; set; } = false;
             }
 
-            public class ChatS
+            public class ChatSettings
             {
                 [JsonProperty(PropertyName = "Chat Command")]
-                public string command = "ap";
+                public string Command { get; set; } = "ap";
 
                 [JsonProperty(PropertyName = "Chat Prefix")]
-                public string prefix = "<color=#00FFFF>[AutoPickup]</color>: ";
+                public string Prefix { get; set; } = "<color=#00FFFF>[AutoPickup]</color>: ";
 
                 [JsonProperty(PropertyName = "Chat SteamID Icon")]
-                public ulong steamIDIcon = 0;
+                public ulong SteamIDIcon { get; set; } = 0;
             }
 
-            public class PickupTypeS
+            public class PickupTypeSettings
             {
                 [JsonProperty(PropertyName = "Enabled")]
-                public bool enabled = true;
+                public bool Enabled { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Check Radius")]
-                public float radius = 0.5f;
+                public float Radius { get; set; } = 0.5f;
             }
 
-            public class WorldItemPickupS
+            public class WorldItemPickupSettings
             {
                 [JsonProperty(PropertyName = "Auto Pickup Delay")]
-                public float pickupDelay = 0.5f;
+                public float PickupDelay { get; set; } = 0.5f;
 
                 [JsonProperty(PropertyName = "Check that player's inventory is full")]
-                public bool checkInventoryFull = true;
+                public bool CheckInventoryFull { get; set; } = true;
 
                 [JsonProperty(PropertyName = "Only pickup items that exist in player's inventory")]
-                public bool onlyPickupExistItem;
+                public bool OnlyPickupExistItem { get; set; }
 
                 [JsonProperty(PropertyName = "Item Block List (Item shortname)")]
-                public HashSet<string> itemBlockList = new HashSet<string>();
+                public HashSet<string> ItemBlockList { get; set; } = new HashSet<string>();
 
                 [JsonProperty(PropertyName = "Allow Pickup Item Category")]
-                public Dictionary<ItemCategory, bool> itemCategoryS = new Dictionary<ItemCategory, bool>();
+                public Dictionary<ItemCategory, bool> ItemCategories { get; set; } = new Dictionary<ItemCategory, bool>();
             }
 
-            public class CollectableGiftsPickupS
+            public class CollectableGiftsPickupSettings
             {
                 [JsonProperty(PropertyName = "Requires player to hold a basket")]
-                public bool requiresBasket = true;
+                public bool RequiresBasket { get; set; } = true;
             }
 
             [JsonProperty(PropertyName = "Version")]
-            public VersionNumber version;
+            public VersionNumber Version { get; set; }
         }
 
         protected override void LoadConfig()
@@ -1006,8 +1136,8 @@ namespace Oxide.Plugins
             base.LoadConfig();
             try
             {
-                configData = Config.ReadObject<ConfigData>();
-                if (configData == null)
+                _configData = Config.ReadObject<ConfigData>();
+                if (_configData == null)
                 {
                     LoadDefaultConfig();
                 }
@@ -1027,30 +1157,33 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             PrintWarning("Creating a new configuration file");
-            configData = new ConfigData();
-            configData.version = Version;
+            _configData = new ConfigData();
+            _configData.Version = Version;
         }
 
-        protected override void SaveConfig() => Config.WriteObject(configData);
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(_configData);
+        }
 
         private void UpdateConfigValues()
         {
-            if (configData.version < Version)
+            if (_configData.Version < Version)
             {
-                if (configData.version <= default(VersionNumber))
+                if (_configData.Version <= default(VersionNumber))
                 {
                     string prefix, prefixColor;
                     if (GetConfigValue(out prefix, "Chat Settings", "Chat Prefix") && GetConfigValue(out prefixColor, "Chat Settings", "Chat Prefix Color"))
                     {
-                        configData.chatS.prefix = $"<color={prefixColor}>{prefix}</color>: ";
+                        _configData.Chat.Prefix = $"<color={prefixColor}>{prefix}</color>: ";
                     }
                 }
 
-                if (configData.version <= new VersionNumber(1, 2, 13))
+                if (_configData.Version <= new VersionNumber(1, 2, 13))
                 {
-                    configData.autoPickupS[PickupType.LootContainer].radius = 0f;
+                    _configData.AutoPickup[PickupType.LootContainer].Radius = 0f;
                 }
-                configData.version = Version;
+                _configData.Version = Version;
             }
         }
 
@@ -1070,7 +1203,7 @@ namespace Oxide.Plugins
 
         #region DataFile
 
-        private StoredData storedData;
+        private StoredData _storedData;
 
         private class StoredData
         {
@@ -1088,29 +1221,32 @@ namespace Oxide.Plugins
         {
             try
             {
-                storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(Name);
+                _storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(Name);
             }
             catch
             {
-                storedData = null;
+                _storedData = null;
             }
-            if (storedData == null)
+            if (_storedData == null)
             {
                 ClearData();
             }
         }
 
-        private void SaveData() => Interface.Oxide.DataFileSystem.WriteObject(Name, storedData);
+        private void SaveData()
+        {
+            Interface.Oxide.DataFileSystem.WriteObject(Name, _storedData);
+        }
 
         private void ClearData()
         {
-            storedData = new StoredData();
+            _storedData = new StoredData();
             SaveData();
         }
 
-        private void OnNewSave(string filename)
+        private void OnNewSave()
         {
-            if (configData.globalS.clearDataOnWipe)
+            if (_configData.Global.ClearDataOnWipe)
             {
                 ClearData();
             }
@@ -1122,7 +1258,7 @@ namespace Oxide.Plugins
 
         private void Print(BasePlayer player, string message)
         {
-            Player.Message(player, message, configData.chatS.prefix, configData.chatS.steamIDIcon);
+            Player.Message(player, message, _configData.Chat.Prefix, _configData.Chat.SteamIDIcon);
         }
 
         private string Lang(string key, string id = null, params object[] args)
@@ -1157,7 +1293,7 @@ namespace Oxide.Plugins
                 ["WorldItem"] = "Auto Pickup World Item",
                 ["LootContainer"] = "Auto Pickup Loot Container",
                 ["CollectableGifts"] = "Auto Pickup Collectable Gifts",
-                ["AutoClonePlants"] = "Auto Clone Plants",
+                ["AutoClonePlants"] = "Auto Clone Plants"
             }, this);
             lang.RegisterMessages(new Dictionary<string, string>
             {
@@ -1176,7 +1312,7 @@ namespace Oxide.Plugins
                 ["WorldItem"] = "自动拾取掉落物品",
                 ["LootContainer"] = "自动拾取战利品容器",
                 ["CollectableGifts"] = "自动拾取节日礼物",
-                ["AutoClonePlants"] = "自动克隆植物",
+                ["AutoClonePlants"] = "自动克隆植物"
             }, this, "zh-CN");
         }
 
