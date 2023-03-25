@@ -1,7 +1,7 @@
 # Oxide Plugins
 ​	这是 [Arainrr](https://umod.org/user/Arainrr) 用于开发Oxide插件的仓库，其中包含了发布在 [uMod](https://umod.org/) 上的插件。
 
-​	欢迎您们发送问题和拉取请求
+​	~欢迎您们发送问题和拉取请求~ 搞生活了，不搞插件了
 
 
 
